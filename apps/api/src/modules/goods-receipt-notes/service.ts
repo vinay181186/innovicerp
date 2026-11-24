@@ -88,6 +88,7 @@ import type {
   UpdateGoodsReceiptNoteInput,
 } from './schema';
 import { createdByNameSql } from '../../lib/created-by-sql';
+import { newestFirst } from '../../lib/list-order';
 import { GRN_LINE_ORDER_JOINS } from './list-lines';
 import {
   GRN_DOC_QC_STATUS_SQL,
@@ -724,7 +725,7 @@ export async function listGoodsReceiptNotes(
     // The summary needs the line totals only when a ▾ filter reads them — an
     // unfiltered summary must not aggregate every GRN line a second time.
     const summaryLineAgg = sf && sf.filters.length > 0 ? lineAggJoin : sql``;
-    const orderBy = sfOrderBy(GRN_SF_COLUMNS, sf, sql`grn.grn_date DESC, grn.code DESC`);
+    const orderBy = sfOrderBy(GRN_SF_COLUMNS, sf, newestFirst('grn'));
 
     const result = await tx.execute(sql`
       SELECT

@@ -17,6 +17,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { softDeleteStamp } from '../../lib/audit-trail';
+import { newestFirst } from '../../lib/list-order';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -185,7 +186,7 @@ export async function listDesignWorkLog(
         ${fromFrag}
         ${toFrag}
         ${projFrag}
-      ORDER BY wl.log_date DESC, wl.created_at DESC
+      ORDER BY ${newestFirst('wl')}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 

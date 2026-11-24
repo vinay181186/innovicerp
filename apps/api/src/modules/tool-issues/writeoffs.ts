@@ -33,6 +33,7 @@ import {
 } from '../../lib/errors';
 import { lockItemForStock, postStockMove, roundQty } from '../../lib/stock-ledger';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { emitActivityLog } from '../activity-log/service';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { lockInstrument, setInstrumentStatus, tsOut } from '../instruments/common';
@@ -103,7 +104,7 @@ export async function listToolWriteoffs(
     const order = sfOrderBy(
       TOOL_WRITEOFF_SF_COLUMNS,
       sf,
-      sql`(w.status = 'pending') DESC, w.created_at DESC, w.id DESC`,
+      sql`(w.status = 'pending') DESC, ${newestFirst('w')}`,
     );
     const rows = (await tx.execute(sql`
       ${SELECT}

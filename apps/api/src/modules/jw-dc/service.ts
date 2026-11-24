@@ -62,6 +62,7 @@ import { postStockMove, roundQty } from '../../lib/stock-ledger';
 import { recordOutParts } from '../../lib/stock-out-parts';
 import { loadRelatedItems } from '../../lib/related-items';
 import { buildTimeline, itemSection, section, toIsoDate } from '../../lib/traceability';
+import { newestFirstCols } from '../../lib/list-order';
 // ADR-217 phase 4 — the one return-to-vendor guard, shared with the OSP
 // outward challan (it lives beside its SQL in the delivery-challans module).
 import { assertNoRtvPending } from '../delivery-challans/rtv-candidates';
@@ -220,7 +221,7 @@ export async function listJwDcOutward(
     const orderBy = sfOrderBy(
       JW_DC_OUTWARD_SF_COLUMNS,
       sf,
-      sql`z."dcDate" DESC, z.code DESC, z.id DESC`,
+      newestFirstCols('z."createdAt"', 'z.id'),
     );
 
     const base = sql`
@@ -1231,7 +1232,7 @@ export async function listJwDcInward(
     const orderBy = sfOrderBy(
       JW_DC_INWARD_SF_COLUMNS,
       sf,
-      sql`z."inwardDate" DESC, z.code DESC, z.id DESC`,
+      newestFirstCols('z."createdAt"', 'z.id'),
     );
 
     const base = sql`

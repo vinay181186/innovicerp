@@ -20,6 +20,7 @@ import { drawingRevOf } from '../../lib/drawing-rev';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { newestFirst } from '../../lib/list-order';
 import { buildOrderDossier } from './dossier';
 
 function requireCompany(user: AuthContext): string {
@@ -60,7 +61,7 @@ export async function listQcMatrixSos(user: AuthContext): Promise<ListQcMatrixSo
       WHERE so.company_id = ${companyId}::uuid
         AND so.deleted_at IS NULL
         AND so.status <> 'cancelled'
-      ORDER BY so.code DESC
+      ORDER BY ${newestFirst('so')}
     `);
     return {
       sos: rows(rs).map((r) => ({

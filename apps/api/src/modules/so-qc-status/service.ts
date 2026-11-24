@@ -29,6 +29,7 @@ import type {
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { newestFirst } from '../../lib/list-order';
 import { buildOrderDossier } from '../qc-documents/dossier';
 
 function requireCompany(user: AuthContext): string {
@@ -73,7 +74,7 @@ export async function listSoForQc(user: AuthContext): Promise<ListSoForQcRespons
       WHERE so.company_id = ${companyId}::uuid
         AND so.deleted_at IS NULL
         AND so.status <> 'cancelled'
-      ORDER BY so.so_date DESC, so.code DESC
+      ORDER BY ${newestFirst('so')}
     `);
     return { sos: rows(rs).map(toSelector) };
   });

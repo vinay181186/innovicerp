@@ -6,7 +6,7 @@
 // RETURNED to the customer minus already invoiced. Bumps
 // job_work_order_lines.invoiced_qty.
 
-import { type SQL, and, asc, count, desc, eq, ilike, isNull, like, ne, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, count, eq, ilike, isNull, like, ne, or, sql } from 'drizzle-orm';
 import type {
   CancelBlocker,
   CreateJwInvoiceInput,
@@ -31,6 +31,7 @@ import { jwToInvoiceQty } from '../../lib/jw-to-invoice';
 import { emitActivityLog } from '../activity-log/service';
 import { blockerRefusal } from '../cancel-requests/messages';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { JW_INVOICE_SF_COLUMNS } from './sf-columns';
 import { ActivityAction, computeGstTotals } from '@innovic/shared';
 import {
@@ -571,14 +572,7 @@ export async function listJwInvoices(
         .leftJoin(items, and(eq(items.id, jobWorkOrderLines.itemId), isNull(items.deletedAt)))
         .where(where)
         // id last: a unique tie-breaker so paging never skips or repeats a row.
-        .orderBy(
-          sfOrderBy(
-            JW_INVOICE_SF_COLUMNS,
-            sf,
-            sql`${desc(jwInvoices.invoiceDate)}, ${desc(jwInvoices.code)}, ${desc(jwInvoices.id)}`,
-            sfOpts,
-          ),
-        )
+        .orderBy(sfOrderBy(JW_INVOICE_SF_COLUMNS, sf, sql`${newestFirst('jw_invoices')}`, sfOpts))
         .limit(input.limit)
         .offset(input.offset),
       tx

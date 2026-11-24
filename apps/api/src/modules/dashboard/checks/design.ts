@@ -24,6 +24,7 @@ import {
   designProjectOpenSql,
   designTrackerPendingSql,
 } from '../../../lib/design-status';
+import { createdKey } from '../../../lib/list-order';
 import type { RawRow } from '../personal/list-query';
 import { bomPendingSql } from '../personal/rows-planning';
 import { nextStep } from './next-step';
@@ -33,7 +34,7 @@ export function designProjectsSql(c: CheckCtx): SQL {
   return sql`
     SELECT dp.id::text AS row_key, dp.id, dp.code, 'design_project'::text AS kind,
            dp.start_date::text AS doc_date, dp.target_date::text AS due_date,
-           COALESCE(dp.target_date, dp.start_date)::text AS sort_key,
+           ${createdKey('dp.created_at')} AS sort_key,
            COALESCE(cl.name, dp.client_text)::text AS party,
            NULL::text AS item_code, dp.project_name::text AS item_name,
            NULL::numeric AS qty, NULL::text AS uom, NULL::numeric AS amount,
@@ -51,7 +52,7 @@ export function designTrackerSql(c: CheckCtx): SQL {
     SELECT dt.id::text AS row_key, dt.id,
            COALESCE(i.code, dt.item_code_text, dt.code)::text AS code, 'design_tracker'::text AS kind,
            dt.start_date::text AS doc_date, dt.target_date::text AS due_date,
-           COALESCE(dt.target_date, dt.start_date)::text AS sort_key,
+           ${createdKey('dt.created_at')} AS sort_key,
            NULL::text AS party,
            COALESCE(i.code, dt.item_code_text)::text AS item_code,
            COALESCE(dt.item_name_text, i.name)::text AS item_name,
@@ -69,7 +70,7 @@ export function designIssuesSql(c: CheckCtx): SQL {
   return sql`
     SELECT di.id::text AS row_key, di.id, di.title::text AS code, 'design_issue'::text AS kind,
            di.raised_date::text AS doc_date, NULL::text AS due_date,
-           di.raised_date::text AS sort_key,
+           ${createdKey('di.created_at')} AS sort_key,
            NULL::text AS party,
            NULL::text AS item_code, NULLIF(btrim(di.part_text), '')::text AS item_name,
            NULL::numeric AS qty, NULL::text AS uom, NULL::numeric AS amount,
@@ -86,7 +87,7 @@ export function designDcrsSql(c: CheckCtx): SQL {
   return sql`
     SELECT dcr.id::text AS row_key, dcr.id, dcr.code, 'design_dcr'::text AS kind,
            dcr.request_date::text AS doc_date, NULL::text AS due_date,
-           dcr.request_date::text AS sort_key,
+           ${createdKey('dcr.created_at')} AS sort_key,
            NULL::text AS party,
            NULL::text AS item_code, dcr.title::text AS item_name,
            NULL::numeric AS qty, NULL::text AS uom, NULL::numeric AS amount,
@@ -141,7 +142,7 @@ function revRowsSql(c: CheckCtx, status: string, dateCol: string, byCol: string)
     SELECT ir.id::text AS row_key, ir.id, (i.code || '/' || ir.rev)::text AS code,
            'item_revision'::text AS kind,
            ${istDate(dateCol)} AS doc_date, NULL::text AS due_date,
-           (${sql.raw(dateCol)})::text AS sort_key,
+           ${createdKey('ir.created_at')} AS sort_key,
            NULL::text AS party, i.code::text AS item_code, i.name::text AS item_name,
            NULL::numeric AS qty, NULL::text AS uom, NULL::numeric AS amount,
            (${sql.raw(byCol)})::text AS created_by, 0::int AS is_late,
@@ -175,7 +176,7 @@ export function revCorrectionSql(c: CheckCtx): SQL {
     SELECT dc.id::text AS row_key, ir.id, (i.code || '/' || ir.rev)::text AS code,
            'drawing_correction'::text AS kind,
            ${istDate('dc.created_at')} AS doc_date, NULL::text AS due_date,
-           dc.created_at::text AS sort_key,
+           ${createdKey('dc.created_at')} AS sort_key,
            NULL::text AS party, i.code::text AS item_code, i.name::text AS item_name,
            NULL::numeric AS qty, NULL::text AS uom, NULL::numeric AS amount,
            dc.requested_by::text AS created_by, 0::int AS is_late,
@@ -198,7 +199,7 @@ export function revBlockingSql(c: CheckCtx): SQL {
     SELECT x.* FROM (
       SELECT l.id::text AS row_key, ir.id, h.code::text AS code, 'so_line'::text AS kind,
              ${istDate('h.created_at')} AS doc_date, l.due_date::text AS due_date,
-             COALESCE(l.due_date::text, h.created_at::text) AS sort_key,
+             ${createdKey('h.created_at')} AS sort_key,
              NULL::text AS party, i.code::text AS item_code, i.name::text AS item_name,
              l.order_qty AS qty, l.uom::text AS uom, NULL::numeric AS amount,
              h.created_by::text AS created_by,
@@ -214,7 +215,7 @@ export function revBlockingSql(c: CheckCtx): SQL {
       UNION ALL
       SELECT l.id::text, ir.id, h.code::text, 'jw_line'::text,
              ${istDate('h.created_at')}, l.due_date::text,
-             COALESCE(l.due_date::text, h.created_at::text),
+             ${createdKey('h.created_at')},
              NULL::text, i.code::text, i.name::text,
              l.order_qty, l.uom::text, NULL::numeric,
              h.created_by::text,
@@ -237,7 +238,7 @@ export function revUnverifiedSql(c: CheckCtx): SQL {
     SELECT ir.id::text AS row_key, ir.id, (i.code || '/' || ir.rev)::text AS code,
            'item_revision'::text AS kind,
            ${istDate('ir.created_at')} AS doc_date, w.due::text AS due_date,
-           COALESCE(w.due::text, ir.created_at::text) AS sort_key,
+           ${createdKey('ir.created_at')} AS sort_key,
            NULL::text AS party, i.code::text AS item_code, i.name::text AS item_name,
            NULL::numeric AS qty, NULL::text AS uom, NULL::numeric AS amount,
            ir.created_by::text AS created_by,

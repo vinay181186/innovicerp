@@ -115,8 +115,9 @@ export const PENDING_SELECT = sql`
   ${PEND_SINCE} AS "pendSince", qa.inspector_name AS "assignedTo",
   jo.created_at AS "createdAt", ${createdByNameSql(sql`jo.created_by`)} AS "createdByName"`;
 
-/** Paging order: latest QC call first, then card + op, then the op id. */
-export const PENDING_ORDER = sql`jo.qc_call_date DESC NULLS LAST, jc.code, vos.op_seq, vos.jc_op_id`;
+/** Paging order (ADR-318): latest QC call first, then newest job card, then
+ *  its ops in sequence, then the op id. */
+export const PENDING_ORDER = sql`jo.qc_call_date DESC NULLS LAST, jc.created_at DESC, jc.id DESC, vos.op_seq, vos.jc_op_id`;
 
 /** Completed QC log entries: FROM … WHERE (company + QC logs). */
 export function logsFrom(companyId: string): SQL {

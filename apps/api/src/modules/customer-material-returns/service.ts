@@ -53,6 +53,7 @@ import { type LockedJwLine, lockJwLine } from '../../lib/jw-line-state';
 import { liftLineFilters, likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { labelOf } from '../../lib/status-labels';
+import { newestFirst } from '../../lib/list-order';
 import { emitActivityLog } from '../activity-log/service';
 import { blockerRefusal } from '../cancel-requests/messages';
 import { jwLineRegister } from '../party-material-issues/register';
@@ -344,11 +345,7 @@ export async function listCustomerMaterialReturns(
     const sf = readSf(input.sf);
     const kindSf = liftLineFilters(sf, CUSTOMER_MATERIAL_RETURN_LINE_LIFT);
     const sfFrag = sql`${sfWhere(CUSTOMER_MATERIAL_RETURN_SF_COLUMNS, kindSf.docSf)} ${kindSf.lineFrag}`;
-    const orderBy = sfOrderBy(
-      CUSTOMER_MATERIAL_RETURN_SF_COLUMNS,
-      sf,
-      sql`r.return_date DESC, r.code DESC, r.id DESC`,
-    );
+    const orderBy = sfOrderBy(CUSTOMER_MATERIAL_RETURN_SF_COLUMNS, sf, sql`${newestFirst('r')}`);
     const whereFrag = sql`
       WHERE r.company_id = ${companyId}::uuid
         AND r.deleted_at IS NULL

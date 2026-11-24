@@ -9,6 +9,7 @@ import { type SQL, sql } from 'drizzle-orm';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { hasFormAccess } from '../../lib/access';
 import { timestampMs } from '../../lib/edit-conflict';
+import { newestFirstCols } from '../../lib/list-order';
 
 /** The caller's Access Control answer for the RC inbox. Read BEFORE opening
  *  the inbox transaction (each check opens its own). */
@@ -54,7 +55,7 @@ async function readRcRows(tx: DbTransaction, companyId: string): Promise<RcRaw[]
     SELECT t.id, t.doc_code, t.item_code, t.item_name, t.created_by_name, t.created_at,
       t.updated_at
     FROM (${rcInboxRowsSql(companyId)}) t
-    ORDER BY t.created_at
+    ORDER BY ${newestFirstCols('t.created_at', 't.id')}
   `)) as unknown as RcRaw[];
 }
 

@@ -24,6 +24,7 @@ import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
 import { roundQty } from '../../lib/stock-ledger';
+import { newestFirst } from '../../lib/list-order';
 import { requireCompany } from './read';
 import { STORE_ISSUE_LINE_SF_COLUMNS } from './sf-columns';
 
@@ -104,7 +105,7 @@ export async function listStoreIssueLines(
     const orderBy = sfOrderBy(
       STORE_ISSUE_LINE_SF_COLUMNS,
       sf,
-      sql`si.issue_date DESC, si.code DESC, l.line_no`,
+      sql`${newestFirst('si')}, l.line_no, l.id`,
     );
     const where = sql`
       WHERE l.company_id = ${companyId}::uuid

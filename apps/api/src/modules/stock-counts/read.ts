@@ -17,6 +17,7 @@ import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { roundQty } from '../../lib/stock-ledger';
 import { readRevBuckets, readStockPositions } from '../../lib/stock-reservation';
+import { newestFirst } from '../../lib/list-order';
 import { STOCK_COUNT_SF_COLUMNS } from './sf-columns';
 
 const FORM = 'stockcount_create' as const;
@@ -80,7 +81,7 @@ export async function listStockCounts(
     // Sort & Filter (ADR-200): the screen's column filters + sort, through the
     // list's own field whitelist (sf-columns.ts). Applied to list AND count.
     const sf = readSf(q.sf);
-    const orderBy = sfOrderBy(STOCK_COUNT_SF_COLUMNS, sf, sql`sc.count_date DESC, sc.code DESC`);
+    const orderBy = sfOrderBy(STOCK_COUNT_SF_COLUMNS, sf, newestFirst('sc'));
     const where = sql`sc.company_id = ${companyId}::uuid AND sc.deleted_at IS NULL
       ${q.status ? sql`AND sc.status = ${q.status}` : sql``}
       ${term ? sql`AND (sc.code ILIKE ${term} OR sc.remarks ILIKE ${term})` : sql``}

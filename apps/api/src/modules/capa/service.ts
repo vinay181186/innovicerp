@@ -16,6 +16,7 @@ import { requireFormAccess } from '../../lib/access';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { polSql } from '../../lib/pol';
 import { CAPA_NC_REFS_TEXT, CAPA_SF_COLUMNS } from './sf-columns';
@@ -234,11 +235,7 @@ export async function listCapa(
   return withUserContext(user, async (tx) => {
     const where = sql`${capaRecords.companyId} = ${companyId} AND ${capaRecords.deletedAt} IS NULL
       ${capaSearchSql(input.search)} ${sfWhere(CAPA_SF_COLUMNS, sf)}`;
-    const order = sfOrderBy(
-      CAPA_SF_COLUMNS,
-      sf,
-      sql`${capaRecords.capaDate} DESC, ${capaRecords.code} DESC, ${capaRecords.id} DESC`,
-    );
+    const order = sfOrderBy(CAPA_SF_COLUMNS, sf, newestFirst('capa_records'));
     const base = tx.select(CAPA_COLS).from(capaRecords).where(where).orderBy(order);
     const offset = input.offset ?? 0;
     const rows =

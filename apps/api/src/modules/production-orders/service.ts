@@ -85,6 +85,7 @@ import { withUniqueRetry } from '../../lib/db-retry';
 import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { polOf, polSql } from '../../lib/pol';
 import { drawingRevOf } from '../../lib/drawing-rev';
 import { loadRelatedItems } from '../../lib/related-items';
@@ -951,14 +952,8 @@ export async function listProductionOrders(
     const [rows, totals] = await Promise.all([
       baseQuery(tx)
         .where(where)
-        // Newest first; code (unique) as the tie-break keeps paging stable.
-        .orderBy(
-          sfOrderBy(
-            PO_SF_COLUMNS,
-            sf,
-            sql`${productionOrders.createdAt} DESC, ${productionOrders.code} DESC`,
-          ),
-        )
+        // Default (ADR-318): newest created first; id as the tie-break keeps paging stable.
+        .orderBy(sfOrderBy(PO_SF_COLUMNS, sf, newestFirst('production_orders')))
         .limit(query.limit)
         .offset(query.offset),
       tx.select({ value: count() }).from(productionOrders).where(where),

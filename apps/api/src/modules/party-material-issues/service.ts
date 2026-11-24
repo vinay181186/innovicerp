@@ -14,19 +14,7 @@
 // Unused pieces go back to the register with Return to store (partial reversal);
 // a whole wrong issue is cancelled.
 
-import {
-  type SQL,
-  and,
-  count,
-  desc,
-  eq,
-  ilike,
-  isNotNull,
-  isNull,
-  like,
-  or,
-  sql,
-} from 'drizzle-orm';
+import { type SQL, and, count, eq, ilike, isNotNull, isNull, like, or, sql } from 'drizzle-orm';
 import type {
   CancelBlocker,
   CancelEffect,
@@ -66,6 +54,7 @@ import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { PARTY_ISSUE_SF_COLUMNS } from './sf-columns';
 import { ActivityAction } from '@innovic/shared';
 import { softDeleteStamp } from '../../lib/audit-trail';
+import { newestFirst } from '../../lib/list-order';
 import { jcMaterial, jwLineRegister } from './register';
 
 function requireCompany(user: AuthContext): string {
@@ -1015,13 +1004,7 @@ export async function listPartyMaterialIssues(
         )
         .where(where)
         // id last: a unique tie-breaker so paging never skips or repeats a row.
-        .orderBy(
-          sfOrderBy(
-            PARTY_ISSUE_SF_COLUMNS,
-            sf,
-            sql`${desc(partyMaterialIssues.issueDate)}, ${desc(partyMaterialIssues.code)}, ${desc(partyMaterialIssues.id)}`,
-          ),
-        )
+        .orderBy(sfOrderBy(PARTY_ISSUE_SF_COLUMNS, sf, newestFirst('party_material_issues')))
         .limit(input.limit)
         .offset(input.offset),
       // The count carries the same job-card/item LEFT JOINs as the page query

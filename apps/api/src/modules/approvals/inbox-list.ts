@@ -25,6 +25,7 @@ import { approvalInboxListQuerySchema } from '@innovic/shared';
 import { sql, type SQL } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { newestFirst } from '../../lib/list-order';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { loadPoInboxAccess } from '../purchase-orders/approval-inbox';
 import { loadApprovalContext } from '../purchase-orders/service';
@@ -109,8 +110,8 @@ export async function listApprovalInboxSection(
         )})`
       : sql``;
     const where = sql`WHERE TRUE ${searchSql} ${sfWhere(APPROVALS_SF_COLUMNS, sf, opts)}`;
-    // Oldest first (a queue); id last so paging never skips or repeats a row.
-    const order = sfOrderBy(APPROVALS_SF_COLUMNS, sf, sql`t.created_at ASC, t.id ASC`, opts);
+    // ADR-318 — newest first; id last so paging never skips or repeats a row.
+    const order = sfOrderBy(APPROVALS_SF_COLUMNS, sf, newestFirst('t'), opts);
 
     const rows = (await tx.execute(sql`
       SELECT t.*, COUNT(*) OVER ()::int AS total_rows

@@ -25,6 +25,7 @@ import {
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { polOf } from '../../lib/pol';
 import { assertCompanyStoragePath } from '../../lib/storage-path';
 import { emitActivityLog } from '../activity-log/service';
@@ -256,13 +257,7 @@ export async function listQcDocuments(
       )
       .where(where)
       // Ends on the id so paging (ADR-201) never skips or repeats a row.
-      .orderBy(
-        sfOrderBy(
-          QC_DOC_SF_COLUMNS,
-          sf,
-          sql`${qcDocuments.createdAt} DESC, ${qcDocuments.id} DESC`,
-        ),
-      )
+      .orderBy(sfOrderBy(QC_DOC_SF_COLUMNS, sf, newestFirst('qc_documents')))
       .offset(input.offset ?? 0);
     const rows = await (input.limit !== undefined ? pageQuery.limit(input.limit) : pageQuery);
     // Same joins + WHERE as the page, so the total counts what the page pages.

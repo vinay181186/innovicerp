@@ -7,11 +7,18 @@
 
 import type { QcCommandQueueRow, QcCommandQuery, QcQueueSort } from '@innovic/shared';
 
-/** Queue order. Ties fall back to JC No. → op seq → op id (unique). */
+/** Queue order. Ties fall back to JC No. → op seq → op id (unique).
+ *  'newest' (ADR-318, the default): newest created op first, op id last. */
 export function sortQueue(rows: QcCommandQueueRow[], sort: QcQueueSort): QcCommandQueueRow[] {
   const tie = (a: QcCommandQueueRow, b: QcCommandQueueRow): number =>
     a.jcCode.localeCompare(b.jcCode) || a.opSeq - b.opSeq || a.jcOpId.localeCompare(b.jcOpId);
   return [...rows].sort((a, b) => {
+    if (sort === 'newest')
+      return (
+        (b.createdAt ?? '').localeCompare(a.createdAt ?? '') ||
+        a.opSeq - b.opSeq ||
+        b.jcOpId.localeCompare(a.jcOpId)
+      );
     if (sort === 'age') return b.ageDays - a.ageDays || tie(a, b);
     if (sort === 'due') {
       if (a.dueDate !== b.dueDate) {
@@ -30,9 +37,9 @@ export function pageOf<T>(rows: T[], limit: number | undefined, offset: number):
   return limit === undefined ? rows : rows.slice(offset, offset + limit);
 }
 
-/** The no-paging default (every row, oldest first) — callers that pass no query. */
+/** The no-paging default (every row, newest first) — callers that pass no query. */
 export const QC_COMMAND_ALL: QcCommandQuery = {
-  queueSort: 'age',
+  queueSort: 'newest',
   queueOffset: 0,
   fpyOpOffset: 0,
   fpyInspOffset: 0,

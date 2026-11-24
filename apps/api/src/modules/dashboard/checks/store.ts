@@ -31,6 +31,7 @@
 import { docNavPage } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { PO_OPEN_STATUSES, poLinePendingSql } from '../../../lib/po-pending';
+import { createdKey } from '../../../lib/list-order';
 import { partyCommittedQtySql } from '../../party-grn/service';
 import { soCustomerPartRowsSql } from '../../../lib/party-so-parts';
 import { ISSUE_SELECT, TOOL_STILL_OUT } from '../../tool-issues/common';
@@ -42,7 +43,7 @@ export function jwsoToReceiveSql(c: CheckCtx): SQL {
   return sql`
     SELECT jwl.id::text AS row_key, jw.id, jw.code, 'jw'::text AS kind,
            jw.jw_date::text AS doc_date, jwl.due_date::text AS due_date,
-           COALESCE(jwl.due_date, jw.jw_date)::text AS sort_key,
+           ${createdKey('jw.created_at')} AS sort_key,
            COALESCE(cl.name, jw.customer_name)::text AS party,
            -- Owner 2026-11-17: the live -RM item code; PM-#### only as fallback.
            COALESCE(ri.code, pm.item_code_text, pm.code, jwl.item_code_text)::text AS item_code,
@@ -70,7 +71,7 @@ export function soCustomerPartsToReceiveSql(c: CheckCtx): SQL {
   return sql`
     SELECT (so.id::text || ':' || f.item_id::text) AS row_key, so.id, so.code,
            'so'::text AS kind, so.so_date::text AS doc_date, NULL::text AS due_date,
-           so.so_date::text AS sort_key,
+           ${createdKey('so.created_at')} AS sort_key,
            COALESCE(cl.name, so.customer_name)::text AS party,
            f.item_code::text AS item_code, f.item_name::text AS item_name,
            f.pending_qty::numeric AS qty,
@@ -91,7 +92,7 @@ export function poLinesToReceiveSql(c: CheckCtx): SQL {
   return sql`
     SELECT pol.id::text AS row_key, po.id, po.code, po.po_type::text AS kind,
            po.po_date::text AS doc_date, COALESCE(pol.due_date, po.due_date)::text AS due_date,
-           COALESCE(pol.due_date, po.due_date)::text AS sort_key,
+           ${createdKey('po.created_at')} AS sort_key,
            COALESCE(v.name, po.vendor_code_text)::text AS party,
            COALESCE(i.code, pol.item_code_text)::text AS item_code,
            COALESCE(pol.item_name, i.name)::text AS item_name,
@@ -114,7 +115,7 @@ export function toolsOutSql(c: CheckCtx): SQL {
   return sql`
     SELECT x.id::text AS row_key, x.id, x.code, 'tool_issue'::text AS kind,
            x.issue_date::text AS doc_date, x.expected_return_date::text AS due_date,
-           COALESCE(x.expected_return_date, x.issue_date)::text AS sort_key,
+           ${createdKey('x.created_at')} AS sort_key,
            NULL::text AS party, x.item_code::text AS item_code, x.item_name::text AS item_name,
            x.still_out_qty::numeric AS qty, x.uom::text AS uom, NULL::numeric AS amount,
            x.created_by::text AS created_by,
@@ -131,7 +132,7 @@ export function countApprovalSql(c: CheckCtx): SQL {
   return sql`
     SELECT sc.id::text AS row_key, sc.id, sc.code, sc.purpose::text AS kind,
            sc.count_date::text AS doc_date, NULL::text AS due_date,
-           sc.count_date::text AS sort_key,
+           ${createdKey('sc.created_at')} AS sort_key,
            NULL::text AS party, NULL::text AS item_code, NULL::text AS item_name,
            NULL::numeric AS qty, NULL::text AS uom, NULL::numeric AS amount,
            sc.created_by::text AS created_by, 0::int AS is_late,

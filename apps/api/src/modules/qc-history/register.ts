@@ -200,7 +200,8 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
         [incOn ? incPart : null, pgrnOn ? pgrnPart : null, opOn ? opPart : null],
         'pending',
       );
-      order = sql`k0, d_inc ASC, c_inc ASC, d_op DESC NULLS LAST, c_op, s_op, id`;
+      // ADR-318: newest first inside each group (k0 keeps GRN lines above ops).
+      order = sql`k0, d_inc DESC, c_inc DESC, d_op DESC NULLS LAST, c_op, s_op, id`;
     } else {
       const incPart = sql`
         SELECT 'inc'::text AS kind, l.id AS id, ${INC_DONE_AT} AS at ${INC_COMPLETED_SF}

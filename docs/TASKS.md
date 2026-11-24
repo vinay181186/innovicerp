@@ -128,6 +128,13 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 2. **Continue building modules per "build first, audit later" approach.** Phase A foundation masters per ADR-028: BOM Master ✅ (2026-05-20), Route Cards ✅ (2026-05-20). Remaining: **QC Process Master UI** (backend already migrated via T-038, just needs web pages — smallest next slice), **Cost Center Master**, **Settings / Users / Access Control**. Pick whatever module the user wants next; the audit pass works from `docs/ISSUES.md` once the build phase wraps.
 
+## Done on TEST — ADR-318 every list opens newest first (2026-11-24)
+
+Default order of every list = Created On time newest first (`lib/list-order.ts` newestFirst), ~100
+list queries: documents, line views, masters, approval inboxes, QC pending, Home checks (sort_key =
+document created time) and Approvals waiting. QC Center Queue default "Newest First". Kept: work
+queues, value reports, stock-by-item views (KEEP list in `list-order.guard.unit.test.ts`). No migration.
+
 ## Done on TEST — ADR-316 one PO = one vendor + one SO (2026-11-24)
 
 Several PRs on one PO only when same vendor AND same SO (no-SO PRs only with no-SO PRs; same JWSO = same

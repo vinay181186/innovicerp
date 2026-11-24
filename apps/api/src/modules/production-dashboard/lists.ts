@@ -18,6 +18,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { polSql } from '../../lib/pol';
 import { jcOpenSql } from '../../lib/jc-open-sql';
 
@@ -162,7 +163,7 @@ export async function listReadyOps(
       AND (vos.available > 0 OR vos.computed_status = 'in_progress')
       AND ${jcOpenSql('jc')}
       ${sfWhere(PROD_READY_SF_COLUMNS, sf)}`;
-  const order = sfOrderBy(PROD_READY_SF_COLUMNS, sf, sql`jc.code, jo.op_seq, jo.id`);
+  const order = sfOrderBy(PROD_READY_SF_COLUMNS, sf, sql`${newestFirst('jc')}, jo.op_seq, jo.id`);
   return withUserContext(user, async (tx) => {
     const rows = (await tx.execute(sql`
       SELECT

@@ -15,6 +15,7 @@ import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { VENDOR_SF_COLUMNS } from './sf-columns';
 import {
   applyCustomerGstRules,
@@ -143,13 +144,15 @@ export async function listVendors(
 
     const where = and(...conditions);
 
-    // ADR-201: the order always ends on a unique key (code, then id) so a
+    // ADR-201: the order always ends on a unique key (code or created, then id) so a
     // 25-row page never skips or repeats a row — names are not unique.
     const dir = input.sortDir === 'desc' ? desc : asc;
     const baseOrder =
       input.sortBy === 'name'
         ? sql`${dir(vendors.name)}, ${dir(vendors.code)}, ${asc(vendors.id)}`
-        : sql`${dir(vendors.code)}, ${asc(vendors.id)}`;
+        : input.sortBy === 'code'
+          ? sql`${dir(vendors.code)}, ${asc(vendors.id)}`
+          : newestFirst('vendors'); // ADR-318: no sort asked = newest added first
 
     const [rows, totals] = await Promise.all([
       tx

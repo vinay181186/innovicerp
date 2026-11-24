@@ -9,6 +9,7 @@ import { sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 
 /** The list's sortable / filterable fields — each the SAME expression the row shows. */
 export const ASSEMBLY_SF_COLUMNS: SfColumnMap = {
@@ -60,7 +61,7 @@ export async function loadAssemblySoRows(
     : sql``;
   const sf = readSf(input.sf);
   const sfFrag = sfWhere(ASSEMBLY_SF_COLUMNS, sf);
-  const orderBy = sfOrderBy(ASSEMBLY_SF_COLUMNS, sf, sql`so.code ASC, so.id ASC`);
+  const orderBy = sfOrderBy(ASSEMBLY_SF_COLUMNS, sf, sql`${newestFirst('so')}`);
   const rows = await tx.execute(sql`
     SELECT so.id AS "soId", so.code AS "soCode", so.internal_so_no AS "soInternalNo",
            so.customer_name AS "customerName",

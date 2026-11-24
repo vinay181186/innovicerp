@@ -80,7 +80,7 @@ function QcCommandPage(): React.JSX.Element {
   // ADR-201: every table pages at 25 on the server; the stats strip and the
   // table counts are whole-set figures from the same read.
   const [pages, setPages] = useState<Record<PagedTable, number>>(FIRST_PAGES);
-  const [queueSort, setQueueSort] = useState<QcQueueSort>('age');
+  const [queueSort, setQueueSort] = useState<QcQueueSort>('newest');
   // ADR-267: one order pick for the Queue and Rework tabs. Sent only while on them:
   // the header's queue count must not stay narrowed under a tab with no dropdown.
   // ADR-313: kept for this browser tab (sessionStorage), not in the URL.

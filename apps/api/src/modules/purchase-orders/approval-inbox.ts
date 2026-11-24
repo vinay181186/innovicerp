@@ -13,6 +13,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { purchaseOrderLines, purchaseOrders, users, vendors } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { canSeeFormPrice, hasFormAccess } from '../../lib/access';
+import { newestFirst } from '../../lib/list-order';
 import { loadApprovalContext } from './service';
 
 /** The caller's Access Control answers for the PO inbox. Read BEFORE opening
@@ -75,7 +76,7 @@ export async function listPoApprovalInbox(
       ),
     )
     .groupBy(purchaseOrders.id, vendors.name, users.fullName)
-    .orderBy(purchaseOrders.createdAt);
+    .orderBy(newestFirst('purchase_orders'));
 
   return rows
     .filter((r) => isAdmin || r.createdBy === user.id || Number(r.poValue) <= approvalCeiling)

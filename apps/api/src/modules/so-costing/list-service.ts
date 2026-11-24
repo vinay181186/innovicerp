@@ -23,6 +23,7 @@ import { canSeeFormPrice } from '../../lib/access';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 
 export type ListSoCostingQueryParsed = z.output<typeof listSoCostingQuerySchema>;
 
@@ -112,8 +113,8 @@ export async function listSoCosting(
       OR b.cost_center ILIKE ${pat} ESCAPE '\\' OR b.cc_name ILIKE ${pat} ESCAPE '\\')`);
   }
   where.push(sfWhere(SO_COSTING_SF_COLUMNS, sf, sfOpts));
-  // SO No. newest first (as before), id last so a page never skips a row.
-  const order = sfOrderBy(SO_COSTING_SF_COLUMNS, sf, sql`b.so_no DESC, b.so_id DESC`, sfOpts);
+  // ADR-318 — newest created SO first, id last so a page never skips a row.
+  const order = sfOrderBy(SO_COSTING_SF_COLUMNS, sf, sql`${newestFirst('b', 'so_id')}`, sfOpts);
   const limit = input.limit === undefined ? sql.raw('ALL') : sql`${input.limit}`;
 
   return withUserContext(user, async (tx) => {

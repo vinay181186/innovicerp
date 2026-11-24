@@ -5,6 +5,7 @@
 // route-cards/approval-inbox.ts (rcPendingWhereSql).
 
 import { type SQL, sql } from 'drizzle-orm';
+import { createdKey } from '../../../lib/list-order';
 import { rcPendingWhereSql } from '../../route-cards/approval-inbox';
 import { filterFrag, type ListFilter } from './list-query';
 
@@ -13,7 +14,7 @@ export function rcPendingSql(cid: string, f: ListFilter): SQL {
     SELECT rc.id::text AS row_key, rc.id, rc.code, NULL::text AS kind,
            ((rc.created_at AT TIME ZONE 'Asia/Kolkata')::date)::text AS doc_date,
            NULL::text AS due_date,
-           rc.created_at::text AS sort_key,
+           ${createdKey('rc.created_at')} AS sort_key,
            NULL::text AS party,
            i.code::text AS item_code, i.name::text AS item_name,
            COALESCE(op_agg.n, 0)::numeric AS qty, NULL::text AS uom,

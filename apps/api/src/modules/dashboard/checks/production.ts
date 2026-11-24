@@ -24,6 +24,7 @@
 import { docNavPage } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { PLAN_PENDING_QTY_SQL, planDerivedStatusSql } from '../../../lib/plan-order-coverage';
+import { createdKey } from '../../../lib/list-order';
 import { routeCardForItemRevSql } from '../../../lib/route-card-for-rev';
 import type { RawRow } from '../personal/list-query';
 import { planToProSql } from '../personal/rows-planning';
@@ -50,7 +51,7 @@ export function planRcPendingSql(c: CheckCtx): SQL {
   return sql`
     SELECT plans.id::text AS row_key, plans.id, plans.code, ds.st::text AS kind,
            plans.plan_date::text AS doc_date, plans.planned_start_date::text AS due_date,
-           COALESCE(plans.planned_start_date, plans.plan_date)::text AS sort_key,
+           ${createdKey('plans.created_at')} AS sort_key,
            COALESCE(so.customer_name, jw.customer_name)::text AS party,
            COALESCE(i.code, plans.item_code_text)::text AS item_code,
            COALESCE(plans.item_name_text, i.name)::text AS item_name,
@@ -80,7 +81,7 @@ export function proDueWeekSql(c: CheckCtx): SQL {
   return sql`
     SELECT pro.id::text AS row_key, pro.id, pro.code, 'pro'::text AS kind,
            ((pro.created_at AT TIME ZONE 'Asia/Kolkata')::date)::text AS doc_date,
-           pro.target_date::text AS due_date, pro.target_date::text AS sort_key,
+           pro.target_date::text AS due_date, ${createdKey('pro.created_at')} AS sort_key,
            COALESCE(so.customer_name, jw.customer_name)::text AS party,
            COALESCE(i.code, pro.item_code_text)::text AS item_code,
            COALESCE(pro.item_name_text, i.name)::text AS item_name,

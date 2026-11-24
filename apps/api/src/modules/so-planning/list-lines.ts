@@ -13,7 +13,7 @@ import type {
   PlanningLineListQuery,
   PlanningLineListResponse,
 } from '@innovic/shared';
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   bomMasterLines,
   bomMasters,
@@ -36,6 +36,7 @@ import {
   UUID_RE,
 } from './line-facts';
 import { requireFormAccess } from '../../lib/access';
+import { newestFirst } from '../../lib/list-order';
 import { partyGrnStatusByLine } from '../job-work-orders/customer-rm';
 import {
   type PlanningLinePageRow,
@@ -222,7 +223,7 @@ function loadSoLines(tx: DbTransaction, companyId: string) {
         sql`${salesOrderLines.status} <> 'cancelled'`,
       ),
     )
-    .orderBy(desc(salesOrders.code), asc(salesOrderLines.lineNo));
+    .orderBy(newestFirst('sales_orders'), asc(salesOrderLines.lineNo));
 }
 
 async function composeSoRows(
@@ -314,7 +315,7 @@ function loadJwLines(tx: DbTransaction, companyId: string) {
         sql`${jobWorkOrderLines.status} <> 'cancelled'`,
       ),
     )
-    .orderBy(desc(jobWorkOrders.code), asc(jobWorkOrderLines.lineNo));
+    .orderBy(newestFirst('job_work_orders'), asc(jobWorkOrderLines.lineNo));
 }
 
 async function composeJwRows(

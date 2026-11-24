@@ -6,13 +6,14 @@
 // L13269 / _delOspProcess L13288). Soft-delete on remove.
 
 import type { ListOspProcessesResponse, OspProcess, OspProcessInput } from '@innovic/shared';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { ospProcesses, vendors } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireDeleteRight } from '../../lib/access';
 import { requireAdminRole } from '../../lib/auth';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { softDeleteStamp } from '../../lib/audit-trail';
+import { newestFirst } from '../../lib/list-order';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -64,7 +65,7 @@ export async function listOspProcesses(user: AuthContext): Promise<ListOspProces
       .from(ospProcesses)
       .leftJoin(vendors, eq(vendors.id, ospProcesses.vendorId))
       .where(and(eq(ospProcesses.companyId, companyId), isNull(ospProcesses.deletedAt)))
-      .orderBy(asc(ospProcesses.processName));
+      .orderBy(newestFirst('osp_processes')); // ADR-318: newest added first
     return { items: rows.map(rowToOsp) };
   });
 }

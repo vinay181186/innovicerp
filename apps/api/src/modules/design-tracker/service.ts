@@ -37,6 +37,7 @@ import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { DESIGN_TRACKER_SF_COLUMNS, TRACKER_HOURS_SQL } from './sf-columns';
 import { requireFormAccess } from '../../lib/access';
+import { newestFirst } from '../../lib/list-order';
 import {
   AuthorizationError,
   ConflictError,
@@ -224,11 +225,7 @@ export async function listDesignTracker(
         AND dt.deleted_at IS NULL
         ${searchFrag}
         ${sfWhere(DESIGN_TRACKER_SF_COLUMNS, sf)}`;
-    const orderBy = sfOrderBy(
-      DESIGN_TRACKER_SF_COLUMNS,
-      sf,
-      sql`dt.created_at DESC, dt.code DESC, dt.id DESC`,
-    );
+    const orderBy = sfOrderBy(DESIGN_TRACKER_SF_COLUMNS, sf, sql`${newestFirst('dt')}`);
 
     const result = await tx.execute(sql`
       SELECT

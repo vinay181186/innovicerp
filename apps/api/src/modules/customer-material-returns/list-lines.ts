@@ -21,6 +21,7 @@ import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { CUSTOMER_MATERIAL_RETURN_LINE_SF_COLUMNS } from './sf-columns';
 
 function toRow(r: Record<string, unknown>): CustomerMaterialReturnLineRow {
@@ -86,7 +87,7 @@ export async function listCustomerMaterialReturnLines(
     const orderBy = sfOrderBy(
       CUSTOMER_MATERIAL_RETURN_LINE_SF_COLUMNS,
       sf,
-      sql`r.return_date DESC, r.code DESC, l.line_no, l.id`,
+      sql`${newestFirst('r')}, l.line_no, l.id`,
     );
 
     // ONE FROM + WHERE for the page and the count, so the pager agrees.

@@ -127,6 +127,7 @@ import type {
 } from './schema';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { readSf, sfOrderBy } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { polSql } from '../../lib/pol';
 import { displayRouteCardIdSql } from '../../lib/route-card-for-rev';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
@@ -246,9 +247,9 @@ export async function listJobCards(
     // Sort & Filter) live in list-filters.ts — shared with the count below and
     // the JC Status dropdown counts (ADR-201), so they always agree.
     const where = jcListWhere(companyId, input);
-    // A sort always ends on jc.code (unique per company) so paging never
+    // Default (ADR-318): newest created first, ending on jc.id so paging never
     // skips or repeats a card.
-    const orderBy = sfOrderBy(JC_SF_COLUMNS, readSf(input.sf), sql`jc.jc_date DESC, jc.code DESC`);
+    const orderBy = sfOrderBy(JC_SF_COLUMNS, readSf(input.sf), newestFirst('jc'));
 
     const result = await tx.execute(sql`
       SELECT

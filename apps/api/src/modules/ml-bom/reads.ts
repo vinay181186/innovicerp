@@ -5,6 +5,7 @@ import type { DbTransaction } from '../../db/with-user-context';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { maybeTsLike, tsLike } from './helpers';
 import type {
   ListMlBomsQuery,
@@ -83,7 +84,7 @@ export async function listMlBomsTx(
   // Sort & Filter (ADR-200) on the page AND the count (ADR-201).
   const sf = readSf(input.sf);
   const sfFrag = sfWhere(ML_BOM_SF_COLUMNS, sf);
-  const orderBy = sfOrderBy(ML_BOM_SF_COLUMNS, sf, sql`b.code DESC, b.id DESC`);
+  const orderBy = sfOrderBy(ML_BOM_SF_COLUMNS, sf, newestFirst('b'));
 
   const fromWhere = sql`
     FROM public.ml_boms b

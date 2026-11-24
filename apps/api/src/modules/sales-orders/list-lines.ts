@@ -24,6 +24,7 @@ import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { hideSoHeaderMoney, toListItem } from './service';
 import { SO_LINE_SF_COLUMNS } from './sf-columns';
 
@@ -75,13 +76,13 @@ export async function listSalesOrderLines(
     const sf = readSf(input.sf);
     // ADR-303 — the two value fields are money (`price: true`).
     const sfFrag = sfWhere(SO_LINE_SF_COLUMNS, sf, { canSeePrice: showMoney });
-    // Newest order first (as GET /sales-orders), its lines in line order; the
+    // ADR-318 — newest created order first (as GET /sales-orders), its lines in line order; the
     // line id closes the order so pages never skip / repeat a line.
     // so.id closes a line-less row (its l.id is null).
     const orderBy = sfOrderBy(
       SO_LINE_SF_COLUMNS,
       sf,
-      sql`so.so_date DESC, so.code DESC, so.id DESC, l.line_no ASC, l.id ASC`,
+      sql`${newestFirst('so')}, l.line_no ASC, l.id ASC`,
       { canSeePrice: showMoney },
     );
 

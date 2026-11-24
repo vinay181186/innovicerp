@@ -1,11 +1,12 @@
 import { ActivityAction, type DocumentEditStagedResult } from '@innovic/shared';
-import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { costCenters } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import type {
   CostCenter,
@@ -101,7 +102,7 @@ export async function listCostCenters(
         .select()
         .from(costCenters)
         .where(where)
-        .orderBy(sfOrderBy(COST_CENTER_SF_COLUMNS, sf, asc(costCenters.code)))
+        .orderBy(sfOrderBy(COST_CENTER_SF_COLUMNS, sf, newestFirst('cost_centers')))
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(costCenters).where(where),

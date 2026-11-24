@@ -69,6 +69,7 @@ import {
 } from '../../lib/order-totals';
 import { emitActivityLog } from '../activity-log/service';
 import { diffFields, softDeleteStamp, type DiffField } from '../../lib/audit-trail';
+import { newestFirst } from '../../lib/list-order';
 import { linkJcOpToPoLine } from '../job-cards/jc-op-po-links';
 import { loadPrBalances } from '../purchase-requests/service';
 import {
@@ -866,7 +867,7 @@ export async function listPurchaseOrders(
     // The count needs the line totals only when a ▾ filter reads them — an
     // unfiltered count must not aggregate every PO line a second time.
     const countLineAgg = sf && sf.filters.length > 0 ? lineAggJoin : sql``;
-    const orderBy = sfOrderBy(PO_SF_COLUMNS, sf, sql`po.po_date DESC, po.code DESC`, {
+    const orderBy = sfOrderBy(PO_SF_COLUMNS, sf, newestFirst('po'), {
       canSeePrice: showMoney,
     });
 

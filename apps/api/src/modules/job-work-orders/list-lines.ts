@@ -24,6 +24,7 @@ import { AuthorizationError } from '../../lib/errors';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { partyCommittedQtySql } from '../party-grn/service';
 import { customerRmByJw } from './customer-rm';
 import { JW_READ_PAIRS } from './service';
@@ -78,7 +79,7 @@ export async function listJobWorkOrderLines(
     const orderBy = sfOrderBy(
       JWSO_LINE_SF_COLUMNS,
       sf,
-      sql`jw.code DESC, jw.id DESC, l.line_no ASC, l.id ASC`,
+      sql`${newestFirst('jw')}, l.line_no ASC, l.id ASC`,
     );
 
     // FROM + WHERE shared by the page and the count (sf columns read jca).

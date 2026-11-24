@@ -150,14 +150,14 @@ export interface QcInspectorOption {
 // FPY %, Pareto totals and the counts below are whole-set figures); `limit`
 // + the per-table offsets cut each table to the page on screen. No `limit` =
 // every row, as before.
-export const QC_QUEUE_SORTS = ['age', 'due', 'customer'] as const;
+export const QC_QUEUE_SORTS = ['newest', 'age', 'due', 'customer'] as const;
 export type QcQueueSort = (typeof QC_QUEUE_SORTS)[number];
 const qcOffset = z.coerce.number().int().nonnegative().default(0);
 export const qcCommandQuerySchema = z.object({
   /** One order's rows only: the bare SO / JWSO No. picked in the order dropdown (ADR-267). */
   orderCode: z.string().trim().max(40).optional(),
-  /** Queue order: oldest first (default), due date (blank last), customer A→Z. */
-  queueSort: z.enum(QC_QUEUE_SORTS).default('age'),
+  /** Queue order (ADR-318): newest first (default), oldest first, due date (blank last), customer A→Z. */
+  queueSort: z.enum(QC_QUEUE_SORTS).default('newest'),
   limit: z.coerce.number().int().positive().max(1000).optional(),
   queueOffset: qcOffset,
   fpyOpOffset: qcOffset,

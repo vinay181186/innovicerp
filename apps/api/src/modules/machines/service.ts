@@ -1,11 +1,12 @@
 import { ActivityAction, type DocumentEditStagedResult } from '@innovic/shared';
-import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { machineGroups, machines } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import type {
   CreateMachineInput,
@@ -156,7 +157,7 @@ export async function listMachines(
         .select()
         .from(machines)
         .where(where)
-        .orderBy(sfOrderBy(MACHINE_SF_COLUMNS, sf, asc(machines.code), sfOpts))
+        .orderBy(sfOrderBy(MACHINE_SF_COLUMNS, sf, newestFirst('machines'), sfOpts))
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(machines).where(where),
@@ -302,7 +303,8 @@ export async function updateMachineTx(
     updates.machineGroupId = input.machineGroupId;
   }
   if (input.productCode !== undefined) updates.productCode = emptyToNull(input.productCode);
-  if (input.capacityPerShift !== undefined) updates.capacityPerShift = input.capacityPerShift ?? null;
+  if (input.capacityPerShift !== undefined)
+    updates.capacityPerShift = input.capacityPerShift ?? null;
   if (input.shiftsPerDay !== undefined) updates.shiftsPerDay = input.shiftsPerDay;
   if (input.status !== undefined) updates.status = input.status;
   // Money in, same rule as money out: a caller who cannot SEE the hour rate

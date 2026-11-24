@@ -18,6 +18,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { poLinePendingRaw } from '../../lib/po-pending';
+import { newestFirstCols } from '../../lib/list-order';
 import { requireCompany, scShowMoney } from './pending';
 import { SC_PO_SUMMARY_SF_COLUMNS, SC_SO_SF_COLUMNS, SC_VENDOR_SF_COLUMNS } from './sf-columns';
 
@@ -264,7 +265,7 @@ export async function listScPoSummary(
     inner,
     SC_PO_SUMMARY_SF_COLUMNS,
     input,
-    sql`t.po_date DESC, t.po_no DESC, t.po_id`,
+    newestFirstCols('t.po_created_at', 't.po_id'),
     showMoney,
     sql`, COALESCE(SUM(t.grand_total), 0) AS grand`,
   );

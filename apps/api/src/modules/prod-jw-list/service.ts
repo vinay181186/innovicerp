@@ -14,6 +14,7 @@ import type { ListProdJwQuery, ListProdJwResponse, ProdJwListRow } from '@innovi
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
+import { newestFirst } from '../../lib/list-order';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -100,7 +101,7 @@ export async function listProdJw(
         AND jw.deleted_at IS NULL
         ${searchFrag}
       GROUP BY jw.id, c.name
-      ORDER BY jw.jw_date DESC NULLS LAST, jw.code DESC
+      ORDER BY ${newestFirst('jw')}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 

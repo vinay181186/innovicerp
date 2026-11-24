@@ -13,13 +13,14 @@ import { ActivityAction, type DocumentEditStagedResult } from '@innovic/shared';
 //     rather than cascading, so no machine is left holding a dangling FK or
 //     silently un-grouped behind the user's back.
 
-import { and, asc, count, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, count, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { machineGroups, machines } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import type {
   CreateMachineGroupInput,
   ListMachineGroupsQuery,
@@ -90,13 +91,7 @@ export async function listMachineGroups(
         .select()
         .from(machineGroups)
         .where(where)
-        .orderBy(
-          sfOrderBy(
-            MACHINE_GROUP_SF_COLUMNS,
-            sf,
-            sql`${asc(machineGroups.code)}, ${asc(machineGroups.id)}`,
-          ),
-        )
+        .orderBy(sfOrderBy(MACHINE_GROUP_SF_COLUMNS, sf, newestFirst('machine_groups')))
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(machineGroups).where(where),

@@ -27,6 +27,7 @@ import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { polSql } from '../../lib/pol';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { IQC_COMPLETED_SF_COLUMNS, IQC_PENDING_SF_COLUMNS } from './sf-columns';
 
 function dispositionOf(
@@ -107,16 +108,17 @@ export async function getIncomingQc(
     ${searchFrag(q.search, PENDING_SEARCH)} ${sfWhere(IQC_PENDING_SF_COLUMNS, pendingSf)}`;
   const completedFilter = sql`${base} AND ${COMPLETED_WHERE}
     ${searchFrag(q.search, COMPLETED_SEARCH)} ${sfWhere(IQC_COMPLETED_SF_COLUMNS, completedSf)}`;
-  // Oldest first; l.id last so a page never skips or repeats a line.
+  // Default (ADR-318): newest GRN created first on both tabs; l.id last so a
+  // page never skips or repeats a line.
   const pendingOrder = sfOrderBy(
     IQC_PENDING_SF_COLUMNS,
     pendingSf,
-    sql`h.grn_date ASC, h.code ASC, l.id ASC`,
+    sql`${newestFirst('h')}, l.id DESC`,
   );
   const completedOrder = sfOrderBy(
     IQC_COMPLETED_SF_COLUMNS,
     completedSf,
-    sql`COALESCE(l.qc_date, h.grn_date) DESC, h.code DESC, l.id DESC`,
+    sql`${newestFirst('h')}, l.id DESC`,
   );
   // No pendingLimit = every pending line (the QC Call Register's read).
   const pendingLimit = q.pendingLimit !== undefined ? sql`LIMIT ${q.pendingLimit}` : sql``;

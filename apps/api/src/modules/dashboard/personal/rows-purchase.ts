@@ -14,6 +14,7 @@
 import { PO_TYPES, poSendsMaterialOut } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { poLineSentGroupedSql } from '../../../lib/po-line-sent';
+import { createdKey } from '../../../lib/list-order';
 import { PO_OPEN_STATUSES, poLinePendingSql } from '../../../lib/po-pending';
 import { orderedQtySql } from '../../purchase-requests/service';
 import { filterFrag, type ListFilter } from './list-query';
@@ -28,7 +29,7 @@ function prSelect(cid: string, today: string, where: SQL, f: ListFilter): SQL {
   return sql`
     SELECT pr.id::text AS row_key, pr.id, pr.code, NULL::text AS kind,
            pr.pr_date::text AS doc_date, pr.required_date::text AS due_date,
-           pr.pr_date::text AS sort_key,
+           ${createdKey('pr.created_at')} AS sort_key,
            COALESCE(v.name, pr.vendor_code_text)::text AS party,
            COALESCE(i.code, pr.item_code_text)::text AS item_code,
            COALESCE(pr.item_name, i.name)::text AS item_name,
@@ -66,14 +67,13 @@ function poSelect(
   where: SQL,
   having: SQL,
   lateExpr: SQL,
-  sortKey: SQL,
   f: ListFilter,
   sentJoin: SQL = sql``,
 ): SQL {
   return sql`
     SELECT po.id::text AS row_key, po.id, po.code, po.po_type::text AS kind,
            po.po_date::text AS doc_date, po.due_date::text AS due_date,
-           ${sortKey}::text AS sort_key,
+           ${createdKey('po.created_at')} AS sort_key,
            COALESCE(v.name, po.vendor_code_text)::text AS party,
            (ARRAY_AGG(COALESCE(i.code, pol.item_code_text) ORDER BY pol.line_no))[1]::text AS item_code,
            (ARRAY_AGG(COALESCE(pol.item_name, i.name) ORDER BY pol.line_no))[1]::text AS item_name,
@@ -106,7 +106,6 @@ export function poToDcSql(cid: string, today: string, f: ListFilter): SQL {
         AND po.po_type::text = ANY(${sql.param([...SEND_OUT_TYPES])}::text[])`,
     sql`HAVING COALESCE(SUM(${pending}), 0) > 0`,
     sql`po.due_date < ${today}::date`,
-    sql`po.po_date`,
     f,
     sql`LEFT JOIN ${poLineSentGroupedSql(cid)} s ON s.purchase_order_line_id = pol.id`,
   );
@@ -121,21 +120,11 @@ export function poOverdueSql(cid: string, today: string, f: ListFilter): SQL {
         AND po.due_date < ${today}::date`,
     sql``,
     sql`true`,
-    sql`po.due_date`,
     f,
   );
 }
 
 /** POs still waiting for approval (status draft). */
 export function poDraftSql(cid: string, today: string, f: ListFilter): SQL {
-  return poSelect(
-    cid,
-    today,
-    sql`pol.qty`,
-    sql`AND po.status = 'draft'`,
-    sql``,
-    sql`false`,
-    sql`po.po_date`,
-    f,
-  );
+  return poSelect(cid, today, sql`pol.qty`, sql`AND po.status = 'draft'`, sql``, sql`false`, f);
 }

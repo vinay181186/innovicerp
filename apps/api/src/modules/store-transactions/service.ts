@@ -11,6 +11,7 @@ import { createdByNameSql } from '../../lib/created-by-sql';
 import { requireAnyFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import type {
   ItemBalance,
   ListStoreTransactionsQuery,
@@ -97,11 +98,7 @@ export async function listStoreTransactions(
     const totalsSoJoins = sf?.filters.some((f) => f.field === 'soCode')
       ? STOCK_LEDGER_SO_JOINS
       : sql``;
-    const orderBy = sfOrderBy(
-      STOCK_LEDGER_SF_COLUMNS,
-      sf,
-      sql`st.txn_date DESC, st.created_at DESC, st.id DESC`,
-    );
+    const orderBy = sfOrderBy(STOCK_LEDGER_SF_COLUMNS, sf, newestFirst('st'));
 
     const result = await tx.execute(sql`
       SELECT

@@ -8,7 +8,7 @@ import {
   formatRupees,
   orderedCounts,
   poRequestText,
-  sortOldestFirst,
+  sortNewestFirst,
   timeChangeRequestText,
   toIso,
   typeLabelOf,
@@ -77,13 +77,13 @@ describe('counts and order', () => {
     );
   });
 
-  it('oldest first, id breaks ties', () => {
+  it('newest first, id breaks ties (ADR-318)', () => {
     const rows = [
       { id: 'b', raisedAt: '2026-10-02T00:00:00.000Z' },
       { id: 'c', raisedAt: '2026-10-01T00:00:00.000Z' },
       { id: 'a', raisedAt: '2026-10-02T00:00:00.000Z' },
     ];
-    expect(sortOldestFirst(rows).map((r) => r.id)).toEqual(['c', 'a', 'b']);
+    expect(sortNewestFirst(rows).map((r) => r.id)).toEqual(['b', 'a', 'c']);
   });
 
   it('toIso reads Date, ISO and Postgres text', () => {

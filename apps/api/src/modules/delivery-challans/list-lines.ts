@@ -29,6 +29,7 @@ import { AuthorizationError } from '../../lib/errors';
 import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
+import { newestFirst } from '../../lib/list-order';
 import { DC_LINE_ORDER_JOINS, DC_LINE_REV_SQL, DC_LINE_SF_COLUMNS } from './sf-columns';
 
 /** The ONE FROM clause: page, count and summary all read it, so every
@@ -90,7 +91,7 @@ export async function listDeliveryChallanLines(
     const orderBy = sfOrderBy(
       DC_LINE_SF_COLUMNS,
       sf,
-      sql`dc.dc_date DESC, dc.code DESC, dcl.line_no ASC, dcl.id ASC`,
+      sql`${newestFirst('dc')}, dcl.line_no ASC, dcl.id ASC`,
     );
 
     const fromWhere = sql`

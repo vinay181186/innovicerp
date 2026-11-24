@@ -17,6 +17,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { requireAnyFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { roundQty } from '../../lib/stock-ledger';
+import { newestFirst } from '../../lib/list-order';
 import { dateOut, tsOut } from '../instruments/common';
 import {
   ISSUE_SELECT,
@@ -65,7 +66,7 @@ export async function listToolIssues(
     // the summary tiles stay whole-company, as before.
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(TOOL_ISSUE_SF_COLUMNS, sf);
-    const orderBy = sfOrderBy(TOOL_ISSUE_SF_COLUMNS, sf, sql`x.issue_date DESC, x.code DESC`);
+    const orderBy = sfOrderBy(TOOL_ISSUE_SF_COLUMNS, sf, newestFirst('x'));
 
     const rows = (await tx.execute(sql`
       SELECT x.* FROM ${base}

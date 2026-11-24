@@ -4,10 +4,11 @@
 // none of them, and it runs for EVERY open line on every page.
 
 import type { PlanningLineListPlan } from '@innovic/shared';
-import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import { jobCards, plans, routeCards } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
+import { newestFirst } from '../../lib/list-order';
 import {
   LIVE_PLAN,
   loadProductionOrdersByPlan,
@@ -58,7 +59,7 @@ export async function loadListPlansByLine(
         LIVE_PLAN,
       ),
     )
-    .orderBy(asc(plans.code));
+    .orderBy(newestFirst('plans'));
   const posByPlan = await loadProductionOrdersByPlan(
     tx,
     rows.map((r) => r.id),

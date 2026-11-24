@@ -23,6 +23,7 @@
 import { type SQL, sql } from 'drizzle-orm';
 import { QC_OPEN_SQL, QC_PENDING_QTY_SQL } from '../../party-grn/qc-state';
 import { polSql } from '../../../lib/pol';
+import { createdKey } from '../../../lib/list-order';
 import { qcProcessReportJoin } from '../../../lib/qc-process-report';
 import { grnTypeSql } from '../../qc-history/register-incoming';
 import { filterFrag, type ListFilter } from './list-query';
@@ -30,7 +31,7 @@ import { filterFrag, type ListFilter } from './list-query';
 export function grnQcSql(cid: string, f: ListFilter): SQL {
   return sql`
     SELECT g.id::text AS row_key, g.id, g.code, ${grnTypeSql('g')}::text AS kind,
-           g.grn_date::text AS doc_date, NULL::text AS due_date, g.grn_date::text AS sort_key,
+           g.grn_date::text AS doc_date, NULL::text AS due_date, ${createdKey('g.created_at')} AS sort_key,
            COALESCE(v.name, g.vendor_code_text)::text AS party,
            (ARRAY_AGG(COALESCE(i.code, gl.item_code_text) ORDER BY gl.line_no))[1]::text AS item_code,
            (ARRAY_AGG(COALESCE(gl.item_name, i.name) ORDER BY gl.line_no))[1]::text AS item_name,
@@ -52,7 +53,7 @@ export function grnQcSql(cid: string, f: ListFilter): SQL {
     GROUP BY g.id, v.name, po.code
     UNION ALL
     SELECT p.id::text AS row_key, p.id, p.code, 'party_grn'::text AS kind,
-           p.grn_date::text AS doc_date, NULL::text AS due_date, p.grn_date::text AS sort_key,
+           p.grn_date::text AS doc_date, NULL::text AS due_date, ${createdKey('p.created_at')} AS sort_key,
            COALESCE(c.name, p.client_code_text)::text AS party,
            -- Owner 2026-11-17: the first line's live -RM item code (PM-#### fallback).
            (ARRAY_AGG(COALESCE(ri.code, pm.item_code_text, pgl.party_material_code_text)
@@ -83,7 +84,7 @@ export function capaOpenSql(cid: string, today: string, f: ListFilter, extra: SQ
   return sql`
     SELECT c.id::text AS row_key, c.id, c.code, 'capa'::text AS kind,
            c.capa_date::text AS doc_date, c.target_date::text AS due_date,
-           COALESCE(c.target_date, c.capa_date)::text AS sort_key,
+           ${createdKey('c.created_at')} AS sort_key,
            c.department::text AS party, c.item_code::text AS item_code, NULL::text AS item_name,
            NULL::numeric AS qty, NULL::text AS uom, NULL::numeric AS amount,
            c.created_by::text AS created_by,
@@ -118,7 +119,7 @@ export function qcReportMissingSql(cid: string, f: ListFilter): SQL {
     SELECT ol.id::text AS row_key, jc.id, jc.code,
            (CASE WHEN jc.source_so_line_id IS NULL AND jc.source_jw_line_id IS NOT NULL
                  THEN 'jwso' ELSE 'so' END)::text AS kind,
-           ol.log_date::text AS doc_date, NULL::text AS due_date, ol.log_date::text AS sort_key,
+           ol.log_date::text AS doc_date, NULL::text AS due_date, ${createdKey('jc.created_at')} AS sort_key,
            COALESCE(pr.report_name, jo.operation)::text AS party,
            COALESCE(i.code, sol.item_code_text, jwl.item_code_text)::text AS item_code,
            COALESCE(i.name, sol.part_name, jwl.part_name)::text AS item_name,

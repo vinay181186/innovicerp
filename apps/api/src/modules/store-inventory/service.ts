@@ -10,7 +10,7 @@
 // numbers (how much of this item is free, and who is holding the rest), so they
 // belong to the form that already governs it — same permission, same module.
 
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type {
   AdjustStockInput,
   ListReservationsQuery,
@@ -39,6 +39,7 @@ import {
 } from '../../lib/stock-reservation';
 import { readAssemblyReservationRows } from './assembly-reservations';
 import { postStockMove } from '../../lib/stock-ledger';
+import { newestFirst } from '../../lib/list-order';
 import { emitActivityLog } from '../activity-log/service';
 
 function requireCompany(user: AuthContext): string {
@@ -254,7 +255,7 @@ export async function listReservations(
       .leftJoin(jobCards, eq(jobCards.id, soStockReservations.jobCardId))
       .leftJoin(users, eq(users.id, soStockReservations.createdBy))
       .where(and(...filters))
-      .orderBy(desc(soStockReservations.createdAt));
+      .orderBy(newestFirst('so_stock_reservations'));
 
     const detail: ReservationDetail[] = rows.map((row) => {
       const r = row.r;

@@ -3,7 +3,7 @@ import {
   type DocumentEditStagedResult,
   type MasterImportRowResult,
 } from '@innovic/shared';
-import { and, asc, count, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
+import { and, count, eq, ilike, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { operators } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { primeAccess, requireDeleteRight, requireFormAccess } from '../../lib/access';
@@ -11,6 +11,7 @@ import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { dropBlankCells, rawRowText, zodRowReason } from '../../lib/master-rules';
 import { createOperatorInputSchema, updateOperatorImportRowSchema } from './schema';
@@ -129,7 +130,7 @@ export async function listOperators(
         .select()
         .from(operators)
         .where(where)
-        .orderBy(sfOrderBy(OPERATOR_SF_COLUMNS, sf, asc(operators.code)))
+        .orderBy(sfOrderBy(OPERATOR_SF_COLUMNS, sf, newestFirst('operators')))
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(operators).where(where),

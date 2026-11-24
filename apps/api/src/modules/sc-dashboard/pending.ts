@@ -17,6 +17,7 @@ import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
+import { newestFirst } from '../../lib/list-order';
 import {
   PENDING_ITEM_SQL,
   PENDING_QTY_SQL,
@@ -104,7 +105,7 @@ export async function listScPending(
   const order = sfOrderBy(
     SC_PENDING_SF_COLUMNS,
     sf,
-    sql`po.po_date DESC, po.code, pol.line_no, pol.id`,
+    sql`${newestFirst('po')}, pol.line_no, pol.id`,
     opts,
   );
 
@@ -197,11 +198,7 @@ export async function listScRecentGrn(
     WHERE grn.company_id = ${companyId}::uuid
       AND grn.deleted_at IS NULL
       ${sfWhere(SC_GRN_SF_COLUMNS, sf)}`;
-  const order = sfOrderBy(
-    SC_GRN_SF_COLUMNS,
-    sf,
-    sql`grn.grn_date DESC, grn.created_at DESC, grn.id DESC`,
-  );
+  const order = sfOrderBy(SC_GRN_SF_COLUMNS, sf, newestFirst('grn'));
   return withUserContext(user, async (tx) => {
     const rows = (await tx.execute(sql`
       SELECT grn.code AS grn_no, grn.grn_date,

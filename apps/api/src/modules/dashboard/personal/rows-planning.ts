@@ -12,6 +12,7 @@
 
 import { type SQL, sql } from 'drizzle-orm';
 import { PLAN_PENDING_QTY_SQL, planDerivedStatusSql } from '../../../lib/plan-order-coverage';
+import { createdKey } from '../../../lib/list-order';
 import {
   jwLineDirectJcRaw,
   jwLinePlannedRaw,
@@ -36,7 +37,7 @@ function orderRow(today: string): SQL {
 export function soToPlanSql(cid: string, today: string, f: ListFilter): SQL {
   return sql`
     SELECT so.id::text AS row_key, so.id, so.code, 'so'::text AS kind,
-           so.so_date::text AS doc_date, so.so_date::text AS sort_key,
+           so.so_date::text AS doc_date, ${createdKey('so.created_at')} AS sort_key,
            COALESCE(cl.name, so.customer_name)::text AS party,
            ${orderRow(today)}
            so.created_by::text AS created_by,
@@ -59,7 +60,7 @@ export function soToPlanSql(cid: string, today: string, f: ListFilter): SQL {
     HAVING COALESCE(SUM(ln.to_plan), 0) > 0
     UNION ALL
     SELECT jw.id::text AS row_key, jw.id, jw.code, 'jw'::text AS kind,
-           jw.jw_date::text AS doc_date, jw.jw_date::text AS sort_key,
+           jw.jw_date::text AS doc_date, ${createdKey('jw.created_at')} AS sort_key,
            COALESCE(cl.name, jw.customer_name)::text AS party,
            ${orderRow(today)}
            jw.created_by::text AS created_by,
@@ -90,7 +91,7 @@ export function planToProSql(cid: string, today: string, f: ListFilter): SQL {
   return sql`
     SELECT plans.id::text AS row_key, plans.id, plans.code, 'plan'::text AS kind,
            plans.plan_date::text AS doc_date, plans.planned_start_date::text AS due_date,
-           plans.plan_date::text AS sort_key,
+           ${createdKey('plans.created_at')} AS sort_key,
            COALESCE(so.customer_name, jw.customer_name)::text AS party,
            COALESCE(i.code, plans.item_code_text)::text AS item_code,
            COALESCE(plans.item_name_text, i.name)::text AS item_name,
@@ -115,7 +116,7 @@ export function bomPendingSql(cid: string, today: string, f: ListFilter): SQL {
   return sql`
     SELECT so.id::text AS row_key, so.id, so.code, 'so'::text AS kind,
            so.so_date::text AS doc_date, MIN(sol.due_date)::text AS due_date,
-           so.so_date::text AS sort_key,
+           ${createdKey('so.created_at')} AS sort_key,
            COALESCE(cl.name, so.customer_name)::text AS party,
            (ARRAY_AGG(sol.item_code_text ORDER BY sol.line_no))[1]::text AS item_code,
            (ARRAY_AGG(sol.part_name ORDER BY sol.line_no))[1]::text AS item_name,

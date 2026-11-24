@@ -89,7 +89,8 @@ const PENDING_SELECT = sql`
   jo.qc_call_date AS "callDate",
   GREATEST(0, (CURRENT_DATE - COALESCE(jo.qc_call_date, jc.jc_date)))::int AS "waitDays",
   ${PEND_IS_LAST} AS "isLastOp"`;
-const PENDING_ORDER = sql`jc.code, vos.op_seq, vos.jc_op_id`;
+// ADR-318: latest TPI call first, then newest job card, then its ops in sequence.
+const PENDING_ORDER = sql`jo.qc_call_date DESC NULLS LAST, jc.created_at DESC, jc.id DESC, vos.op_seq, vos.jc_op_id`;
 
 const COMPLETED_SELECT = sql`
   ol.id AS "logId", jc.code AS "jcCode", jo.op_seq AS "opSeq",

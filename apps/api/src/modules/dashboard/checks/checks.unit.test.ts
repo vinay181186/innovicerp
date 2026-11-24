@@ -506,8 +506,8 @@ describe('fast path', () => {
     expect(q.sql.match(/::text, \(WITH x AS/g)).toHaveLength(defs.length);
     // 40 checks at most per jsonb_build_object (100-argument limit).
     expect(q.sql.split('jsonb_build_object(').length - 1).toBe(Math.ceil(defs.length / 40));
-    // Late first, then oldest — the one ordering, inside every check.
-    expect(q.sql).toContain('r.is_late DESC, r.sort_key ASC NULLS LAST, r.code ASC, r.row_key ASC');
+    // ADR-318: newest created first — the one ordering, inside every check.
+    expect(q.sql).toContain('r.sort_key DESC NULLS LAST, r.code DESC, r.row_key DESC');
   });
 
   it('only the caller’s visible keys go into the statement', () => {

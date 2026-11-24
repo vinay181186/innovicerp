@@ -90,6 +90,7 @@ import { assertNoRtvPending } from './rtv-candidates';
 import { diffFields } from '../../lib/audit-trail';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
+import { newestFirst } from '../../lib/list-order';
 import {
   DC_HEADER_EDIT_FIELDS,
   dcLineDiffFields,
@@ -279,7 +280,7 @@ export async function listDeliveryChallans(
     const sfFrag = sql`${sfWhere(DC_SF_COLUMNS, sf)} ${lineFrag}`;
     // The lifted filters read the header SO / JC (so, po_so, njc) too.
     const sfJoins = (sf && sf.filters.length > 0) || lifted ? DC_SF_JOINS : sql``;
-    const orderBy = sfOrderBy(DC_SF_COLUMNS, sf, sql`dc.dc_date DESC, dc.code DESC`);
+    const orderBy = sfOrderBy(DC_SF_COLUMNS, sf, newestFirst('dc'));
 
     const result = await tx.execute(sql`
       SELECT

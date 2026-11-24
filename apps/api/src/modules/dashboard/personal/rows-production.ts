@@ -9,11 +9,12 @@
 //                the run has lasted longer than expected: Available × cycle
 //                time (the old work-list overrun rule). x1 = minutes running,
 //                x2 = op seq, x3 = operation; created_by = who started it.
-//   jc_running — open job cards (not closed, an op not complete), late first.
+//   jc_running — open job cards (not closed, an op not complete), newest first.
 //                x1 = ops still open, x2 = ops on the card, x3 = its SO / JWSO
 //                number (the order line the card was raised against).
 
 import { type SQL, sql } from 'drizzle-orm';
+import { createdKey } from '../../../lib/list-order';
 import { READY_FROM } from '../ready-ops';
 import { filterFrag, type ListFilter } from './list-query';
 
@@ -23,7 +24,7 @@ export function opsReadySql(cid: string, today: string, f: ListFilter): SQL {
   return sql`
     SELECT o.id::text AS row_key, jc.id, jc.code, 'op'::text AS kind,
            jc.jc_date::text AS doc_date, jc.due_date::text AS due_date,
-           COALESCE(jc.due_date, DATE '9999-12-31')::text AS sort_key,
+           ${createdKey('jc.created_at')} AS sort_key,
            m.code::text AS party,
            COALESCE(sol.item_code_text,
                     (SELECT i.code FROM public.items i WHERE i.id = jc.item_id))::text AS item_code,
@@ -41,7 +42,7 @@ export function jcRunningSql(cid: string, today: string, f: ListFilter): SQL {
   return sql`
     SELECT jc.id::text AS row_key, jc.id, jc.code, 'jc'::text AS kind,
            jc.jc_date::text AS doc_date, jc.due_date::text AS due_date,
-           jc.jc_date::text AS sort_key, NULL::text AS party,
+           ${createdKey('jc.created_at')} AS sort_key, NULL::text AS party,
            i.code::text AS item_code, i.name::text AS item_name,
            jc.order_qty::numeric AS qty, i.uom::text AS uom, NULL::numeric AS amount,
            jc.created_by::text AS created_by,
@@ -73,7 +74,7 @@ export function opsRunningSql(cid: string, f: ListFilter): SQL {
   return sql`
     SELECT ro.id::text AS row_key, jc.id, jc.code, 'run'::text AS kind,
            ro.start_date::text AS doc_date, NULL::text AS due_date,
-           (ro.start_date + ro.start_time)::text AS sort_key,
+           ${createdKey('jc.created_at')} AS sort_key,
            m.code::text AS party,
            i.code::text AS item_code, i.name::text AS item_name,
            vs.completed_qty::numeric AS qty, i.uom::text AS uom, NULL::numeric AS amount,

@@ -68,6 +68,7 @@ import {
 import { ownDraftPlanRefusal } from './own-draft';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { polOf } from '../../lib/pol';
 import { drawingRevOf } from '../../lib/drawing-rev';
 import { planSfColumns } from './sf-columns';
@@ -541,14 +542,8 @@ export async function listPlans(
       .leftJoin(jobCards, eq(jobCards.id, plans.jcId))
       .leftJoin(sql`public.v_jc_status jcs`, sql`jcs.job_card_id = ${jobCards.id}`)
       .where(and(...conditions))
-      // Ends on plans.id so equal (date, code) rows never swap between pages.
-      .orderBy(
-        sfOrderBy(
-          PLAN_SF_COLUMNS,
-          sf,
-          sql`${plans.planDate} DESC, ${plans.code} ASC, ${plans.id} ASC`,
-        ),
-      )
+      // Default (ADR-318): newest created first; ends on plans.id so paging is stable.
+      .orderBy(sfOrderBy(PLAN_SF_COLUMNS, sf, newestFirst('plans')))
       .limit(query.limit)
       .offset(query.offset);
 

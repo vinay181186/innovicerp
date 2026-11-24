@@ -10,13 +10,14 @@ import type { DocumentEditStagedResult } from '@innovic/shared';
 // on the single form key `rawmat_create` (Production), because Grade and Size
 // are two tabs of one screen in the user's head.
 
-import { and, asc, count, eq, isNull, like, or, sql, type SQL } from 'drizzle-orm';
+import { and, count, eq, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { materialGrades } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import type {
   BulkCreateMaterialGradesInput,
   BulkCreateMaterialGradesResponse,
@@ -92,13 +93,7 @@ export async function listMaterialGrades(
         .select()
         .from(materialGrades)
         .where(where)
-        .orderBy(
-          sfOrderBy(
-            MATERIAL_GRADE_SF_COLUMNS,
-            sf,
-            sql`${asc(materialGrades.code)}, ${asc(materialGrades.id)}`,
-          ),
-        )
+        .orderBy(sfOrderBy(MATERIAL_GRADE_SF_COLUMNS, sf, newestFirst('material_grades')))
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(materialGrades).where(where),

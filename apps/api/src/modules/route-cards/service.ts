@@ -82,6 +82,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { hasFormAccess, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { assertActivePartiesBatch } from '../../lib/active-party';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { RC_SF_COLUMNS } from './sf-columns';
@@ -454,7 +455,7 @@ export async function listRouteCards(
     // is the number of cards the search + filters really match (ADR-201).
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(RC_SF_COLUMNS, sf);
-    const orderBy = sfOrderBy(RC_SF_COLUMNS, sf, sql`rc.code DESC, rc.id DESC`);
+    const orderBy = sfOrderBy(RC_SF_COLUMNS, sf, newestFirst('rc'));
 
     const fromWhere = sql`
       FROM public.route_cards rc

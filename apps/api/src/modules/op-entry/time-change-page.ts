@@ -14,6 +14,7 @@ import { AuthorizationError } from '../../lib/errors';
 import { polSql } from '../../lib/pol';
 import { drawingRevOf } from '../../lib/drawing-rev';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { selectTimeChangeRequests, TIME_CHANGE_FROM } from './service';
 
 /** Each expression is the one the list SELECT shows for that column. */
@@ -85,13 +86,9 @@ export async function listOpLogTimeChangePage(
     : sql``;
   const scope = await decidableTimeChangeScope(user);
   const where = sql`${scope} ${searchFrag} ${sfWhere(TIME_CHANGE_SF_COLUMNS, sf)}`;
-  // Waiting is a FIFO queue (oldest first); the decided tabs read newest
-  // first. Ends on r.id so pages never skip or repeat a request.
-  const fallback =
-    input.status === 'pending' || !input.status
-      ? sql`r.requested_at ASC, r.id ASC`
-      : sql`r.requested_at DESC, r.id DESC`;
-  const orderBy = sfOrderBy(TIME_CHANGE_SF_COLUMNS, sf, fallback);
+  // Every tab reads newest request first (ADR-318 — the waiting tab too).
+  // Ends on r.id so pages never skip or repeat a request.
+  const orderBy = sfOrderBy(TIME_CHANGE_SF_COLUMNS, sf, newestFirst('r', 'id', 'requested_at'));
 
   return withUserContext(user, async (tx) => {
     const items = await selectTimeChangeRequests(tx, companyId, {

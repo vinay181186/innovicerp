@@ -27,6 +27,7 @@ import { withUserContext, type AuthContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { PARTY_GRN_DOC_QC_STATUS_SQL, QC_PENDING_QTY_SQL } from './qc-state';
 import {
   LINE_AGG_SQL,
@@ -80,7 +81,7 @@ export async function listPartyGrnLines(
     const orderBy = sfOrderBy(
       PARTY_GRN_LINE_SF_COLUMNS,
       sf,
-      sql`pg.grn_date DESC, pg.code DESC, pgl.line_no ASC`,
+      sql`${newestFirst('pg')}, pgl.line_no ASC, pgl.id`,
     );
 
     // One FROM-joins + WHERE for the page and the count, so `total` counts

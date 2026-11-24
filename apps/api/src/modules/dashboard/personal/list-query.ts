@@ -1,7 +1,7 @@
 // ADR-250 — the one shape every home list query returns, and the wrapper that
 // pages it. Each list writes an INNER query producing the columns below; the
 // wrapper adds the full count and the late count over EVERY matching row,
-// sorts late first then oldest, and keeps the first page. The same inner query
+// sorts newest created first (ADR-318), and keeps the first page. The same inner query
 // also answers "is this document still open?" for notifications and the
 // Waiting block (ids / createdBy filters), so one predicate serves all three.
 
@@ -77,7 +77,7 @@ export async function runList(tx: DbTransaction, inner: SQL, f: ListFilter): Pro
            COUNT(*) OVER ()::int AS total_n,
            COALESCE(SUM(x.is_late) OVER (), 0)::int AS late_n
     FROM (${inner}) x
-    ORDER BY x.is_late DESC, x.sort_key ASC NULLS LAST, x.code ASC, x.row_key ASC
+    ORDER BY x.sort_key DESC NULLS LAST, x.code DESC, x.row_key DESC
     LIMIT ${limit}
   `)) as unknown as Array<Record<string, unknown>>;
   const rows: RawRow[] = res.map((r) => ({

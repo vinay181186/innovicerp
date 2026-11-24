@@ -62,6 +62,7 @@ import {
 } from '../../lib/errors';
 import { loadRelatedItems } from '../../lib/related-items';
 import { buildTimeline, section, toIsoDate, type RelatedRow } from '../../lib/traceability';
+import { newestFirst } from '../../lib/list-order';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -158,11 +159,7 @@ export async function listDesignProjects(
         AND dp.deleted_at IS NULL
         ${searchFrag}
         ${sfWhere(DESIGN_PROJECT_SF_COLUMNS, sf)}`;
-    const orderBy = sfOrderBy(
-      DESIGN_PROJECT_SF_COLUMNS,
-      sf,
-      sql`dp.created_at DESC, dp.code DESC, dp.id DESC`,
-    );
+    const orderBy = sfOrderBy(DESIGN_PROJECT_SF_COLUMNS, sf, sql`${newestFirst('dp')}`);
 
     const result = await tx.execute(sql`
       SELECT

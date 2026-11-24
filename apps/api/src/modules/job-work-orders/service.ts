@@ -94,6 +94,7 @@ import type {
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { JWSO_SF_COLUMNS } from './sf-columns';
 import { partyCommittedQtySql } from '../party-grn/service';
 import { customerRmByJw } from './customer-rm';
@@ -435,7 +436,7 @@ export async function listJobWorkOrders(
     // list's own whitelist (sf-columns.ts). Applied to list AND count.
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(JWSO_SF_COLUMNS, sf);
-    const orderBy = sfOrderBy(JWSO_SF_COLUMNS, sf, sql`jw.code DESC, jw.id DESC`);
+    const orderBy = sfOrderBy(JWSO_SF_COLUMNS, sf, sql`${newestFirst('jw')}`);
 
     // ONE ROW PER JWSO HEADER (#6 — matches the SO Master list). Line aggregates
     // (count, total qty, earliest due) + rolled-up JC qty across all lines.

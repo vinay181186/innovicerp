@@ -65,7 +65,7 @@ export async function readDrawingApprovals(
           LEFT JOIN public.users au ON au.id = r.approved_by
          WHERE r.company_id = ${companyId}::uuid AND r.deleted_at IS NULL
            AND r.release_status = ${status}
-         ORDER BY 8, r.id
+         ORDER BY 8 DESC, r.id DESC
          LIMIT ${WAITING_APPROVALS_LIMIT}`)) as unknown as DrawingWaiting[],
     );
   const corrections = () =>
@@ -82,7 +82,7 @@ export async function readDrawingApprovals(
           LEFT JOIN public.users u ON u.id = c.requested_by
          WHERE c.company_id = ${companyId}::uuid AND c.deleted_at IS NULL
            AND c.status = 'pending'
-         ORDER BY c.created_at, c.id
+         ORDER BY c.created_at DESC, c.id DESC
          LIMIT ${WAITING_APPROVALS_LIMIT}`)) as unknown as DrawingWaiting[],
     );
 
