@@ -32,6 +32,7 @@ import {
   PO_TYPES,
   type PurchaseOrderDetail,
   type PurchaseOrderLineInput,
+  isPrVendorTbdText,
   type PurchaseRequestDetail,
   SO_GST_PERCENTS,
   taxTypeForSupply,
@@ -67,6 +68,7 @@ import {
 } from '@/modules/sales-orders/components/order-supply-preview';
 import { useCreatePurchaseOrder, useUpdatePurchaseOrder } from '../api';
 import { PO_TYPE_LABELS, PO_VENDOR_STATE_MISSING_NOTE } from '../lib/po-labels';
+import { prOrderKey } from '@/modules/purchase-requests/lib/pr-order-key';
 import { PoFormLine } from './po-form-line';
 import { NEW_PO_LINE, type PoFormLineValue, type PoFormValues } from './po-form-types';
 
@@ -80,13 +82,6 @@ function parseWholeDays(raw: string): number | null {
   const n = Number(t);
   return Number.isFinite(n) ? n : null;
 }
-
-/** vendorCodeText values that mean "no vendor chosen yet", not a real vendor
- *  code. Upper-cased, trimmed — compared against the PR's text the same way.
- *  'TBD' is what Planning (Buy items) and the BOM cascade write; '(VENDOR TBD)'
- *  is the OSP sentinel. A PR carrying one of these takes whatever vendor the
- *  buyer picks on the PO. */
-const VENDOR_TBD_PLACEHOLDERS: ReadonlySet<string> = new Set(['TBD', '(VENDOR TBD)']);
 
 /** Create-mode opening lines: one per incoming PR (PR list "Create PO from
  *  selected" → `?prIds=`, or the single `?prId=` from a PR card / page), each
@@ -206,6 +201,13 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   // has no open PRs. Display copy: the saved value is still the id alone.
   const [vendorPickedLabel, setVendorPickedLabel] = useState('');
   const [prById, setPrById] = useState<Record<string, PurchaseRequestDetail>>({});
+  // ADR-316 — the PRs on the lines as the PO was LOADED (edit only). An old PO
+  // that already mixes SOs keeps saving; only a NEW order joining is blocked.
+  const [loadedPrIds] = useState<ReadonlySet<string>>(() =>
+    props.mode === 'edit'
+      ? new Set(props.detail.lines.map((l) => l.sourcePrId).filter((id): id is string => !!id))
+      : new Set(),
+  );
   // A PR's vendor CODE, when that is the only way the PR names its vendor. See
   // the resolver below — this is the "Create PO" button on the PR page working
   // again.
@@ -501,12 +503,36 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
       .filter(({ pr }) => {
         if (!pr) return false;
         if (pr.vendorId) return pr.vendorId !== vendorId;
-        const text = pr.vendorCodeText?.trim().toUpperCase() ?? '';
-        if (text === '' || VENDOR_TBD_PLACEHOLDERS.has(text) || vendorCode === '') return false;
-        return text !== vendorCode;
+        if (isPrVendorTbdText(pr.vendorCodeText) || vendorCode === '') return false;
+        return pr.vendorCodeText?.trim().toUpperCase() !== vendorCode;
       })
       .map((x) => x.i + 1);
   }, [lines, prById, vendorId, vendorCode]);
+
+  // ADR-316 — one PO takes PRs of ONE SO only (blank SO is its own group). The
+  // first PR line's SO is the PO's SO; a later PR line of another SO is named
+  // and blocks the save. On edit the SOs the PO already had when loaded stay
+  // allowed, so an old mixed PO still saves. Lines without a PR are ignored.
+  // The server refuses the same mix.
+  // The orders of the PRs the PO was loaded with (edit). More than one = an old
+  // PO that already mixed SOs: its line pickers are not narrowed to one SO.
+  const loadedOrderKeys = useMemo(
+    () => new Set([...loadedPrIds].flatMap((id) => (prById[id] ? [prOrderKey(prById[id])] : []))),
+    [loadedPrIds, prById],
+  );
+  const wrongOrderLines = useMemo(() => {
+    const prLines = lines
+      .map((l, i) => ({ i, id: l.sourcePrId, pr: l.sourcePrId ? prById[l.sourcePrId] : undefined }))
+      .filter((x): x is { i: number; id: string; pr: PurchaseRequestDetail } => !!x.id && !!x.pr)
+      .map((x) => ({ i: x.i, id: x.id, key: prOrderKey(x.pr) }));
+    if (new Set(prLines.map((x) => x.key)).size <= 1) return [];
+    // Every order the PO had when loaded stays allowed (same rule as the
+    // server's findOrderClash), even when that PR's line was swapped since.
+    const allowed = new Set(loadedOrderKeys);
+    const first = prLines[0];
+    if (first) allowed.add(first.key);
+    return prLines.filter((x) => !allowed.has(x.key)).map((x) => x.i + 1);
+  }, [lines, prById, loadedOrderKeys]);
 
   // ── The ONE blocking message, shown beside Save in amber. First problem wins,
   //    so the buyer is told what to do next rather than handed a list.
@@ -523,6 +549,12 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
       return wrongVendorLines.length === 1
         ? `Line ${which} is a PR for a different vendor — remove it or change the vendor back`
         : `Lines ${which} are PRs for a different vendor — remove them or change the vendor back`;
+    }
+    if (wrongOrderLines.length > 0) {
+      const which = wrongOrderLines.join(', ');
+      return wrongOrderLines.length === 1
+        ? `Line ${which} is a PR for a different SO — one PO takes PRs of one SO only. Remove it.`
+        : `Lines ${which} are PRs for a different SO — one PO takes PRs of one SO only. Remove them.`;
     }
     if (lines.length === 0) return 'Add at least one line';
     for (const [i, l] of lines.entries()) {
@@ -542,7 +574,16 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
     return null;
     // `lines` is a watched array — a new identity on every keystroke, which is
     // exactly when this must recompute.
-  }, [isEdit, poDate, deliveryDate, vendorId, vendorCodeText, wrongVendorLines, lines]);
+  }, [
+    isEdit,
+    poDate,
+    deliveryDate,
+    vendorId,
+    vendorCodeText,
+    wrongVendorLines,
+    wrongOrderLines,
+    lines,
+  ]);
 
   const submitting = formState.isSubmitting || createPo.isPending || updatePo.isPending;
   const disabled = submitting || blocking !== null;
@@ -896,6 +937,12 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                       .filter((_, i) => i !== idx)
                       .map((l) => l.sourcePrId)
                       .filter((x): x is string => Boolean(x))}
+                    sameOrderAsPrId={
+                      loadedOrderKeys.size > 1
+                        ? null
+                        : (lines.find((l, i) => i !== idx && Boolean(l.sourcePrId))?.sourcePrId ??
+                          null)
+                    }
                     onPrLoaded={onPrLoaded}
                     onRemove={() => remove(idx)}
                     canRemove={fields.length > 1}

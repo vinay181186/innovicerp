@@ -106,6 +106,7 @@ import type {
 } from './schema';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { assertPrsHaveNoPendingCancel } from '../purchase-requests/cancel';
+import { assertPrsFitPoVendor, assertPrsShareOneOrder, prIdsAfterSave } from './pr-one-order';
 import { markPoCancelledTx, releaseJcOpsForCancelledPo } from './po-cancel-writer';
 import {
   PO_FIRST_SO_CODE,
@@ -1545,6 +1546,17 @@ export async function createPurchaseOrder(
           lineCountByPr.get(pr.id) ?? 0,
         );
       }
+      // ADR-316 — one order and the header's vendor (PR rows locked above).
+      await assertPrsShareOneOrder(tx, companyId, { beforePrIds: [], afterPrIds: distinctPrIds });
+      await assertPrsFitPoVendor(
+        tx,
+        companyId,
+        {
+          vendorId: input.header.vendorId ?? null,
+          vendorCodeText: input.header.vendorCodeText ?? null,
+        },
+        distinctPrIds,
+      );
     }
     // Header `pr_id` can only hold ONE PR, so it is stamped only when there IS
     // one — same rule (and same reason) as the batch path. `pr_code_text` is the
@@ -2392,6 +2404,32 @@ export async function updatePurchaseOrderTx(
     // Same quantity cap as the create paths (ADR-152 phase 2). Runs BEFORE
     // the merge writes anything, so a refusal leaves the PO exactly as it was.
     await assertLinesWithinPrBalances(tx, companyId, existingHdr, input.lines);
+  }
+  // ADR-316 — PRs of one order and of this PO's vendor, judged on the lines as
+  // they will stand after mergeLines (PR rows locked above and in the helper).
+  // A PO that already mixed orders stays editable; the vendor is checked on
+  // newly added PRs, or on every PR when this save changes the vendor.
+  {
+    const beforePrIds = [
+      ...new Set(beforeLineRows.flatMap((r) => (r.sourcePrId ? [r.sourcePrId] : []))),
+    ];
+    const afterPrIds =
+      input.lines !== undefined ? prIdsAfterSave(beforeLineRows, input.lines) : beforePrIds;
+    const nextVendorCodeText =
+      h.vendorCodeText !== undefined ? (h.vendorCodeText ?? null) : existingHdr.vendorCodeText;
+    const vendorEdited =
+      vendorChanged ||
+      (nextVendorCodeText ?? '').trim().toUpperCase() !==
+        (existingHdr.vendorCodeText ?? '').trim().toUpperCase();
+    await assertPrsShareOneOrder(tx, companyId, { beforePrIds, afterPrIds });
+    await assertPrsFitPoVendor(
+      tx,
+      companyId,
+      { vendorId: nextVendorId ?? null, vendorCodeText: nextVendorCodeText },
+      vendorEdited ? afterPrIds : afterPrIds.filter((p) => !beforePrIds.includes(p)),
+    );
+  }
+  if (input.lines !== undefined) {
     await mergeLines(tx, id, companyId, input.lines, user, showMoney);
   }
 
@@ -3921,6 +3959,15 @@ export async function createPurchaseOrderFromPrBatch(
       tx,
       companyId,
       prRows.map((p) => p.id),
+    );
+    // ADR-316 — one order and the chosen vendor (PR rows locked above).
+    const batchPrIds = prRows.map((p) => p.id);
+    await assertPrsShareOneOrder(tx, companyId, { beforePrIds: [], afterPrIds: batchPrIds });
+    await assertPrsFitPoVendor(
+      tx,
+      companyId,
+      { vendorId: input.vendorId, vendorCodeText: null },
+      batchPrIds,
     );
 
     // Sort PRs by created_at so line_no ordering is stable.

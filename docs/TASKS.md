@@ -128,6 +128,12 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 2. **Continue building modules per "build first, audit later" approach.** Phase A foundation masters per ADR-028: BOM Master ✅ (2026-05-20), Route Cards ✅ (2026-05-20). Remaining: **QC Process Master UI** (backend already migrated via T-038, just needs web pages — smallest next slice), **Cost Center Master**, **Settings / Users / Access Control**. Pick whatever module the user wants next; the audit pass works from `docs/ISSUES.md` once the build phase wraps.
 
+## Done on TEST — ADR-316 one PO = one vendor + one SO (2026-11-24)
+
+Several PRs on one PO only when same vendor AND same SO (no-SO PRs only with no-SO PRs; same JWSO = same
+order). Server refuses on create / edit / batch; PR list + Outsource Jobs lock the SO when ticking; PO form
+blocks a second SO; line picker lists same-SO PRs only. No migration. Not on PROD.
+
 ## Done on TEST — ADR-313 page stays when you switch tabs (2026-11-24)
 
 - Tab bar keeps the list query; sub-tabs / pickers / expanded rows kept (sessionStorage); list + page scroll back on a tab return.

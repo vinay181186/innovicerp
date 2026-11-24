@@ -134,6 +134,12 @@ export const purchaseRequestDetailSchema = purchaseRequestSchema.extend({
   sourceJcCode: z.string().nullable(), // resolved from job_cards via source_jc_op_id
   sourceJcOpSeq: z.number().int().positive().nullable(),
   soCode: z.string().nullable(), // resolved from sales_orders via source_so_line_id
+  /** ADR-316 — the ONE order this PR belongs to, worked out by the server
+   *  (apps/api/src/lib/pr-order-key.ts): 'so:<id>' | 'jw:<id>' | 'none'. The
+   *  one-SO-per-PO rule keys on this on every screen and on the server. */
+  orderKey: z.string().default('none'),
+  /** ADR-316 — that order's No. (SO, else JWSO); null = no SO behind the PR. */
+  orderCode: z.string().nullable().default(null),
   soInternalNo: z.string().nullable().optional(), // ADR-207 Internal SO No., live off sales_orders
   soLineNo: z.number().int().positive().nullable(),
 });
@@ -173,6 +179,12 @@ export const purchaseRequestListItemSchema = purchaseRequestSchema.extend({
   // Resolved from sales_orders via source_so_line_id, so the list "SO / JC"
   // column shows the real SO for an SO-sourced PR instead of a dash.
   soCode: z.string().nullable(),
+  /** ADR-316 — the ONE order this PR belongs to, worked out by the server
+   *  (apps/api/src/lib/pr-order-key.ts): 'so:<id>' | 'jw:<id>' | 'none'. The
+   *  one-SO-per-PO rule keys on this on every screen and on the server. */
+  orderKey: z.string().default('none'),
+  /** ADR-316 — that order's No. (SO, else JWSO); null = no SO behind the PR. */
+  orderCode: z.string().nullable().default(null),
   soInternalNo: z.string().nullable().optional(), // ADR-207 Internal SO No., live off sales_orders
   soLineNo: z.number().int().positive().nullable(),
 });
@@ -261,6 +273,33 @@ export const rejectPurchaseRequestInputSchema = z.object({
 });
 export type RejectPurchaseRequestInput = z.infer<typeof rejectPurchaseRequestInputSchema>;
 
+// ─── ADR-316 — one PO = one vendor + one order ─────────────────────────────
+
+/** The vendor text the generators plant when nobody knows the vendor yet:
+ *  'TBD' (Planning Buy-item / BOM-cascade / ML plan PRs) and '(vendor TBD)'
+ *  (OSP PRs). Upper-cased. A PR carrying one of these fits ANY vendor — the
+ *  buyer picks the vendor on the PO. One list for the PO form AND the server. */
+export const PR_VENDOR_TBD_TEXTS: ReadonlySet<string> = new Set(['TBD', '(VENDOR TBD)']);
+
+/** True when a PR's vendor text is blank or a TBD placeholder. */
+export function isPrVendorTbdText(text: string | null | undefined): boolean {
+  const t = (text ?? '').trim().toUpperCase();
+  return t === '' || PR_VENDOR_TBD_TEXTS.has(t);
+}
+
+/** The refusal both the server and the PO form show when PRs of two orders
+ *  meet on one PO. `null` order = a PR with no SO / JWSO behind it. */
+export function prDifferentOrderMessage(
+  a: { code: string; orderCode: string | null },
+  b: { code: string; orderCode: string | null },
+): string {
+  const name = (o: string | null): string => o ?? 'no SO';
+  return (
+    `One PO takes PRs of one SO only — ${b.code} is for ${name(b.orderCode)}, ` +
+    `${a.code} is for ${name(a.orderCode)}. Make a separate PO.`
+  );
+}
+
 // ─── Query filters ─────────────────────────────────────────────────────────
 
 export const listPurchaseRequestsQuerySchema = z.object({
@@ -284,6 +323,11 @@ export const listPurchaseRequestsQuerySchema = z.object({
   orderBand: z.enum(['open', 'ordered']).optional(),
   /** Outsource Jobs tab (ADR-201): PRs raised off this Job Card (its code). */
   sourceJcCode: z.string().trim().min(1).max(64).optional(),
+  /** ADR-316 — one PO = one vendor + one order. The PO form's PR picker passes
+   *  a PR already on the PO; only PRs for the SAME order come back (same SO,
+   *  same JWSO, or — for a PR with no order behind it — other no-order PRs).
+   *  The order is the one the SO No. column shows (PR_ORDER_CODE). */
+  sameOrderAs: z.string().uuid().optional(),
   /** Inclusive lower bound on pr_date (YYYY-MM-DD). */
   fromDate: z
     .string()

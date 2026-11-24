@@ -26,6 +26,8 @@ function toQueryString(q: ListPurchaseRequestsQuery): string {
   if (q.prType) params.set('prType', q.prType);
   if (q.vendorId) params.set('vendorId', q.vendorId);
   if (q.sourceJcOpId) params.set('sourceJcOpId', q.sourceJcOpId);
+  // ADR-316: only PRs of the same SO as this PR (one PO = one SO).
+  if (q.sameOrderAs) params.set('sameOrderAs', q.sameOrderAs);
   // Only PRs with quantity still left to order (ADR-152). Sent only when true —
   // an absent param means "no balance filter", which is what every other list
   // on this screen wants.

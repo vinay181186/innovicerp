@@ -45,6 +45,7 @@ import { usePrPrint } from '../components/use-pr-print';
 import { prOrderBalance } from '../lib/pr-balance';
 import { PR_STATUS_LABELS } from '../lib/pr-labels';
 import { usePrSelection } from '../lib/use-pr-selection';
+import { PR_DIFFERENT_ORDER_TIP } from '../lib/pr-order-key';
 import { prExportSpec } from '../lib/export';
 
 const PAGE_SIZE = 25;
@@ -352,6 +353,16 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                     {sel.lockedVendor ? (
                       <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                         Vendor <span className="text2 fw-700">{sel.lockedVendor.label}</span>
+                      </span>
+                    ) : null}
+                    {sel.lockedOrder ? (
+                      <span
+                        className="text3"
+                        style={{ fontSize: 'var(--fs-xs)' }}
+                        title={PR_DIFFERENT_ORDER_TIP}
+                      >
+                        {sel.lockedOrder.label === 'No SO' ? null : 'SO '}
+                        <span className="text2 fw-700">{sel.lockedOrder.label}</span>
                       </span>
                     ) : null}
                     <button type="button" className="btn btn-ghost btn-sm" onClick={sel.clear}>
