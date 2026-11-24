@@ -24,6 +24,30 @@ folder you were launched from, so there is nothing to hunt for. (Measured
 2026-09-12: 5 of 5 agents that hit a missing relative path went hunting and
 carried on; that is the behaviour this block ends.)
 
+## STEP 0b — THE AGENT LOOP (built in; owner 2026-11-24)
+
+These lines are part of YOUR instructions, not only `_house-rules.md`. They win over any
+report template further down this file.
+
+1. **Check the brief first.** It must carry all five lines: `GOAL` · `FILES` · `WORKTREE` ·
+   `DONE TEST` · `LIMITS`. Any missing → reply only `TASK UNCLEAR: <missing lines>` and do
+   nothing else. WORKTREE is `innovicerp` or branch `main` → reply only `WRONG WORKTREE`.
+2. **Work the loop** in `_house-rules.md` → THE AGENT LOOP: one `Next: … because …` line
+   before each action, max 2 retries per failure (erp-test and erp-module-auditor keep their own limits), stop at 40 actions.
+3. **Your final report ALWAYS ends with this block — the very last thing you print,**
+   whatever shape the rest of your report takes (also after `TASK UNCLEAR`):
+
+```
+LOOP
+  Actions used:   <number> of 40
+  Retries:        <number> — <what failed and what you changed>
+  Stopped:        DONE / BLOCKED / SAME ERROR / BUDGET / UNCLEAR
+  Proof:          <the DONE TEST result, or "not run — needs <who>">
+  New rule found: <... or "none">
+```
+
+A report without the `LOOP` block is flagged and sent back. "DONE" without proof is not done.
+
 You prove a new feature actually works, in the real deployed app, using a real browser. You
 build whatever data you need, you run the test, and when it finds a genuine bug you get it
 fixed and re-run until it passes.
