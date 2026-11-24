@@ -4,7 +4,7 @@ import type { CreatePurchaseRequestInput, UpdatePurchaseRequestInput } from '@in
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useCanOpen } from '@/components/shared/action-link';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
@@ -17,7 +17,7 @@ import { useCreatePurchaseRequest, usePurchaseRequest, useUpdatePurchaseRequest 
 import { PrStatusBadge } from '../components/pr-status-badge';
 import type { PrFormValues } from '../components/pr-form-values';
 import { type PrKeepValues, PurchaseRequestForm } from '../components/purchase-request-form';
-import { useFormDraft } from '@/lib/use-form-draft';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 // "Raise PR" links (Store Inventory low-stock row, Item Master detail) open this
 // page with the item — and, from Store Inventory, the shortfall qty — already
@@ -60,23 +60,7 @@ function PurchaseRequestNewPage(): React.JSX.Element {
   const goBack = useCallback(() => void navigate({ to: '/purchase-requests' }), [navigate]);
   const { itemId, qty } = purchaseRequestNewRoute.useSearch();
   // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
-  const [draftValues, setDraftValues] = useState<unknown>(null);
-  const draftApply = useRef<(v: unknown) => void>(() => undefined);
-  const draftLink = useMemo(
-    () => ({
-      onValues: setDraftValues,
-      bind: (apply: (v: unknown) => void) => {
-        draftApply.current = apply;
-      },
-    }),
-    [],
-  );
-  const draft = useFormDraft({
-    key: `pr-new:${itemId ?? ''}:${qty ?? ''}`,
-    ready: draftValues !== null,
-    values: draftValues,
-    apply: (v) => draftApply.current(v),
-  });
+  const { draft, link: draftLink } = usePageDraft({ key: `pr-new:${itemId ?? ''}:${qty ?? ''}` });
   const exit = useExitConfirm({ onExit: goBack, draft });
 
   const itemQ = useItem(itemId);
@@ -215,22 +199,8 @@ function PurchaseRequestEditPage(): React.JSX.Element {
     [navigate, id],
   );
   // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
-  const [draftValues, setDraftValues] = useState<unknown>(null);
-  const draftApply = useRef<(v: unknown) => void>(() => undefined);
-  const draftLink = useMemo(
-    () => ({
-      onValues: setDraftValues,
-      bind: (apply: (v: unknown) => void) => {
-        draftApply.current = apply;
-      },
-    }),
-    [],
-  );
-  const draft = useFormDraft({
+  const { draft, link: draftLink } = usePageDraft({
     key: `pr-edit:${id}`,
-    ready: draftValues !== null,
-    values: draftValues,
-    apply: (v) => draftApply.current(v),
     version: detail?.updatedAt,
   });
   const exit = useExitConfirm({ onExit: goBack, draft });

@@ -123,10 +123,14 @@ export function RelatedDocsTabs({
   module,
   id,
   extraTabs,
+  rememberKey,
 }: {
   module: string;
   id: string;
   extraTabs?: RelatedDocsExtraTab[];
+  /** ADR-313 — remember the picked category under this name (`<docType>:<id>`).
+   *  Omit it and the panel keeps plain state. */
+  rememberKey?: string | undefined;
 }): React.JSX.Element | null {
   const { data } = useQuery<DocumentTraceability>({
     queryKey: [...relatedDocsKeys.all, module, id],
@@ -157,6 +161,7 @@ export function RelatedDocsTabs({
     <RelatedDocs
       sections={sections.map(toSection)}
       extraTabs={extras}
+      rememberKey={rememberKey}
       // The timeline stays always-visible under the chosen category, exactly
       // where it has always been. No events, no rail — not an empty heading.
       {...(events.length > 0

@@ -12,7 +12,7 @@
 // Returned/Pending columns + the status label are additions over the legacy
 // modal, carried over from the legacy register's own columns (L24469-24471).
 
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import type { JwDcOutwardDetail } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Ban, Loader2 } from 'lucide-react';
@@ -45,7 +45,7 @@ export const jwDcOutwardDetailRoute = createRoute({
 
 function JwDcOutwardDetailPage(): React.JSX.Element {
   const { id } = jwDcOutwardDetailRoute.useParams();
-  const { data: dc, isLoading, isError, error } = useJwDcOutwardDetail(id);
+  const { data: dc, isLoading, isError, error, isPlaceholderData } = useJwDcOutwardDetail(id);
   const { data: me } = useSession();
   const { data: vendor } = useVendor(dc?.vendorId ?? undefined);
   const { data: company } = useMyCompany();
@@ -66,7 +66,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!dc) {
+  if (!dc || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="panel">
         <div className="panel-body">

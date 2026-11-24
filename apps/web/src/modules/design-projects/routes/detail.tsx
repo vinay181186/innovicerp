@@ -145,7 +145,7 @@ function DesignProjectDetailPage(): React.JSX.Element {
       {tab === 'checklist' ? <ChecklistTab detail={data} checkDone={checkDone} /> : null}
       {tab === 'dcr' ? <DcrDcnTab detail={data} /> : null}
 
-      <RelatedDocsTabs module="design-projects" id={id} />
+      <RelatedDocsTabs module="design-projects" id={id} rememberKey={`design-project:${id}`} />
     </div>
   );
 }

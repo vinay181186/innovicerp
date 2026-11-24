@@ -35,7 +35,7 @@ import { PartyGrnPendingChanges } from '../components/party-grn-pending-changes'
 import { PartyGrnQcModal } from '../components/party-grn-qc-modal';
 import { usePartyGrnPrint } from '../components/use-party-grn-print';
 import { PGRN_QC_BADGE, pgrnQcLabel, pgrnQcStateOfGrn } from '../lib/qc-state';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 
 export const partyGrnDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -55,14 +55,10 @@ function PartyGrnDetailPage(): React.JSX.Element {
   // The 60 s poll pauses while the Edit / QC popup is open (they read the same
   // query), so a refresh never re-seeds a form under the user's typing — as on
   // the list, where the popups open with no poll on this key.
-  const {
-    data: g,
-    isLoading,
-    isError,
-    error,
-  } = usePartyGrnDetail(id, {
+  const query = usePartyGrnDetail(id, {
     poll: !editOpen && !qcOpen,
   });
+  const { data: g, isLoading, isError, error } = query;
   const { data: eff } = useMyAccess();
   // The same rights as the list row ⋯ (routes/list.tsx).
   const perms = effectiveFormPerms(eff, 'party_create');
@@ -75,7 +71,7 @@ function PartyGrnDetailPage(): React.JSX.Element {
   // is undefined only while access loads — never block then.
   if (eff && !perms.view && !qcPerms.view) return <PageState as="page" state="noaccess" />;
   if (isLoading) return <PageState as="page" state="loading" message="Loading Party GRN…" />;
-  if (!g) {
+  if (!g || hardError(query)) {
     return (
       <PageState
         as="page"

@@ -32,7 +32,7 @@ import {
 import { roleLabel } from '@/lib/role-label';
 import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
 import { FormActions } from '@/ui/layout';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 
 /** The bottom bar sits outside the form's panel; `form=` keeps Save its submit button. */
 const FORM_ID = 'user-edit-form';
@@ -89,7 +89,8 @@ function UserEditPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: me } = useSession();
   const isAdmin = me?.role === 'admin';
-  const { data: detail, isLoading, isError, error } = useUser(isAdmin ? id : undefined);
+  const query = useUser(isAdmin ? id : undefined);
+  const { data: detail, isLoading, isError, error } = query;
   const toast = useToast();
   const update = useUpdateUser(id);
   const fetchUser = useFetchUser();
@@ -175,7 +176,7 @@ function UserEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!detail) {
+  if (!detail || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">

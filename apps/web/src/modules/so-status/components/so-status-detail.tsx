@@ -4,7 +4,7 @@
 // type + due colour), Equipment-BOM banner, per-line panels (tracker chips +
 // OSP alerts + JC table + Create JC / Create PO), Equipment-BOM items table.
 
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { Icon } from '@/ui/core';
 import {
   type PlanningLine,
@@ -105,7 +105,7 @@ export function SoStatusDetailView({ soId }: { soId: string }): React.JSX.Elemen
 }
 
 function SoStatusDetailBody({ soId }: { soId: string }): React.JSX.Element {
-  const { data, isLoading, isError, error, refetch } = useSoStatus(soId);
+  const { data, isLoading, isError, error, isPlaceholderData, refetch } = useSoStatus(soId);
   // Planning detail powers the inline plan actions (remaining qty, BOM flags).
   const planning = usePlanningSoDetail(soId);
   const [modal, setModal] = useState<PlanModal>({ kind: 'none' });
@@ -129,7 +129,7 @@ function SoStatusDetailBody({ soId }: { soId: string }): React.JSX.Element {
       </div>
     );
   }
-  if (!data) {
+  if (!data || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="empty-state" style={{ color: 'var(--red2)', padding: 'var(--sp-5)' }}>
         {error instanceof Error ? error.message : 'Could not load SO status. Try again.'}

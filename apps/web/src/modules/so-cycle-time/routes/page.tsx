@@ -16,7 +16,7 @@
 // Every duration rendered here is SERVER-computed (so-cycle-time/service.ts ->
 // lib/so-phase-data.ts computeDurations); this page only renders them.
 
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { SO_CYCLE_TIME_SHOW, type SoCycleTimeRow, type SoCycleTimeShow } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -98,7 +98,7 @@ function SoCycleTimePage(): React.JSX.Element {
     () => ({ show: filter, search: urlSearch.q, sf: sf.param }),
     [filter, urlSearch.q, sf.param],
   );
-  const { data, isLoading, isError, error } = useSoCycleTime(
+  const { data, isLoading, isError, error, isPlaceholderData } = useSoCycleTime(
     params,
     LIST_PAGE_SIZE,
     pageOffset(urlSearch.page),
@@ -135,7 +135,7 @@ function SoCycleTimePage(): React.JSX.Element {
       </ReportShell>
     );
   }
-  if (!data) {
+  if (!data || hardError({ isError, error, isPlaceholderData })) {
     return (
       <ReportShell title={title}>
         <div className="empty-state" style={{ color: 'var(--red2)' }}>

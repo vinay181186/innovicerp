@@ -16,7 +16,8 @@
 
 import type { CreateTpiMasterInput, TpiMaster, UpdateTpiMasterInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useEffect, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
+import { type FormDraftLink, useFormDraftLink } from '@/lib/use-form-draft';
 import { useForm } from 'react-hook-form';
 import { FormActions } from '@/ui/layout';
 
@@ -59,12 +60,6 @@ type EditMode = {
   onCancel?: () => void;
 };
 
-/** ADR-313 — lets the page keep a draft of this form (lib/use-form-draft.tsx). */
-export interface FormDraftLink {
-  onValues: (values: unknown) => void;
-  bind: (apply: (values: unknown) => void) => void;
-}
-
 export type TpiMasterFormProps = (CreateMode | EditMode) & { draftLink?: FormDraftLink };
 
 export function TpiMasterForm(props: TpiMasterFormProps): React.JSX.Element {
@@ -76,13 +71,7 @@ export function TpiMasterForm(props: TpiMasterFormProps): React.JSX.Element {
   const errors = formState.errors;
   // ADR-313 — tell the page about every change (its draft), and let it put one back.
   const { draftLink } = props;
-  const watched = JSON.stringify(watch());
-  useEffect(() => {
-    draftLink?.bind((v) => reset(v as FormValues, { keepDefaultValues: true }));
-  }, [draftLink, reset]);
-  useEffect(() => {
-    draftLink?.onValues(JSON.parse(watched) as unknown);
-  }, [draftLink, watched]);
+  useFormDraftLink(draftLink, watch(), (v) => reset(v as FormValues, { keepDefaultValues: true }));
 
   const onValid = async (values: FormValues): Promise<void> => {
     if (isEdit) {

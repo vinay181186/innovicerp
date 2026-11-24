@@ -1,9 +1,10 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { useDraftSink } from '@/lib/use-form-draft';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { isStagedResult } from '@/modules/document-edits/api';
@@ -26,7 +27,8 @@ export const bomMasterEditRoute = createRoute({
 function BomMasterEditPage(): React.JSX.Element {
   const { id } = bomMasterEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useBomMaster(id);
+  const detailQuery = useBomMaster(id);
+  const { data: detail, isLoading, isError, error } = detailQuery;
   const saveKey = useSaveKey();
   const update = useUpdateBomMaster(id, saveKey);
   // R5 — the version this form opened with; a save over someone else's newer
@@ -40,11 +42,11 @@ function BomMasterEditPage(): React.JSX.Element {
     () => void navigate({ to: '/bom-masters/$id', params: { id } }),
     [navigate, id],
   );
-  // ADR-313 — the form below keeps a draft; its `clear` lands here for the guard.
-  const draftClear = useRef<() => void>(() => undefined);
+  // ADR-313 — the form below keeps a draft; it lands in the sink for the guard.
+  const { sink: draftSink, draft: pageDraft } = useDraftSink();
   const exit = useExitConfirm({
     onExit: goBack,
-    draft: { band: null, clear: () => draftClear.current() },
+    draft: pageDraft,
   });
 
   const initialLines = useMemo<BomFormLineDraft[]>(
@@ -115,7 +117,7 @@ function BomMasterEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!detail) {
+  if (!detail || hardError(detailQuery)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -140,7 +142,7 @@ function BomMasterEditPage(): React.JSX.Element {
         draftSlot={{
           key: `bom-edit:${id}`,
           version: opened.expected() ?? null,
-          clearRef: draftClear,
+          sink: draftSink,
         }}
         mode="edit"
         bom={detail}

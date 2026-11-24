@@ -22,8 +22,8 @@ import type {
   SourceFieldDescriptor,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState, type CSSProperties, type DragEvent } from 'react';
-import { useFormDraft, type FormDraft } from '@/lib/use-form-draft';
+import { useMemo, useState, type CSSProperties, type DragEvent } from 'react';
+import { useDraftSinkFill, useFormDraft, type FormDraft } from '@/lib/use-form-draft';
 import { FormActions } from '@/ui/layout';
 import { ResultTable } from './result-table';
 
@@ -193,10 +193,7 @@ export function Builder(props: Props): JSX.Element {
     },
     version: props.draftVersion,
   });
-  const draftSink = props.draftSink;
-  useEffect(() => {
-    if (draftSink) draftSink.current = draft;
-  });
+  useDraftSinkFill(props.draftSink, draft);
 
   const source = useMemo(
     () => sources.find((s) => s.sourceKey === sourceKey),

@@ -3,7 +3,7 @@
 import type { CreateMachineInput, UpdateMachineInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useEditConflict } from '@/lib/use-edit-conflict';
@@ -13,8 +13,8 @@ import { useToast } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateMachine, useFetchMachine, useMachine, useUpdateMachine } from '../api';
 import { MachineForm } from '../components/machine-form';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
-import { useFormDraft } from '@/lib/use-form-draft';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 // ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
@@ -73,23 +73,7 @@ function MachineNewPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/machines' }), [navigate]);
   // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
-  const [draftValues, setDraftValues] = useState<unknown>(null);
-  const draftApply = useRef<(v: unknown) => void>(() => undefined);
-  const draftLink = useMemo(
-    () => ({
-      onValues: setDraftValues,
-      bind: (apply: (v: unknown) => void) => {
-        draftApply.current = apply;
-      },
-    }),
-    [],
-  );
-  const draft = useFormDraft({
-    key: 'machine-new',
-    ready: draftValues !== null,
-    values: draftValues,
-    apply: (v) => draftApply.current(v),
-  });
+  const { draft, link: draftLink } = usePageDraft({ key: 'machine-new' });
   const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: CreateMachineInput): Promise<void> => {
@@ -141,7 +125,8 @@ function MachineNewPage(): React.JSX.Element {
 function MachineEditPage(): React.JSX.Element {
   const { id } = machineEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: machine, isLoading, isError, error } = useMachine(id);
+  const query = useMachine(id);
+  const { data: machine, isLoading, isError, error } = query;
   const update = useUpdateMachine(id);
   const toast = useToast();
   const { data: eff } = useMyAccess();
@@ -166,22 +151,8 @@ function MachineEditPage(): React.JSX.Element {
     [navigate, id],
   );
   // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
-  const [draftValues, setDraftValues] = useState<unknown>(null);
-  const draftApply = useRef<(v: unknown) => void>(() => undefined);
-  const draftLink = useMemo(
-    () => ({
-      onValues: setDraftValues,
-      bind: (apply: (v: unknown) => void) => {
-        draftApply.current = apply;
-      },
-    }),
-    [],
-  );
-  const draft = useFormDraft({
+  const { draft, link: draftLink } = usePageDraft({
     key: `machine-edit:${id}`,
-    ready: draftValues !== null,
-    values: draftValues,
-    apply: (v) => draftApply.current(v),
     version: machine?.updatedAt,
   });
   const exit = useExitConfirm({ onExit: goBack, draft });
@@ -228,7 +199,7 @@ function MachineEditPage(): React.JSX.Element {
     );
   }
 
-  if (!machine) {
+  if (!machine || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">

@@ -4,10 +4,11 @@
 // planned this way and the picker stays empty.
 
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useDraftSink } from '@/lib/use-form-draft';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { PageState } from '@/ui/layout';
@@ -36,11 +37,11 @@ function MlPlanNewPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'mlplan_create');
   const goBack = useCallback(() => void navigate({ to: '/ml-plans' }), [navigate]);
-  // ADR-313 — the form below keeps a draft; its `clear` lands here for the guard.
-  const draftClear = useRef<() => void>(() => undefined);
+  // ADR-313 — the form below keeps a draft; it lands in the sink for the guard.
+  const { sink: draftSink, draft: pageDraft } = useDraftSink();
   const exit = useExitConfirm({
     onExit: goBack,
-    draft: { band: null, clear: () => draftClear.current() },
+    draft: pageDraft,
   });
   const toast = useToast();
 
@@ -90,7 +91,7 @@ function MlPlanNewPage(): React.JSX.Element {
       <MlPlanForm
         draftSlot={{
           key: `ml-plan-new:${salesOrderId ?? ''}:${soLineId ?? ''}`,
-          clearRef: draftClear,
+          sink: draftSink,
         }}
         mode="create"
         initialLine={preLine}

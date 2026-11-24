@@ -1,8 +1,9 @@
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useDraftSink } from '@/lib/use-form-draft';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useToast } from '@/ui/feedback';
@@ -43,11 +44,11 @@ function RouteCardNewPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'routecard_create');
   const toast = useToast();
   const goBack = useCallback(() => void navigate({ to: '/route-cards' }), [navigate]);
-  // ADR-313 — the form below keeps a draft; its `clear` lands here for the guard.
-  const draftClear = useRef<() => void>(() => undefined);
+  // ADR-313 — the form below keeps a draft; it lands in the sink for the guard.
+  const { sink: draftSink, draft: pageDraft } = useDraftSink();
   const exit = useExitConfirm({
     onExit: goBack,
-    draft: { band: null, clear: () => draftClear.current() },
+    draft: pageDraft,
   });
 
   const submit = async (
@@ -93,7 +94,7 @@ function RouteCardNewPage(): React.JSX.Element {
     <>
       {exit.dialog}
       <RouteCardForm
-        draftSlot={{ key: `rc-new:${search.itemId ?? ''}`, clearRef: draftClear }}
+        draftSlot={{ key: `rc-new:${search.itemId ?? ''}`, sink: draftSink }}
         mode="create"
         initialHeader={{
           code: '',

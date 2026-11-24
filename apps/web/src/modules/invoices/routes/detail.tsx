@@ -29,7 +29,7 @@
 // columns (invoice_date / due_date / payment_date) are `date`, not timestamptz,
 // so no UTC-shift bug exists at these render sites.
 
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import {
   PAYMENT_MODES,
   PLACE_OF_SUPPLY_UNKNOWN_NOTE,
@@ -86,7 +86,7 @@ const todayStr = (): string => todayIst();
 
 function InvoiceDetailPage(): React.JSX.Element {
   const { id } = invoiceDetailRoute.useParams();
-  const { data: inv, isLoading, isError, error } = useInvoice(id);
+  const { data: inv, isLoading, isError, error, isPlaceholderData } = useInvoice(id);
   const { data: company } = useMyCompany();
   const addPayment = useAddPayment(id);
   const toast = useToast();
@@ -133,7 +133,7 @@ function InvoiceDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!inv) {
+  if (!inv || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load invoice. Try again.'}

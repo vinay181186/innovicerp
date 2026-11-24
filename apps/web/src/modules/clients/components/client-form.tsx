@@ -41,7 +41,7 @@ import {
   type UseFormReturn,
   useForm,
 } from 'react-hook-form';
-import { useFormDraft, type FormDraft } from '@/lib/use-form-draft';
+import { useDraftSinkFill, useFormDraft, type FormDraft } from '@/lib/use-form-draft';
 import {
   GST_CATEGORY_OPTIONS,
   type PartyGstNotes,
@@ -87,10 +87,7 @@ function useSinkedDraft<V extends FieldValues>(form: UseFormReturn<V>, p: DraftP
     apply: (v) => form.reset(v, { keepDefaultValues: true }),
     version: p.draftVersion,
   });
-  const sink = p.draftSink;
-  useEffect(() => {
-    if (sink) sink.current = draft;
-  });
+  useDraftSinkFill(p.draftSink, draft);
   return draft;
 }
 

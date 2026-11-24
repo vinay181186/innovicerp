@@ -43,7 +43,7 @@ import { useBomMastersList } from '@/modules/bom-master/api';
 import { apiDownload, apiFetch } from '@/lib/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
-import { useFormDraft, type FormDraft } from '@/lib/use-form-draft';
+import { useDraftSinkFill, useFormDraft, type FormDraft } from '@/lib/use-form-draft';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useClientPoCheck } from '@/lib/use-client-po-check';
 import { useClientsList } from '@/modules/clients/api';
@@ -418,10 +418,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     },
     version: props.draftVersion,
   });
-  const draftSink = props.draftSink;
-  useEffect(() => {
-    if (draftSink) draftSink.current = draft;
-  });
+  useDraftSinkFill(props.draftSink, draft);
   const [showAddClient, setShowAddClient] = useState(false);
   // ADR-234 — "+ New" customer needs Customer Master Entry; Attach Email Ref /
   // Upload PO Doc go to the JWSO documents API, which takes Entry OR Edit.

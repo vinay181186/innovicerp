@@ -3,7 +3,7 @@
 import type { CreateOperatorInput, UpdateOperatorInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useEditConflict } from '@/lib/use-edit-conflict';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -13,8 +13,8 @@ import { useToast } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateOperator, useFetchOperator, useOperator, useUpdateOperator } from '../api';
 import { OperatorForm } from '../components/operator-form';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
-import { useFormDraft } from '@/lib/use-form-draft';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 // ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
@@ -64,23 +64,7 @@ function OperatorNewPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'operator_create');
   const goBack = useCallback(() => void navigate({ to: '/operators' }), [navigate]);
   // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
-  const [draftValues, setDraftValues] = useState<unknown>(null);
-  const draftApply = useRef<(v: unknown) => void>(() => undefined);
-  const draftLink = useMemo(
-    () => ({
-      onValues: setDraftValues,
-      bind: (apply: (v: unknown) => void) => {
-        draftApply.current = apply;
-      },
-    }),
-    [],
-  );
-  const draft = useFormDraft({
-    key: 'operator-new',
-    ready: draftValues !== null,
-    values: draftValues,
-    apply: (v) => draftApply.current(v),
-  });
+  const { draft, link: draftLink } = usePageDraft({ key: 'operator-new' });
   const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: CreateOperatorInput): Promise<void> => {
@@ -151,7 +135,8 @@ function OperatorEditPage(): React.JSX.Element {
   // Tier gate — editing a saved operator needs `edit` (L3 Editor and up).
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const canEdit = effectiveFormPerms(eff, 'operator_create').edit;
-  const { data: operator, isLoading, isError, error } = useOperator(canEdit ? id : undefined);
+  const query = useOperator(canEdit ? id : undefined);
+  const { data: operator, isLoading, isError, error } = query;
   const update = useUpdateOperator(id);
   const toast = useToast();
   const fetchOperator = useFetchOperator();
@@ -175,22 +160,8 @@ function OperatorEditPage(): React.JSX.Element {
     [navigate, id],
   );
   // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
-  const [draftValues, setDraftValues] = useState<unknown>(null);
-  const draftApply = useRef<(v: unknown) => void>(() => undefined);
-  const draftLink = useMemo(
-    () => ({
-      onValues: setDraftValues,
-      bind: (apply: (v: unknown) => void) => {
-        draftApply.current = apply;
-      },
-    }),
-    [],
-  );
-  const draft = useFormDraft({
+  const { draft, link: draftLink } = usePageDraft({
     key: `operator-edit:${id}`,
-    ready: draftValues !== null,
-    values: draftValues,
-    apply: (v) => draftApply.current(v),
     version: operator?.updatedAt,
   });
   const exit = useExitConfirm({ onExit: goBack, draft });
@@ -254,7 +225,7 @@ function OperatorEditPage(): React.JSX.Element {
     );
   }
 
-  if (!operator) {
+  if (!operator || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">

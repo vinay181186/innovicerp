@@ -18,7 +18,7 @@
 import { type CreateGoodsReceiptNoteInput, poSendsMaterialOut, roundQty } from '@innovic/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { todayIst } from '@/lib/date';
-import { useFormDraft } from '@/lib/use-form-draft';
+import { useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
 import { partyDocName } from '@/lib/item-code';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
@@ -195,7 +195,7 @@ export function GrnAgainstPoForm({
       setLinesTouched(v.linesTouched);
     },
   });
-  draftSlot.current = draft;
+  useDraftSinkFill(draftSlot, draft);
 
   const vendorLabel = po ? (po.vendorName ?? po.vendorCodeText ?? '') : '';
 

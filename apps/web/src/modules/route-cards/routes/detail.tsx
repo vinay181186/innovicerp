@@ -24,7 +24,7 @@ import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDateTime } from '@/lib/date';
 import { runPrint } from '@/lib/print/preview-host';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useSession } from '@/lib/session';
 import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 import { DrawingStatusLink, ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
@@ -61,7 +61,8 @@ type TabKey = 'ops' | 'revisions';
 function RouteCardDetailPage(): React.JSX.Element {
   const { id } = routeCardDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useRouteCard(id);
+  const detailQuery = useRouteCard(id);
+  const { data: detail, isLoading, isError, error } = detailQuery;
   const { data: eff } = useMyAccess();
   const { data: me } = useSession();
   const perms = effectiveFormPerms(eff, 'routecard_create');
@@ -120,7 +121,7 @@ function RouteCardDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!detail) {
+  if (!detail || hardError(detailQuery)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -355,7 +356,12 @@ function RouteCardDetailPage(): React.JSX.Element {
         {tab === 'revisions' ? <RouteCardRevisionHistory revisions={detail.revisions} /> : null}
       </Panel>
 
-      <RelatedDocsTabs module="route-cards" id={detail.id} extraTabs={[historyTab]} />
+      <RelatedDocsTabs
+        module="route-cards"
+        id={detail.id}
+        extraTabs={[historyTab]}
+        rememberKey={`route-card:${detail.id}`}
+      />
 
       <ConfirmDialog
         open={confirmDelete}

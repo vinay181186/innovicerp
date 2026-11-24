@@ -3,13 +3,13 @@
 import type { GoodsReceiptNoteDetail, UpdateGoodsReceiptNoteInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useEditConflict } from '@/lib/use-edit-conflict';
-import type { FormDraft } from '@/lib/use-form-draft';
+import { useDraftSink } from '@/lib/use-form-draft';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useToast } from '@/ui/feedback';
 import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
@@ -162,11 +162,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
   );
   // ADR-313 — the form keeps its own draft and puts it in `formDraft`; the
   // guard forwards Save / Cancel / Exit to it.
-  const formDraft = useRef<FormDraft | null>(null);
-  const draft = useMemo<FormDraft>(
-    () => ({ band: null, clear: () => formDraft.current?.clear() }),
-    [],
-  );
+  const { sink: formDraft, draft } = useDraftSink();
   const exit = useExitConfirm({ onExit: goBack, draft });
   // Save lives in FormActions; the form reports whether it can submit.
   const [formStatus, setFormStatus] = useState({

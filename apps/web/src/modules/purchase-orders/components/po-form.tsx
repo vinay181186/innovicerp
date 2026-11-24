@@ -210,6 +210,13 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   // the resolver below — this is the "Create PO" button on the PR page working
   // again.
   const [seedVendorCode, setSeedVendorCode] = useState('');
+  // PO Type is seeded ONCE, from the first PR seen, and only while the buyer has
+  // not picked a type himself. Same mapping the API uses when it converts a PR
+  // (createPurchaseOrderFromPr): a job-work / OSP PR is Job Work, a service PR
+  // is Service, anything else is Standard. Create mode only; edit never retypes.
+  const poTypeSeeded = useRef(false);
+  // Set when the buyer changes the PO Type dropdown themselves.
+  const poTypePicked = useRef(false);
   // ADR-313 — the half-typed PO survives a tab switch (lib/use-form-draft.tsx).
   // The vendor box's shown name travels with it, so the restored vendor reads right.
   const draft = useFormDraft({
@@ -220,6 +227,10 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
     ready: true,
     values: { form: form.watch(), vendorSeedLabel, vendorPickedLabel },
     apply: (v) => {
+      // The restored PO Type is the user's: a PR that loads later must not
+      // re-seed it (onPrLoaded).
+      poTypeSeeded.current = true;
+      poTypePicked.current = true;
       form.reset(v.form, { keepDefaultValues: true });
       setVendorSeedLabel(v.vendorSeedLabel);
       setVendorPickedLabel(v.vendorPickedLabel);
@@ -228,13 +239,6 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   });
   const exit = useExitConfirm({ onExit: goBack, draft });
   const autoRemark = useRef('');
-  // PO Type is seeded ONCE, from the first PR seen, and only while the buyer has
-  // not picked a type himself. Same mapping the API uses when it converts a PR
-  // (createPurchaseOrderFromPr): a job-work / OSP PR is Job Work, a service PR
-  // is Service, anything else is Standard. Create mode only; edit never retypes.
-  const poTypeSeeded = useRef(false);
-  // Set when the buyer changes the PO Type dropdown themselves.
-  const poTypePicked = useRef(false);
   const onPrLoaded = useCallback(
     (pr: PurchaseRequestDetail) => {
       setPrById((m) => (m[pr.id] ? m : { ...m, [pr.id]: pr }));

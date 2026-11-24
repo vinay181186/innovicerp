@@ -40,7 +40,7 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { Copy, Upload } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiDownload, apiFetch } from '@/lib/api';
-import { useFormDraft } from '@/lib/use-form-draft';
+import { type FormDraft, useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
 import { getCol, normalizeHeaderKey, readSheetRows } from '@/lib/xlsx-import';
 import { itemsKeys, useItemsList } from '@/modules/items/api';
 import { useMaterialGradesList, useMaterialSizesList } from '@/modules/raw-material/api';
@@ -154,9 +154,13 @@ interface BomFormProps {
   submitError: string | null;
   onCancel: () => void;
   /** ADR-313 — keep a draft of what is typed (lib/use-form-draft.tsx). The page
-   *  names the draft and gets `clear` back for its exit guard. */
+   *  names the draft and gets it back through `sink` for its exit guard. */
   draftSlot?:
-    | { key: string | null; version?: string | null | undefined; clearRef: { current: () => void } }
+    | {
+        key: string | null;
+        version?: string | null | undefined;
+        sink: { current: FormDraft | null };
+      }
     | undefined;
 }
 
@@ -998,10 +1002,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     },
     version: props.draftSlot?.version,
   });
-  const draftClearRef = props.draftSlot?.clearRef;
-  useEffect(() => {
-    if (draftClearRef) draftClearRef.current = formDraft.clear;
-  }, [draftClearRef, formDraft.clear]);
+  useDraftSinkFill(props.draftSlot?.sink, formDraft);
 
   return (
     <form onSubmit={submit}>

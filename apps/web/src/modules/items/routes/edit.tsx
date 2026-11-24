@@ -13,7 +13,7 @@
 
 import type { CreateItemInput, UpdateItemInput } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -25,8 +25,8 @@ import { type ServerFieldErrors, serverFieldErrorsOf } from '@/modules/settings/
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateItem, useItem, useUpdateItem } from '../api';
 import { ItemForm } from '../components/item-form';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
-import { useFormDraft } from '@/lib/use-form-draft';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 export const itemNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -56,23 +56,7 @@ function ItemNewPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'item_create');
   const goBack = useCallback(() => void navigate({ to: '/items' }), [navigate]);
   // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
-  const [draftValues, setDraftValues] = useState<unknown>(null);
-  const draftApply = useRef<(v: unknown) => void>(() => undefined);
-  const draftLink = useMemo(
-    () => ({
-      onValues: setDraftValues,
-      bind: (apply: (v: unknown) => void) => {
-        draftApply.current = apply;
-      },
-    }),
-    [],
-  );
-  const draft = useFormDraft({
-    key: 'item-new',
-    ready: draftValues !== null,
-    values: draftValues,
-    apply: (v) => draftApply.current(v),
-  });
+  const { draft, link: draftLink } = usePageDraft({ key: 'item-new' });
   const exit = useExitConfirm({ onExit: goBack, draft });
   const toast = useToast();
 
@@ -131,7 +115,8 @@ function ItemNewPage(): React.JSX.Element {
 function ItemEditPage(): React.JSX.Element {
   const { id } = itemEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: item, isLoading, isError, error } = useItem(id);
+  const query = useItem(id);
+  const { data: item, isLoading, isError, error } = query;
   const saveKey = useSaveKey();
   const update = useUpdateItem(id, saveKey);
   // R5: the version this form was opened from — a save after someone else
@@ -150,22 +135,8 @@ function ItemEditPage(): React.JSX.Element {
   );
   const goToList = useCallback(() => void navigate({ to: '/items' }), [navigate]);
   // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
-  const [draftValues, setDraftValues] = useState<unknown>(null);
-  const draftApply = useRef<(v: unknown) => void>(() => undefined);
-  const draftLink = useMemo(
-    () => ({
-      onValues: setDraftValues,
-      bind: (apply: (v: unknown) => void) => {
-        draftApply.current = apply;
-      },
-    }),
-    [],
-  );
-  const draft = useFormDraft({
+  const { draft, link: draftLink } = usePageDraft({
     key: `item-edit:${id}`,
-    ready: draftValues !== null,
-    values: draftValues,
-    apply: (v) => draftApply.current(v),
     version: item?.updatedAt,
   });
   const exit = useExitConfirm({ onExit: goBack, draft });
@@ -209,7 +180,7 @@ function ItemEditPage(): React.JSX.Element {
     );
   }
 
-  if (!item) {
+  if (!item || hardError(query)) {
     return (
       <>
         <PageHeader title="Edit Item" backLabel={BACK_TO_LIST} onBack={goToList} />

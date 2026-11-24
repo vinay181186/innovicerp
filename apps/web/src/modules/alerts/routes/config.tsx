@@ -14,7 +14,7 @@
 // Port-only beyond legacy's four columns: the rule `description` sub-line and
 // the Setting column ("Changed" when overridden, blank for default) — both real server fields.
 
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
@@ -65,7 +65,7 @@ function AlertsConfigPage() {
 }
 
 function ConfigTable() {
-  const { data, isLoading, isError, error } = useAlertConfig();
+  const { data, isLoading, isError, error, isPlaceholderData } = useAlertConfig();
   const toggle = useToggleAlert();
   const toast = useToast();
   const [pending, setPending] = useState<string | null>(null);
@@ -82,7 +82,7 @@ function ConfigTable() {
       </div>
     );
   }
-  if (!data) {
+  if (!data || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="panel">
         <div className="empty-state">

@@ -21,7 +21,7 @@
 // The active tab lives in the URL (`?tab=`); each tab's label carries its
 // table's server total.
 
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { z } from 'zod';
@@ -57,7 +57,7 @@ export const scDashboardRoute = createRoute({
 });
 
 function ScDashboardPage(): React.JSX.Element {
-  const { data, isLoading, isError, error } = useScDashboard();
+  const { data, isLoading, isError, error, isPlaceholderData } = useScDashboard();
   const search = scDashboardRoute.useSearch();
   const navigate = scDashboardRoute.useNavigate();
   const tab: ScTab = search.tab ?? 'pending';
@@ -72,7 +72,7 @@ function ScDashboardPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!data) {
+  if (!data || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error

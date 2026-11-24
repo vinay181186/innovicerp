@@ -8,7 +8,7 @@
 // totals row over every MATCHING item — never the 25 on screen. The Excel
 // export fetches every matching row.
 
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { ITEM_TYPES, type StockValuationRow } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -86,7 +86,11 @@ function StockValuationPage(): React.JSX.Element {
     [urlSearch.category, showZero, urlSearch.q, sf.param],
   );
   const offset = pageOffset(urlSearch.page);
-  const { data, isLoading, isError, error } = useStockValuation(params, LIST_PAGE_SIZE, offset);
+  const { data, isLoading, isError, error, isPlaceholderData } = useStockValuation(
+    params,
+    LIST_PAGE_SIZE,
+    offset,
+  );
   const gotoPage = useCallback((p: number) => go({ page: p }), [go]);
   useClampPage(urlSearch.page, data?.total, gotoPage);
 
@@ -222,7 +226,7 @@ function StockValuationPage(): React.JSX.Element {
       </div>,
     );
   }
-  if (!data) {
+  if (!data || hardError({ isError, error, isPlaceholderData })) {
     return shell(
       <div className="empty-state" style={{ color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load stock valuation. Try again.'}

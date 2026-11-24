@@ -3,10 +3,10 @@
 import type { CreateSalesOrderInput, UpdateSalesOrderInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { useExitConfirm } from '@/lib/exit-guard';
-import type { FormDraft } from '@/lib/use-form-draft';
+import { useDraftSink } from '@/lib/use-form-draft';
 import { useLiveChangeNotice } from '@/lib/use-live-change-notice';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -94,11 +94,7 @@ function SalesOrderNewPage(): React.JSX.Element {
   const emailFileRef = useRef<File | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/sales-orders' }), [navigate]);
   // ADR-313 — the form keeps the draft; this hands its clear() to the exit guard.
-  const draftSink = useRef<FormDraft | null>(null);
-  const draft = useMemo<FormDraft>(
-    () => ({ band: null, clear: () => draftSink.current?.clear() }),
-    [],
-  );
+  const { sink: draftSink, draft } = useDraftSink();
   const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: CreateSalesOrderInput): Promise<void> => {
@@ -195,11 +191,7 @@ function SalesOrderEditPage(): React.JSX.Element {
     [navigate, id],
   );
   // ADR-313 — the form keeps the draft; this hands its clear() to the exit guard.
-  const draftSink = useRef<FormDraft | null>(null);
-  const draft = useMemo<FormDraft>(
-    () => ({ band: null, clear: () => draftSink.current?.clear() }),
-    [],
-  );
+  const { sink: draftSink, draft } = useDraftSink();
   const exit = useExitConfirm({ onExit: goBack, draft });
 
   // ADR-232 (owner D1): the Edit tick on SO Master alone opens the editor

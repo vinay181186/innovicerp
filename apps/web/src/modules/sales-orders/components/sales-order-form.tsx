@@ -71,7 +71,7 @@ import {
   type UseFormReturn,
 } from 'react-hook-form';
 import { todayLocal } from '@/lib/date';
-import { useFormDraft, type FormDraft } from '@/lib/use-form-draft';
+import { useDraftSinkFill, useFormDraft, type FormDraft } from '@/lib/use-form-draft';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
@@ -384,10 +384,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
     },
     version: props.draftVersion,
   });
-  const draftSink = props.draftSink;
-  useEffect(() => {
-    if (draftSink) draftSink.current = draft;
-  });
+  useDraftSinkFill(props.draftSink, draft);
   // Inline client quick-add (legacy addClientQuick) — add + select without
   // leaving the SO form.
   const [showAddClient, setShowAddClient] = useState(false);

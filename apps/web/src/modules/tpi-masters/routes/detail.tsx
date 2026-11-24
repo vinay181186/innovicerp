@@ -42,7 +42,7 @@ import { PendingFact } from '@/modules/document-edits/components/pending-fact';
 import { Cluster, ClusterGrid } from '@/ui/forms';
 import { DetailHeader, PageState } from '@/ui/layout';
 import { useSoftDeleteTpiMaster, useTpiMaster } from '../api';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 
 export const tpiMasterDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -71,7 +71,8 @@ function BackToMaster(): React.JSX.Element {
 function TpiMasterDetailPage(): React.JSX.Element {
   const { id } = tpiMasterDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data, isLoading, isError, error } = useTpiMaster(id);
+  const query = useTpiMaster(id);
+  const { data, isLoading, isError, error } = query;
   const softDelete = useSoftDeleteTpiMaster();
   const [confirmDelete, setConfirmDelete] = useState(false);
   // ADR-202 — the edit(s) staged against this inspector and still waiting for a
@@ -91,7 +92,7 @@ function TpiMasterDetailPage(): React.JSX.Element {
     return <PageState state="loading" message="⟳ Loading inspector…" />;
   }
 
-  if (!data) {
+  if (!data || hardError(query)) {
     return (
       <div>
         <BackToMaster />

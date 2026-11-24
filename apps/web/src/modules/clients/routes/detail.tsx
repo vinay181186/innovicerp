@@ -6,7 +6,7 @@
 //
 // State shows "Name (code)" from the State Code, else an old record's free text.
 
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import {
   type Client,
   type DocumentEditChange,
@@ -54,7 +54,7 @@ function BackToMaster(): React.JSX.Element {
 function ClientDetailPage(): React.JSX.Element {
   const { id } = clientDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data: client, isLoading, isError, error } = useClient(id);
+  const { data: client, isLoading, isError, error, isPlaceholderData } = useClient(id);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'client_create');
   const softDelete = useSoftDeleteClient();
@@ -80,7 +80,7 @@ function ClientDetailPage(): React.JSX.Element {
     return <PageState state="loading" message="Loading customer…" />;
   }
 
-  if (!client) {
+  if (!client || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div>
         <BackToMaster />

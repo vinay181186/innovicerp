@@ -13,7 +13,7 @@
 // Assign Task, and the row opens the Sales Order. Column sort / filter come from
 // the table's own ▾ header menus (ADR-200), alongside the page search.
 
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import type { StuckItem } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -190,7 +190,7 @@ function StuckDashboardPage(): React.JSX.Element {
   );
   // Default order (server): grouped by stage, largest group first, most over
   // threshold first inside a group — so same-stage rows stay adjacent.
-  const { data, isLoading, isFetching, isError, error } = useStuckDashboard({
+  const { data, isLoading, isFetching, isError, error, isPlaceholderData } = useStuckDashboard({
     search: search.search,
     sf: sf.param,
     limit: LIST_PAGE_SIZE,
@@ -216,7 +216,7 @@ function StuckDashboardPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!data) {
+  if (!data || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load stuck jobs. Try again.'}

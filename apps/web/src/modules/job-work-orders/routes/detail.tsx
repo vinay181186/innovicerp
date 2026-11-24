@@ -1,6 +1,6 @@
 // JW detail page (UI-003-04).
 
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { Icon, StatusBadge } from '@/ui/core';
 import {
   type DocumentEditChange,
@@ -76,7 +76,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const { id } = jobWorkOrderDetailRoute.useParams();
   const { uploadFailed } = jobWorkOrderDetailRoute.useSearch();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useJobWorkOrder(id);
+  const { data: detail, isLoading, isError, error, isPlaceholderData } = useJobWorkOrder(id);
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'jw_create');
@@ -113,7 +113,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!detail) {
+  if (!detail || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="panel">
         <div className="panel-body">

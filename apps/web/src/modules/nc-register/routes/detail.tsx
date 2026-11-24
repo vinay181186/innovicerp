@@ -63,7 +63,7 @@ import { NcStatusBadge } from '../components/nc-status-badge';
 import { useNcPrint } from '../components/use-nc-print';
 import { ncOpenQty } from '../nc-qty';
 import { NcTimelinePanel } from '@/modules/flow-views/components/nc-timeline-panel';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 
 export const ncRegisterDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -79,7 +79,8 @@ const SIBLING_PAGE = 200;
 function NcRegisterDetailPage(): React.JSX.Element {
   const { id } = ncRegisterDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useNcRegister(id);
+  const query = useNcRegister(id);
+  const { data: detail, isLoading, isError, error } = query;
   const { data: eff } = useMyAccess();
   // ADR-234 — the saved DC's code links only for someone who may open DCs.
   const canOpenDc = useCanOpen()('/delivery-challans/$id');
@@ -146,7 +147,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!detail) {
+  if (!detail || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">

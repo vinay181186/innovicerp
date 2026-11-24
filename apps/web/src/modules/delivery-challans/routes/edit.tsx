@@ -17,7 +17,7 @@ import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { useEditConflict } from '@/lib/use-edit-conflict';
 import { useFormDraft } from '@/lib/use-form-draft';
 import { useOpenedVersion } from '@/lib/use-opened-version';
@@ -164,7 +164,7 @@ export const deliveryChallanEditRoute = createRoute({
 function DeliveryChallanEditPage(): React.JSX.Element {
   const { id } = deliveryChallanEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: dc, isLoading, isError, error } = useDeliveryChallan(id);
+  const { data: dc, isLoading, isError, error, isPlaceholderData } = useDeliveryChallan(id);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'ospdc_create');
   const saveKey = useSaveKey();
@@ -390,7 +390,7 @@ function DeliveryChallanEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!dc) {
+  if (!dc || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load the DC. Try again.'}

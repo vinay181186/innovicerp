@@ -3,7 +3,7 @@
 import type { CreateVendorInput, UpdateVendorInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -14,8 +14,8 @@ import { type ServerFieldErrors, serverFieldErrorsOf } from '@/modules/settings/
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateVendor, useUpdateVendor, useVendor } from '../api';
 import { VendorForm } from '../components/vendor-form';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
-import { useFormDraft } from '@/lib/use-form-draft';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 export const vendorNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -43,23 +43,7 @@ function VendorNewPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'vendor_create');
   const goBack = useCallback(() => void navigate({ to: '/vendors' }), [navigate]);
   // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
-  const [draftValues, setDraftValues] = useState<unknown>(null);
-  const draftApply = useRef<(v: unknown) => void>(() => undefined);
-  const draftLink = useMemo(
-    () => ({
-      onValues: setDraftValues,
-      bind: (apply: (v: unknown) => void) => {
-        draftApply.current = apply;
-      },
-    }),
-    [],
-  );
-  const draft = useFormDraft({
-    key: 'vendor-new',
-    ready: draftValues !== null,
-    values: draftValues,
-    apply: (v) => draftApply.current(v),
-  });
+  const { draft, link: draftLink } = usePageDraft({ key: 'vendor-new' });
   const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: CreateVendorInput): Promise<void> => {
@@ -115,7 +99,8 @@ function VendorEditPage(): React.JSX.Element {
   const { id } = vendorEditRoute.useParams();
   const navigate = useNavigate();
   const toast = useToast();
-  const { data: vendor, isLoading, isError, error } = useVendor(id);
+  const query = useVendor(id);
+  const { data: vendor, isLoading, isError, error } = query;
   const saveKey = useSaveKey();
   const update = useUpdateVendor(id, saveKey);
   // R5: the version this form was opened from — a save after someone else
@@ -134,22 +119,8 @@ function VendorEditPage(): React.JSX.Element {
     [navigate, id],
   );
   // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
-  const [draftValues, setDraftValues] = useState<unknown>(null);
-  const draftApply = useRef<(v: unknown) => void>(() => undefined);
-  const draftLink = useMemo(
-    () => ({
-      onValues: setDraftValues,
-      bind: (apply: (v: unknown) => void) => {
-        draftApply.current = apply;
-      },
-    }),
-    [],
-  );
-  const draft = useFormDraft({
+  const { draft, link: draftLink } = usePageDraft({
     key: `vendor-edit:${id}`,
-    ready: draftValues !== null,
-    values: draftValues,
-    apply: (v) => draftApply.current(v),
     version: vendor?.updatedAt,
   });
   const exit = useExitConfirm({ onExit: goBack, draft });
@@ -194,7 +165,7 @@ function VendorEditPage(): React.JSX.Element {
     );
   }
 
-  if (!vendor) {
+  if (!vendor || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">

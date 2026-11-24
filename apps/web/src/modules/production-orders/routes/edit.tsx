@@ -32,7 +32,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useFormDraft } from '@/lib/use-form-draft';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -86,7 +86,8 @@ type TabKey = 'ledger' | 'history';
 function ProductionOrderEditPage(): React.JSX.Element {
   const { id } = productionOrderEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useProductionOrder(id);
+  const detailQuery = useProductionOrder(id);
+  const { data: detail, isLoading, isError, error } = detailQuery;
   const saveKey = useSaveKey();
   const update = useUpdateProductionOrder(id, saveKey);
   const toast = useToast();
@@ -230,7 +231,7 @@ function ProductionOrderEditPage(): React.JSX.Element {
     );
   }
 
-  if (!detail) {
+  if (!detail || hardError(detailQuery)) {
     return (
       <div className="panel">
         <div className="panel-body">

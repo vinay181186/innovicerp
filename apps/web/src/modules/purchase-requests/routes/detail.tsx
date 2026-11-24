@@ -60,7 +60,7 @@ import { usePrPrint } from '../components/use-pr-print';
 import { prBalanceClosedText, prBalanceColor, prOrderBalance } from '../lib/pr-balance';
 import { prConvertible } from '../lib/pr-convertible';
 import { PR_TYPE_LABELS } from '../lib/pr-labels';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 
 export const purchaseRequestDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -71,12 +71,8 @@ export const purchaseRequestDetailRoute = createRoute({
 function PurchaseRequestDetailPage(): React.JSX.Element {
   const { id } = purchaseRequestDetailRoute.useParams();
   const navigate = useNavigate();
-  const {
-    data: detail,
-    isLoading,
-    isError,
-    error,
-  } = usePurchaseRequest(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
+  const query = usePurchaseRequest(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
+  const { data: detail, isLoading, isError, error } = query;
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'pr_create');
   // ADR-202 — the edit(s) staged against this PR and still waiting for a
@@ -124,7 +120,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!detail) {
+  if (!detail || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">

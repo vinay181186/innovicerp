@@ -48,7 +48,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActionLink } from '@/components/shared/action-link';
 import { rmItemToInput } from '@/components/shared/rm-item-fields';
 import { fmtDateTime } from '@/lib/date';
-import { useFormDraft } from '@/lib/use-form-draft';
+import { type FormDraft, useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
 import { useItemsList } from '@/modules/items/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { usePlansList } from '@/modules/plans/api';
@@ -175,9 +175,13 @@ interface RouteCardFormProps {
   /** Header Back — a plain navigation, so the router's exit guard asks first. */
   onBack?: () => void;
   /** ADR-313 — keep a draft of what is typed (lib/use-form-draft.tsx). The page
-   *  names the draft and gets `clear` back for its exit guard. */
+   *  names the draft and gets it back through `sink` for its exit guard. */
   draftSlot?:
-    | { key: string | null; version?: string | null | undefined; clearRef: { current: () => void } }
+    | {
+        key: string | null;
+        version?: string | null | undefined;
+        sink: { current: FormDraft | null };
+      }
     | undefined;
 }
 
@@ -677,10 +681,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     },
     version: props.draftSlot?.version,
   });
-  const draftClearRef = props.draftSlot?.clearRef;
-  useEffect(() => {
-    if (draftClearRef) draftClearRef.current = formDraft.clear;
-  }, [draftClearRef, formDraft.clear]);
+  useDraftSinkFill(props.draftSlot?.sink, formDraft);
 
   return (
     <form className="page-fill rc-form" onSubmit={(e) => void submit(e)}>

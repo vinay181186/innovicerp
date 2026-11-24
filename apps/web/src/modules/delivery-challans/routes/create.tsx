@@ -74,7 +74,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { ApiError } from '@/lib/api';
 import { fmtDate, todayIst } from '@/lib/date';
 import { type ExitConfirm, ExitConfirmDialog, useExitConfirm } from '@/lib/exit-guard';
-import { type FormDraft, useFormDraft } from '@/lib/use-form-draft';
+import { type FormDraft, useDraftSink, useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
 import { docItemsSummary, itemCodeWithRev, itemLineLabel } from '@/lib/item-code';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
@@ -180,16 +180,17 @@ function DeliveryChallanNewPage(): React.JSX.Element {
       setPoId(v.poId);
     },
   });
-  const draftSink = useRef<FormDraft | null>(null);
+  const { sink: draftSink, draft: bodyDraft } = useDraftSink();
   const draft = useMemo<FormDraft>(
     () => ({
       band: null,
       clear: () => {
         pageDraft.clear();
-        draftSink.current?.clear();
+        bodyDraft.clear();
       },
+      hasDraft: () => pageDraft.hasDraft() || bodyDraft.hasDraft(),
     }),
-    [pageDraft],
+    [pageDraft, bodyDraft],
   );
   const exit = useExitConfirm({ onExit: goBack, draft });
   // The search the picker on the other side opens with. Set when the Against PO
@@ -706,9 +707,7 @@ function PoDcFormBody({
   });
   // Kept after this body unmounts (source switched) so Cancel / Exit still
   // forgets the draft — same as sales-order-form.tsx.
-  useEffect(() => {
-    draftSink.current = draft;
-  });
+  useDraftSinkFill(draftSink, draft);
 
   const capByLine = useMemo(() => {
     const m = new Map<string, DcSendableLine>();

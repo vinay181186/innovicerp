@@ -88,7 +88,7 @@ import { PoStatusBadge } from '../components/po-status-badge';
 import { PO_VENDOR_STATE_MISSING_NOTE } from '../lib/po-labels';
 import { printPurchaseOrder } from '../lib/print-po';
 import { runPrint } from '@/lib/print/preview-host';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 
 export const purchaseOrderDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -99,12 +99,8 @@ export const purchaseOrderDetailRoute = createRoute({
 function PurchaseOrderDetailPage(): React.JSX.Element {
   const { id } = purchaseOrderDetailRoute.useParams();
   const navigate = useNavigate();
-  const {
-    data: detail,
-    isLoading,
-    isError,
-    error,
-  } = usePurchaseOrder(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
+  const query = usePurchaseOrder(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
+  const { data: detail, isLoading, isError, error } = query;
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'po_create');
@@ -159,7 +155,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!detail) {
+  if (!detail || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">

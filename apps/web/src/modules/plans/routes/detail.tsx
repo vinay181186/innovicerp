@@ -29,7 +29,7 @@ import { useCanOpen } from '@/components/shared/action-link';
 import { fmtDate } from '@/lib/date';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner, useToast } from '@/ui/feedback';
@@ -74,7 +74,8 @@ const OP_TYPE_LABEL: Record<string, string> = {
 function PlanDetailPage(): React.JSX.Element {
   const { id } = planDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data: plan, isLoading, isError, error } = usePlan(id);
+  const detailQuery = usePlan(id);
+  const { data: plan, isLoading, isError, error } = detailQuery;
   // ADR-202 — edits staged against this plan and still waiting for a decision.
   // Their per-field changes drive the inline amber chips next to the record
   // fields below. Flattened across requests (usually one).
@@ -105,7 +106,7 @@ function PlanDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!plan) {
+  if (!plan || hardError(detailQuery)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -657,7 +658,12 @@ function PlanDetailPage(): React.JSX.Element {
         </div>
       )}
 
-      <RelatedDocsTabs module="plans" id={plan.id} extraTabs={[historyTab]} />
+      <RelatedDocsTabs
+        module="plans"
+        id={plan.id}
+        extraTabs={[historyTab]}
+        rememberKey={`plan:${plan.id}`}
+      />
 
       {confirmDelete ? (
         // The modal owns the wait and shows a refusal inside itself.

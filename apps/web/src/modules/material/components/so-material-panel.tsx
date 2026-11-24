@@ -10,7 +10,7 @@ import { useSoMaterial } from '../api';
 import { IssueSlipList } from './issue-slip-list';
 import { ReleasePartModal, ReservePartsModal } from './reserve-parts';
 import { SoMaterialTable } from './so-material-table';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 
 export function SoMaterialPanel({
   salesOrderId,
@@ -19,7 +19,8 @@ export function SoMaterialPanel({
   salesOrderId: string;
   stopped?: boolean;
 }): React.JSX.Element {
-  const { data, isLoading, isError, error } = useSoMaterial(salesOrderId);
+  const query = useSoMaterial(salesOrderId);
+  const { data, isLoading, isError, error } = query;
   const { data: eff } = useMyAccess();
   const canIssue = effectiveFormPerms(eff, 'issue_create').entry && !stopped && data?.hasBom;
   const planEntry = effectiveFormPerms(eff, 'plan_create').entry;
@@ -43,7 +44,7 @@ export function SoMaterialPanel({
         Your access does not include the Material view.
       </div>
     );
-  if (!data)
+  if (!data || hardError(query))
     return (
       <div style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)' }}>
         {error instanceof Error ? error.message : 'Could not load material.'}

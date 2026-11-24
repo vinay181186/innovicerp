@@ -25,7 +25,7 @@ import {
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { usePlanningSoDetail, usePlanningSoList } from '@/modules/so-planning/api';
 import { soNoWithInternal } from '@/lib/so-number';
-import { useFormDraft } from '@/lib/use-form-draft';
+import { type FormDraft, useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
 import { Banner } from '@/ui/feedback';
 import { SearchableSelect } from '@/ui/forms';
 import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
@@ -55,9 +55,13 @@ interface Props {
   isSubmitting: boolean;
   submitError: string | null;
   /** ADR-313 — keep a draft of what is typed (lib/use-form-draft.tsx). The page
-   *  names the draft and gets `clear` back for its exit guard. */
+   *  names the draft and gets it back through `sink` for its exit guard. */
   draftSlot?:
-    | { key: string | null; version?: string | null | undefined; clearRef: { current: () => void } }
+    | {
+        key: string | null;
+        version?: string | null | undefined;
+        sink: { current: FormDraft | null };
+      }
     | undefined;
 }
 
@@ -227,10 +231,7 @@ export function PlanCreateForm({
     },
     version: draftSlot?.version,
   });
-  const draftClearRef = draftSlot?.clearRef;
-  useEffect(() => {
-    if (draftClearRef) draftClearRef.current = formDraft.clear;
-  }, [draftClearRef, formDraft.clear]);
+  useDraftSinkFill(draftSlot?.sink, formDraft);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>

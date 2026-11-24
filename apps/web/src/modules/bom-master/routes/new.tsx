@@ -1,7 +1,8 @@
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useDraftSink } from '@/lib/use-form-draft';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { BOM_CREATE_STATUS } from '@innovic/shared';
@@ -29,11 +30,11 @@ function BomMasterNewPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'bom_create');
   const goBack = useCallback(() => void navigate({ to: '/bom-masters' }), [navigate]);
-  // ADR-313 — the form below keeps a draft; its `clear` lands here for the guard.
-  const draftClear = useRef<() => void>(() => undefined);
+  // ADR-313 — the form below keeps a draft; it lands in the sink for the guard.
+  const { sink: draftSink, draft: pageDraft } = useDraftSink();
   const exit = useExitConfirm({
     onExit: goBack,
-    draft: { band: null, clear: () => draftClear.current() },
+    draft: pageDraft,
   });
 
   const submit = async (header: BomFormHeaderDraft, lines: BomFormLineDraft[]): Promise<void> => {
@@ -73,7 +74,7 @@ function BomMasterNewPage(): React.JSX.Element {
           API call cannot make a Draft either. The seed below comes from that
           same constant so this screen cannot drift from the server. */}
       <BomForm
-        draftSlot={{ key: 'bom-new', clearRef: draftClear }}
+        draftSlot={{ key: 'bom-new', sink: draftSink }}
         mode="create"
         initialHeader={{
           bomNo: '',

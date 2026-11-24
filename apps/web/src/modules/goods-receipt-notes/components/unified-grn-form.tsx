@@ -99,6 +99,7 @@ export function UnifiedGrnForm({
     },
   });
   const clearTypeDraft = typeDraft.clear;
+  const typeHasDraft = typeDraft.hasDraft;
   const draft = useMemo<FormDraft>(
     () => ({
       band: null,
@@ -106,8 +107,10 @@ export function UnifiedGrnForm({
         clearTypeDraft();
         typeFormDraft.current?.clear();
       },
+      // Either draft stored counts as a draft.
+      hasDraft: () => typeHasDraft() || (typeFormDraft.current?.hasDraft() ?? false),
     }),
-    [clearTypeDraft],
+    [clearTypeDraft, typeHasDraft],
   );
   const exit = useExitConfirm({ onExit: goBack, draft });
   const toast = useToast();

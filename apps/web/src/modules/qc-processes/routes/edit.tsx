@@ -1,7 +1,7 @@
 import type { UpdateQcProcessInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useEditConflict } from '@/lib/use-edit-conflict';
@@ -10,8 +10,8 @@ import { useToast } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useFetchQcProcess, useQcProcess, useUpdateQcProcess } from '../api';
 import { QcProcessForm } from '../components/qc-process-form';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
-import { useFormDraft } from '@/lib/use-form-draft';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 // ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
@@ -48,7 +48,8 @@ function QcProcessEditPage(): React.JSX.Element {
   const { id } = qcProcessEditRoute.useParams();
   const navigate = useNavigate();
   const toast = useToast();
-  const { data: detail, isLoading, isError, error } = useQcProcess(id);
+  const query = useQcProcess(id);
+  const { data: detail, isLoading, isError, error } = query;
   const update = useUpdateQcProcess(id);
   const fetchQcProcess = useFetchQcProcess();
   // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
@@ -70,22 +71,8 @@ function QcProcessEditPage(): React.JSX.Element {
     [navigate, id],
   );
   // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
-  const [draftValues, setDraftValues] = useState<unknown>(null);
-  const draftApply = useRef<(v: unknown) => void>(() => undefined);
-  const draftLink = useMemo(
-    () => ({
-      onValues: setDraftValues,
-      bind: (apply: (v: unknown) => void) => {
-        draftApply.current = apply;
-      },
-    }),
-    [],
-  );
-  const draft = useFormDraft({
+  const { draft, link: draftLink } = usePageDraft({
     key: `qc-process-edit:${id}`,
-    ready: draftValues !== null,
-    values: draftValues,
-    apply: (v) => draftApply.current(v),
     version: detail?.updatedAt,
   });
   const exit = useExitConfirm({ onExit: goBack, draft });
@@ -119,7 +106,7 @@ function QcProcessEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!detail) {
+  if (!detail || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">

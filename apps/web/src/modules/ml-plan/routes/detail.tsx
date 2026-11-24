@@ -12,7 +12,7 @@ import { useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDateTime } from '@/lib/date';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useDocumentHistory } from '@/modules/activity-log/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
@@ -39,7 +39,8 @@ type TabKey = 'plan' | 'orders' | 'history';
 
 function MlPlanDetailPage(): React.JSX.Element {
   const { id } = mlPlanDetailRoute.useParams();
-  const { data: detail, isLoading, isError, error } = useMlPlan(id);
+  const detailQuery = useMlPlan(id);
+  const { data: detail, isLoading, isError, error } = detailQuery;
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'mlplan_create');
   const canRaisePlan = effectiveFormPerms(eff, 'plan_create').entry;
@@ -64,7 +65,7 @@ function MlPlanDetailPage(): React.JSX.Element {
   if (isLoading) {
     return <PageState state="loading" message="⟳ Loading plan…" />;
   }
-  if (!detail) {
+  if (!detail || hardError(detailQuery)) {
     return (
       <div>
         <Link

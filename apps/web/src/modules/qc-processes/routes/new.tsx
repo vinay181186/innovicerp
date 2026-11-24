@@ -1,14 +1,14 @@
 import type { CreateQcProcessInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateQcProcess } from '../api';
 import { QcProcessForm } from '../components/qc-process-form';
 import { useToast } from '@/ui/feedback';
-import { useFormDraft } from '@/lib/use-form-draft';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 export const qcProcessNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -23,23 +23,7 @@ function QcProcessNewPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/qc-processes' }), [navigate]);
   // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
-  const [draftValues, setDraftValues] = useState<unknown>(null);
-  const draftApply = useRef<(v: unknown) => void>(() => undefined);
-  const draftLink = useMemo(
-    () => ({
-      onValues: setDraftValues,
-      bind: (apply: (v: unknown) => void) => {
-        draftApply.current = apply;
-      },
-    }),
-    [],
-  );
-  const draft = useFormDraft({
-    key: 'qc-process-new',
-    ready: draftValues !== null,
-    values: draftValues,
-    apply: (v) => draftApply.current(v),
-  });
+  const { draft, link: draftLink } = usePageDraft({ key: 'qc-process-new' });
   const exit = useExitConfirm({ onExit: goBack, draft });
   // Tier-driven, per department (QC). The + Add QC Process button is hidden
   // from anyone without entry rights, but this screen had no gate of its own —

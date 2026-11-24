@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { useFormDraft } from '@/lib/use-form-draft';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useEditConflict } from '@/lib/use-edit-conflict';
@@ -125,7 +125,7 @@ export const customerDispatchEditRoute = createRoute({
 function CustomerDispatchEditPage(): React.JSX.Element {
   const { id } = customerDispatchEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: d, isLoading, isError, error } = useDispatchDetail(id);
+  const { data: d, isLoading, isError, error, isPlaceholderData } = useDispatchDetail(id);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dispatch_create');
   const saveKey = useSaveKey();
@@ -353,7 +353,7 @@ function CustomerDispatchEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!d) {
+  if (!d || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load the dispatch. Try again.'}

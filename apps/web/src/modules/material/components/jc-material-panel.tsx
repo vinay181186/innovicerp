@@ -6,7 +6,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useJcMaterial } from '../api';
 import { IssueSlipList } from './issue-slip-list';
 import { JcMaterialTable } from './jc-material-table';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 
 export function JcMaterialPanel({
   jobCardId,
@@ -15,7 +15,8 @@ export function JcMaterialPanel({
   jobCardId: string;
   stopped?: boolean;
 }): React.JSX.Element {
-  const { data, isLoading, isError, error } = useJcMaterial(jobCardId);
+  const query = useJcMaterial(jobCardId);
+  const { data, isLoading, isError, error } = query;
   const { data: eff } = useMyAccess();
   const canIssue = effectiveFormPerms(eff, 'issue_create').entry && !stopped;
   if (isLoading)
@@ -31,7 +32,7 @@ export function JcMaterialPanel({
         Your access does not include the Material view.
       </div>
     );
-  if (!data)
+  if (!data || hardError(query))
     return (
       <div style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)' }}>
         {error instanceof Error ? error.message : 'Could not load material.'}

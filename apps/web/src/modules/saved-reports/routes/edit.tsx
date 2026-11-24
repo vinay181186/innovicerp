@@ -1,10 +1,10 @@
 import type { AdHocSpec } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { useMemo, useRef, useState } from 'react';
+import { useState } from 'react';
 import { apiDownload } from '@/lib/api';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useEditConflict } from '@/lib/use-edit-conflict';
-import type { FormDraft } from '@/lib/use-form-draft';
+import { useDraftSink } from '@/lib/use-form-draft';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -75,11 +75,7 @@ function SavedReportEditPage() {
   // ADR-313 — the draft lives in <Builder>; the exit guard forgets it through this
   // stand-in. Dropped if the report was saved by anyone since it was loaded.
   const opened = useOpenedVersion(reportQ.data?.updatedAt);
-  const draftSink = useRef<FormDraft | null>(null);
-  const draft = useMemo<FormDraft>(
-    () => ({ band: null, clear: () => draftSink.current?.clear() }),
-    [],
-  );
+  const { sink: draftSink, draft } = useDraftSink();
   const exit = useExitConfirm({ draft });
 
   const onExcel = async (spec: AdHocSpec) => {

@@ -15,7 +15,7 @@
 // line. What changed is that this screen no longer draws its own panels,
 // tables, badges, buttons, empty states or delete confirmation.
 
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import type {
   DocumentEditChange,
   DrawingSource,
@@ -116,6 +116,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
     isLoading,
     isError,
     error,
+    isPlaceholderData,
   } = useSalesOrder(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
@@ -160,7 +161,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
   if (isLoading) {
     return <PageState state="loading" message="Loading sales order…" />;
   }
-  if (!detail) {
+  if (!detail || hardError({ isError, error, isPlaceholderData })) {
     return (
       <>
         <Link to="/sales-orders" className="btn btn-ghost btn-sm">

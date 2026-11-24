@@ -43,7 +43,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate, todayIst } from '@/lib/date';
 import { docItemsSummary, itemLineLabel, partyDocName } from '@/lib/item-code';
-import { useFormDraft } from '@/lib/use-form-draft';
+import { useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
 import { useSaveKey } from '@/lib/use-save-key';
 import {
   useDeliveryChallan,
@@ -293,7 +293,7 @@ export function GrnAgainstDcForm({
       setLinesTouched(v.linesTouched);
     },
   });
-  draftSlot.current = draft;
+  useDraftSinkFill(draftSlot, draft);
 
   // DEPENDENT-FIELD RULE (JWPO → DC): any change to the JWPO drops the picked
   // challan, which in turn drops vendor + lines + errors via the effect above.

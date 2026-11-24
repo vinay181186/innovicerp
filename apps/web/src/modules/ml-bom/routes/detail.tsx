@@ -13,7 +13,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 import { useDocumentHistory } from '@/modules/activity-log/api';
 import { isStagedResult, usePendingEditForDoc } from '@/modules/document-edits/api';
@@ -46,7 +46,8 @@ const MAX_TREE_QTY = 1_000_000;
 function MlBomDetailPage(): React.JSX.Element {
   const { id } = mlBomDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useMlBom(id);
+  const detailQuery = useMlBom(id);
+  const { data: detail, isLoading, isError, error } = detailQuery;
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'mlbom_create');
   const makeDefault = useMakeDefaultMlBom();
@@ -106,7 +107,7 @@ function MlBomDetailPage(): React.JSX.Element {
   if (isLoading) {
     return <PageState state="loading" message="⟳ Loading BOM…" />;
   }
-  if (!detail) {
+  if (!detail || hardError(detailQuery)) {
     return (
       <div>
         <Link

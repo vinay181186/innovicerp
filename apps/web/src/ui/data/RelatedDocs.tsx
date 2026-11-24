@@ -88,6 +88,10 @@ export interface RelatedDocsProps {
   /** Controlled selection. Omit both and the strip keeps its own state. */
   activeKey?: string | undefined;
   onSelect?: ((key: string) => void) | undefined;
+  /** ADR-313 — remember the picked category across a tab switch, under this
+   *  name (e.g. `plan:${id}`). Omit it and the choice is plain state: several
+   *  panels on one address (expanded list rows) must not share one memory. */
+  rememberKey?: string | undefined;
   /** Keep categories with no documents. Default: drop them, as the app does. */
   showEmptySections?: boolean | undefined;
   title?: React.ReactNode | undefined;
@@ -178,6 +182,7 @@ export function RelatedDocs({
   extraTabs,
   activeKey,
   onSelect,
+  rememberKey,
   showEmptySections = false,
   title = '🔗 Related Documents',
   children,
@@ -185,10 +190,12 @@ export function RelatedDocs({
 }: RelatedDocsProps): React.JSX.Element {
   // Uncontrolled fallback: null until something is clicked, so the strip opens
   // on the first category and follows the data if that category later empties.
-  // ADR-313 — the picked category stays when you switch tabs and come back. The
-  // props carry no document id, so the page address names the document.
+  // ADR-313 — the picked category stays when you switch tabs and come back,
+  // only when the caller names the document (`rememberKey`). Without it the key
+  // is null, which is plain useState: several panels on one address (expanded
+  // list rows) must not share one memory.
   const [ownKey, setOwnKey] = usePersistentState<string | null>(
-    `related-docs:${typeof window === 'undefined' ? '' : window.location.pathname}`,
+    rememberKey ? `related-docs:${rememberKey}` : null,
     null,
     (v) => v === null || typeof v === 'string',
   );

@@ -9,9 +9,9 @@
 // Remarks; the line is fixed.
 
 import type { MlPlanEligibleLine } from '@innovic/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { itemLineLabel } from '@/lib/item-code';
-import { useFormDraft } from '@/lib/use-form-draft';
+import { type FormDraft, useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import {
@@ -70,9 +70,13 @@ interface MlPlanFormProps {
   submitError: string | null;
   onCancel: () => void;
   /** ADR-313 — keep a draft of what is typed (lib/use-form-draft.tsx). The page
-   *  names the draft and gets `clear` back for its exit guard. */
+   *  names the draft and gets it back through `sink` for its exit guard. */
   draftSlot?:
-    | { key: string | null; version?: string | null | undefined; clearRef: { current: () => void } }
+    | {
+        key: string | null;
+        version?: string | null | undefined;
+        sink: { current: FormDraft | null };
+      }
     | undefined;
 }
 
@@ -145,10 +149,7 @@ export function MlPlanForm(props: MlPlanFormProps): React.JSX.Element {
     },
     version: props.draftSlot?.version,
   });
-  const draftClearRef = props.draftSlot?.clearRef;
-  useEffect(() => {
-    if (draftClearRef) draftClearRef.current = formDraft.clear;
-  }, [draftClearRef, formDraft.clear]);
+  useDraftSinkFill(props.draftSlot?.sink, formDraft);
 
   return (
     <form

@@ -3,7 +3,7 @@
 // ClusterGrid → Lines panel → FormActions (Cancel + blue Save, Ctrl+S, "Not saved").
 // No Excel import (phase 2).
 
-import { useFormDraft } from '@/lib/use-form-draft';
+import { type FormDraft, useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
 import { Icon } from '@/ui/core';
 import { type MlBomLineInput, qtyUomProblem } from '@innovic/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -41,9 +41,13 @@ interface MlBomFormProps {
   submitError: string | null;
   onCancel: () => void;
   /** ADR-313 — keep a draft of what is typed (lib/use-form-draft.tsx). The page
-   *  names the draft and gets `clear` back for its exit guard. */
+   *  names the draft and gets it back through `sink` for its exit guard. */
   draftSlot?:
-    | { key: string | null; version?: string | null | undefined; clearRef: { current: () => void } }
+    | {
+        key: string | null;
+        version?: string | null | undefined;
+        sink: { current: FormDraft | null };
+      }
     | undefined;
 }
 
@@ -192,10 +196,7 @@ export function MlBomForm(props: MlBomFormProps): React.JSX.Element {
     },
     version: props.draftSlot?.version,
   });
-  const draftClearRef = props.draftSlot?.clearRef;
-  useEffect(() => {
-    if (draftClearRef) draftClearRef.current = formDraft.clear;
-  }, [draftClearRef, formDraft.clear]);
+  useDraftSinkFill(props.draftSlot?.sink, formDraft);
 
   return (
     <form

@@ -12,7 +12,7 @@
 // totals row to the lines table. Receipts moved to components/dc-receipts-panel
 // to stay under the 400-line rule.
 
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { Icon } from '@/ui/core';
 import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -63,7 +63,7 @@ interface LineAgg {
 function DeliveryChallanDetailPage(): React.JSX.Element {
   const toast = useToast();
   const { id } = deliveryChallanDetailRoute.useParams();
-  const { data, isLoading, isError, error } = useDeliveryChallan(id);
+  const { data, isLoading, isError, error, isPlaceholderData } = useDeliveryChallan(id);
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'ospdc_create');
@@ -138,7 +138,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!data) {
+  if (!data || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="panel">
         <div className="panel-body">

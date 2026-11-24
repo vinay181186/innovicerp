@@ -3,7 +3,7 @@
 // Files live in the `qc-docs` Storage bucket; metadata in the unified
 // file_registry. QC docs are surfaced read-only (source='qc').
 
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { Icon } from '@/ui/core';
 import {
   SO_DOC_CATEGORIES,
@@ -40,7 +40,7 @@ function fileIcon(file: SoDocumentFile): string {
 }
 
 export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Element {
-  const { data, isLoading, isError, error } = useSoDocDetail(soId);
+  const { data, isLoading, isError, error, isPlaceholderData } = useSoDocDetail(soId);
   const { data: me } = useSession();
   // ADR-232 — the ticks alone: Upload = Entry on SO Master; deleting an
   // uploaded file = L6 Super Admin only.
@@ -86,7 +86,7 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
       </div>
     );
   }
-  if (!data) {
+  if (!data || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="empty-state" style={{ color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load SO documents. Try again.'}

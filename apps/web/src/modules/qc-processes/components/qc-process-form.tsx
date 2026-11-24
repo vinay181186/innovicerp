@@ -24,6 +24,7 @@
 import type { CreateQcProcessInput, QcProcess, UpdateQcProcessInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { type ReactNode, useEffect } from 'react';
+import { type FormDraftLink, useFormDraftLink } from '@/lib/use-form-draft';
 import { useForm } from 'react-hook-form';
 import { useReportTypes } from '@/modules/report-types/api';
 import { SearchableSelect } from '@/ui/forms';
@@ -67,12 +68,6 @@ type EditMode = {
   onCancel?: () => void;
 };
 
-/** ADR-313 — lets the page keep a draft of this form (lib/use-form-draft.tsx). */
-export interface FormDraftLink {
-  onValues: (values: unknown) => void;
-  bind: (apply: (values: unknown) => void) => void;
-}
-
 export type QcProcessFormProps = (CreateMode | EditMode) & { draftLink?: FormDraftLink };
 
 export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
@@ -84,13 +79,7 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
   const errors = formState.errors;
   // ADR-313 — tell the page about every change (its draft), and let it put one back.
   const { draftLink } = props;
-  const watched = JSON.stringify(watch());
-  useEffect(() => {
-    draftLink?.bind((v) => reset(v as FormValues, { keepDefaultValues: true }));
-  }, [draftLink, reset]);
-  useEffect(() => {
-    draftLink?.onValues(JSON.parse(watched) as unknown);
-  }, [draftLink, watched]);
+  useFormDraftLink(draftLink, watch(), (v) => reset(v as FormValues, { keepDefaultValues: true }));
   // ADR-252 — Report Type options: the Active ones. The saved one stays visible
   // as "<name> (inactive)" when it is no longer in the active list, so an edit
   // never silently changes or blanks it.

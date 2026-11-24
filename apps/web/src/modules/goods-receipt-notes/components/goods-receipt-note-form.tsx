@@ -36,7 +36,7 @@ import { type MutableRefObject, useEffect, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { todayIst } from '@/lib/date';
-import { type FormDraft, useFormDraft } from '@/lib/use-form-draft';
+import { type FormDraft, useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { Panel } from '@/ui/data';
@@ -268,7 +268,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
     apply: (v) => form.reset(v, { keepDefaultValues: true }),
     version: opened.expected(),
   });
-  if (props.draftSlot) props.draftSlot.current = draft;
+  useDraftSinkFill(props.draftSlot, draft);
 
   // ── the header's read-only facts ────────────────────────────────────────
   const detail = props.mode === 'edit' ? props.detail : undefined;

@@ -16,7 +16,7 @@
 import type { FixListStock } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -49,7 +49,8 @@ export const drawingRevFixListRoute = createRoute({
 type TabKey = 'route-cards' | 'lines' | 'stock';
 
 function DrawingRevFixListPage(): React.JSX.Element {
-  const { data, isLoading, isError, error, isFetching } = useItemRevisionFixList();
+  const query = useItemRevisionFixList();
+  const { data, isLoading, isError, error, isFetching } = query;
   const { data: eff } = useMyAccess();
   // The server checks every write; the screen only hides what this user
   // cannot do. Setting an old card's Rev is a Route Card edit; moving old
@@ -81,7 +82,7 @@ function DrawingRevFixListPage(): React.JSX.Element {
       ),
     );
 
-  if (isError && !data) {
+  if (hardError(query) || (isError && !data)) {
     return (
       <PageState
         state="error"

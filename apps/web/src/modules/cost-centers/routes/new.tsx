@@ -1,7 +1,7 @@
 import type { CreateCostCenterInput, ListCostCentersQuery } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -9,7 +9,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCentersList, useCreateCostCenter } from '../api';
 import { CostCenterForm } from '../components/cost-center-form';
 import { useToast } from '@/ui/feedback';
-import { useFormDraft } from '@/lib/use-form-draft';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 export const costCenterNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -25,23 +25,7 @@ function CostCenterNewPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/cost-centers' }), [navigate]);
   // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
-  const [draftValues, setDraftValues] = useState<unknown>(null);
-  const draftApply = useRef<(v: unknown) => void>(() => undefined);
-  const draftLink = useMemo(
-    () => ({
-      onValues: setDraftValues,
-      bind: (apply: (v: unknown) => void) => {
-        draftApply.current = apply;
-      },
-    }),
-    [],
-  );
-  const draft = useFormDraft({
-    key: 'cost-center-new',
-    ready: draftValues !== null,
-    values: draftValues,
-    apply: (v) => draftApply.current(v),
-  });
+  const { draft, link: draftLink } = usePageDraft({ key: 'cost-center-new' });
   const exit = useExitConfirm({ onExit: goBack, draft });
   // Creating a master record is `entry` on cc_create (Finance). Checked here as
   // well as on the list button — the route is reachable by URL, so without this

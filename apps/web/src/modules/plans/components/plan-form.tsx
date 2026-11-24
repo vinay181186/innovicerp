@@ -31,7 +31,7 @@ import {
   RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { soNoWithInternal } from '@/lib/so-number';
-import { useFormDraft } from '@/lib/use-form-draft';
+import { type FormDraft, useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
 import { useCanOpen } from '@/components/shared/action-link';
 import { FormActions } from '@/ui/layout';
 import { useDefaultRouteOps, useNextPlanCode } from '../api';
@@ -248,9 +248,13 @@ interface PlanFormProps {
    *  THAT Rev while the item is still the saved one. */
   itemRevisionId?: string | null;
   /** ADR-313 — keep a draft of what is typed (lib/use-form-draft.tsx). The page
-   *  names the draft and gets `clear` back for its exit guard. */
+   *  names the draft and gets it back through `sink` for its exit guard. */
   draftSlot?:
-    | { key: string | null; version?: string | null | undefined; clearRef: { current: () => void } }
+    | {
+        key: string | null;
+        version?: string | null | undefined;
+        sink: { current: FormDraft | null };
+      }
     | undefined;
 }
 
@@ -427,10 +431,7 @@ export function PlanForm({
     },
     version: draftSlot?.version,
   });
-  const draftClearRef = draftSlot?.clearRef;
-  useEffect(() => {
-    if (draftClearRef) draftClearRef.current = formDraft.clear;
-  }, [draftClearRef, formDraft.clear]);
+  useDraftSinkFill(draftSlot?.sink, formDraft);
 
   return (
     <form

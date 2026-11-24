@@ -48,7 +48,7 @@ import {
   type RevActionTarget,
 } from '../components/rev-status-actions';
 import { printDrawing } from '../lib/print-drawing';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 
 export const itemRevisionPreviewRoute = createRoute({
@@ -62,7 +62,8 @@ type TabKey = 'drawing' | 'history' | 'linked' | 'corrections';
 function DrawingPage(): React.JSX.Element {
   const { itemRevisionId } = itemRevisionPreviewRoute.useParams();
   const router = useRouter();
-  const { data: rev, isLoading, isError, error } = useItemRevision(itemRevisionId);
+  const query = useItemRevision(itemRevisionId);
+  const { data: rev, isLoading, isError, error } = query;
   const { data: eff } = useMyAccess();
   const { data: me } = useSession();
   const { data: company } = useMyCompany();
@@ -86,7 +87,7 @@ function DrawingPage(): React.JSX.Element {
   const [replacing, setReplacing] = useState(false);
 
   if (isLoading) return <PageState state="loading" message="Loading drawing…" />;
-  if (!rev) {
+  if (!rev || hardError(query)) {
     return (
       <PageState
         state="error"

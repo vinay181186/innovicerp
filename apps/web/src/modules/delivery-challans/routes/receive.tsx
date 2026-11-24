@@ -15,7 +15,7 @@ import { todayIst } from '@/lib/date';
 import { fmtQty } from '@/lib/qty-format';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { useFormDraft } from '@/lib/use-form-draft';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -60,7 +60,7 @@ interface LineDraft {
 function DeliveryChallanReceivePage(): React.JSX.Element {
   const { id } = deliveryChallanReceiveRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useDeliveryChallan(id);
+  const { data: detail, isLoading, isError, error, isPlaceholderData } = useDeliveryChallan(id);
   const toast = useToast();
   // R2 — one idempotency key per open form, reused on a retry after a dropped save.
   const saveKey = useSaveKey();
@@ -238,7 +238,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
       </div>
     );
   }
-  if (!detail) {
+  if (!detail || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="panel">
         <div className="panel-body">

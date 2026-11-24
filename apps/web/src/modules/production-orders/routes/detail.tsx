@@ -40,7 +40,7 @@ import { fmtDate, fmtDateTime } from '@/lib/date';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { soNoWithInternal } from '@/lib/so-number';
 import { JC_STATUS_LABEL, JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -88,9 +88,10 @@ function withPending(value: string, p: { title: string } | null): string {
 function ProductionOrderDetailPage(): React.JSX.Element {
   const { id } = productionOrderDetailRoute.useParams();
   // ADR-233 — the ADR-230 safety refresh, as on the JC / SO / PO detail pages.
-  const { data, isLoading, isError, error } = useProductionOrder(id, {
+  const detailQuery = useProductionOrder(id, {
     refetchInterval: LIVE_FALLBACK_POLL_MS,
   });
+  const { data, isLoading, isError, error } = detailQuery;
   const [shortCloseOpen, setShortCloseOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   // ADR-235 — the ONE standard Cancel dialog (docType 'production_order').
@@ -149,7 +150,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!data) {
+  if (!data || hardError(detailQuery)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -689,7 +690,12 @@ function ProductionOrderDetailPage(): React.JSX.Element {
         )}
       </Panel>
 
-      <RelatedDocsTabs module="production-orders" id={data.id} extraTabs={[historyTab]} />
+      <RelatedDocsTabs
+        module="production-orders"
+        id={data.id}
+        extraTabs={[historyTab]}
+        rememberKey={`production-order:${data.id}`}
+      />
 
       {/* Close (progressive, ADR-179) — today's form, unchanged, in a dialog.
           Closes itself on success; the order refetches underneath. Kept open

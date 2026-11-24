@@ -41,7 +41,7 @@ import { PendingFact } from '@/modules/document-edits/components/pending-fact';
 import { Cluster, ClusterGrid } from '@/ui/forms';
 import { DetailHeader, PageState } from '@/ui/layout';
 import { useQcProcess, useSoftDeleteQcProcess } from '../api';
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 
 export const qcProcessDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -70,7 +70,8 @@ function BackToMaster(): React.JSX.Element {
 function QcProcessDetailPage(): React.JSX.Element {
   const { id } = qcProcessDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data, isLoading, isError, error } = useQcProcess(id);
+  const query = useQcProcess(id);
+  const { data, isLoading, isError, error } = query;
   const softDelete = useSoftDeleteQcProcess();
   const [confirmDelete, setConfirmDelete] = useState(false);
   // ADR-202 — the edit(s) staged against this QC process and still waiting for a
@@ -90,7 +91,7 @@ function QcProcessDetailPage(): React.JSX.Element {
     return <PageState state="loading" message="⟳ Loading QC process…" />;
   }
 
-  if (!data) {
+  if (!data || hardError(query)) {
     return (
       <div>
         <BackToMaster />

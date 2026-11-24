@@ -20,7 +20,7 @@
 // (ListSoCostingResponse.rows) carries neither, so none is invented here, and
 // there is no real status to tint a "done" row by.
 
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import type { ListSoCostingResponse, SoCostingRow } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
@@ -231,12 +231,13 @@ function SoCostingListPage(): React.JSX.Element {
     [urlSearch.q, sf.param, offset],
   );
   const qs = soCostingQueryString(pageQuery);
-  const { data, isLoading, isFetching, isError, error } = useQuery<ListSoCostingResponse>({
-    queryKey: ['so-costing', 'list', qs],
-    queryFn: () => fetchSoCostingPage(pageQuery),
-    staleTime: 30_000,
-    placeholderData: (prev) => prev,
-  });
+  const { data, isLoading, isFetching, isError, error, isPlaceholderData } =
+    useQuery<ListSoCostingResponse>({
+      queryKey: ['so-costing', 'list', qs],
+      queryFn: () => fetchSoCostingPage(pageQuery),
+      staleTime: 30_000,
+      placeholderData: (prev) => prev,
+    });
   useClampPage(urlSearch.page, data?.total, gotoPage);
   const rows = data?.rows ?? [];
 
@@ -275,7 +276,7 @@ function SoCostingListPage(): React.JSX.Element {
     />
   );
 
-  if (!data) {
+  if (!data || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div>
         {header}

@@ -1,9 +1,9 @@
 import type { AdHocSpec } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { useMemo, useRef, useState } from 'react';
+import { useState } from 'react';
 import { apiDownload } from '@/lib/api';
 import { useExitConfirm } from '@/lib/exit-guard';
-import type { FormDraft } from '@/lib/use-form-draft';
+import { useDraftSink } from '@/lib/use-form-draft';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateSavedReport, usePreviewSpec, useSourceCatalog } from '../api';
 import { Builder, type SaveInput } from '../components/builder';
@@ -24,11 +24,7 @@ function SavedReportNewPage() {
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
   const [excelLoading, setExcelLoading] = useState(false);
   // ADR-313 — the draft lives in <Builder>; the exit guard forgets it through this stand-in.
-  const draftSink = useRef<FormDraft | null>(null);
-  const draft = useMemo<FormDraft>(
-    () => ({ band: null, clear: () => draftSink.current?.clear() }),
-    [],
-  );
+  const { sink: draftSink, draft } = useDraftSink();
   const exit = useExitConfirm({ draft });
 
   const onExcel = async (spec: AdHocSpec) => {

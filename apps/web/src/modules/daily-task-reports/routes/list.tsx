@@ -4,7 +4,7 @@
 // ADR-201: 25 rows a page (?page=); the user / date filters, the search and
 // Sort & Filter run on the server over every report; any change → page 1.
 
-import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { SHIFT_LABELS, SHIFTS, type DailyTaskReportRow } from '@innovic/shared';
 import { createRoute, redirect } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -97,7 +97,7 @@ function DailyTaskReportsPage(): React.JSX.Element {
       return next;
     });
 
-  const { data, isLoading, isFetching, isError, error } = useDailyReportList({
+  const { data, isLoading, isFetching, isError, error, isPlaceholderData } = useDailyReportList({
     userId: userFilter || undefined,
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
@@ -115,7 +115,7 @@ function DailyTaskReportsPage(): React.JSX.Element {
       </div>
     );
   }
-  if (!data) {
+  if (!data || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load daily reports. Try again.'}
