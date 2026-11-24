@@ -29,6 +29,7 @@ import { polSql } from '../../lib/pol';
 import { poLineAcceptedGroupedSql } from '../../lib/po-accepted';
 import { poLineGrnReceivedGroupedSql } from '../../lib/po-grn-received';
 import { poLinePendingSql } from '../../lib/po-pending';
+import { newestFirst } from '../../lib/list-order';
 import type { ListPurchaseOrdersQuery } from './schema';
 
 function requireCompany(user: AuthContext): string {
@@ -154,7 +155,7 @@ export async function listPurchaseOrderLines(
     const orderBy = sfOrderBy(
       PO_LINE_SF_COLUMNS,
       sf,
-      sql`po.po_date DESC, po.code DESC, pol.line_no ASC, pol.id`,
+      sql`${newestFirst('po')}, pol.line_no ASC, pol.id`,
       sfOpts,
     );
 

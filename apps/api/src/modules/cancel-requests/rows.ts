@@ -10,6 +10,7 @@ import {
 import { sql, type SQL } from 'drizzle-orm';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { newestFirst } from '../../lib/list-order';
 
 export const formKeyOf = (t: CancelDocType): AccessFormKey =>
   CANCEL_DOC_FORM_KEY[t] as AccessFormKey;
@@ -36,7 +37,7 @@ export async function selectRows(
     LEFT JOIN public.users ru ON ru.id = cr.requested_by
     LEFT JOIN public.users du ON du.id = cr.decided_by
     WHERE cr.company_id = ${companyId}::uuid AND cr.deleted_at IS NULL ${where}
-    ORDER BY (cr.status = 'pending') DESC, cr.requested_at DESC, cr.id
+    ORDER BY (cr.status = 'pending') DESC, ${newestFirst('cr', 'id', 'requested_at')}
     ${page ? sql`LIMIT ${page.limit} OFFSET ${page.offset}` : sql``}
   `)) as unknown as Array<Record<string, unknown>>;
   return rows.map((r) => ({

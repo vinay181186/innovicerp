@@ -23,6 +23,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { type QcPager, TablePager, rowNo } from './TablePager';
 
 const SORTS: { id: QcQueueSort; label: string }[] = [
+  { id: 'newest', label: 'Newest First' },
   { id: 'age', label: 'Oldest First' },
   { id: 'due', label: 'Due Date' },
   { id: 'customer', label: 'Customer' },

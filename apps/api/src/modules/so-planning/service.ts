@@ -20,7 +20,7 @@ import {
   soLinePlanCoverage,
   toPlanningLineStatus,
 } from '@innovic/shared';
-import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
   BomLineType,
   PlanningBomChild,
@@ -66,6 +66,7 @@ import { soLineCoveredRaw, soLineDirectJcRaw, soLinePlannedRaw } from '../../lib
 import { emitActivityLog } from '../activity-log/service';
 import { partyGrnStatusByLine } from '../job-work-orders/customer-rm';
 import { readSoCustomerParts, type SoCustomerPart } from '../../lib/party-so-parts';
+import { newestFirst } from '../../lib/list-order';
 import {
   liveJwCustomerName,
   liveSoCustomerName,
@@ -172,7 +173,7 @@ export async function getPlanningSoList(
         salesOrders.customerName,
         salesOrders.type,
       )
-      .orderBy(desc(salesOrders.code));
+      .orderBy(newestFirst('sales_orders'));
 
     // ADR-185 — planned / PR / direct-JC coverage per SO now comes from the
     // shared rule in the select above (lib/so-line-coverage.ts).
@@ -220,7 +221,7 @@ export async function getPlanningSoList(
         jobWorkOrders.createdBy,
         jobWorkOrders.customerName,
       )
-      .orderBy(desc(jobWorkOrders.code));
+      .orderBy(newestFirst('job_work_orders'));
 
     const jwIds = jwRows.map((r) => r.soId);
 

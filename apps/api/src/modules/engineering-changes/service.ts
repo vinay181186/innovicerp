@@ -29,6 +29,7 @@ import {
 import { fmtDateTime } from '../../lib/format-date';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
+import { newestFirst } from '../../lib/list-order';
 import { emitActivityLog } from '../activity-log/service';
 import {
   ECR_COLS,
@@ -151,7 +152,7 @@ export async function listEcrs(q: ListEcrQuery, user: AuthContext): Promise<List
         (SELECT COUNT(*) FROM public.engineering_change_approvals a
           WHERE a.ecr_id = e.id AND a.deleted_at IS NULL AND a.decision = 'approved')::int AS "approvalsDone"
       ${ECR_FROM} ${where}
-      ORDER BY ${sfOrderBy(ECR_SF_COLUMNS, sf, sql`e.created_at DESC, e.id`)}
+      ORDER BY ${sfOrderBy(ECR_SF_COLUMNS, sf, sql`${newestFirst('e')}`)}
       LIMIT ${q.limit} OFFSET ${q.offset}`)) as unknown as Array<Record<string, unknown>>;
     const total = (await tx.execute(sql`
       SELECT COUNT(*)::int AS n ${ECR_FROM} ${where}`)) as unknown as Array<{ n: number }>;

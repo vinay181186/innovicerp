@@ -5,7 +5,7 @@
 // ADR-250 home lists), so the per-person home and the checks reuse ONE
 // predicate per fact: rows-*.ts are imported, never copied. The runner is
 // list-query.ts runList plus one more window figure: how many rows are due
-// TODAY (the check's orange tone). Rows: late first, then oldest.
+// TODAY (the check's orange tone). Rows: newest created first (ADR-318).
 
 import {
   type AccessFormKey,
@@ -152,10 +152,12 @@ export interface CheckResult {
   dueTodayTotal: number;
 }
 
-/** The rows order of every check: late first, then oldest (sort_key), then
- *  number, then row key so ties are stable. One definition, both paths. */
+/** The rows order of every check (ADR-318): newest first by the document's
+ *  Created On time (sort_key = lib/list-order createdKey), then number, then
+ *  row key so ties are stable. Late rows stay red but are NOT pulled to the
+ *  top. One definition, both paths. */
 export const ROW_ORDER = (a: string): SQL =>
-  sql.raw(`${a}.is_late DESC, ${a}.sort_key ASC NULLS LAST, ${a}.code ASC, ${a}.row_key ASC`);
+  sql.raw(`${a}.sort_key DESC NULLS LAST, ${a}.code DESC, ${a}.row_key DESC`);
 
 /** THE one definition of a check's figures over its inner query, as ONE json
  *  value (a parenthesised scalar subquery):

@@ -16,6 +16,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { requireAnyFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { roundQty } from '../../lib/stock-ledger';
 import { calibrationDueSql, dateOut, requireCompany, todayIst } from './common';
 import { INSTRUMENT_SF_COLUMNS } from './sf-columns';
@@ -106,7 +107,7 @@ export async function listInstruments(
     // list's own field whitelist (sf-columns.ts). Applied to list AND count.
     const sf = readSf(q.sf);
     const where = sql`${sql.join(parts, sql` AND `)} ${sfWhere(INSTRUMENT_SF_COLUMNS, sf)}`;
-    const orderBy = sfOrderBy(INSTRUMENT_SF_COLUMNS, sf, sql`i.code, lower(ins.serial_no), ins.id`);
+    const orderBy = sfOrderBy(INSTRUMENT_SF_COLUMNS, sf, newestFirst('ins'));
     const rows = (await tx.execute(sql`
       ${SELECT}
       WHERE ${where}

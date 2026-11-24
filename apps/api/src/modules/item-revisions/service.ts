@@ -32,6 +32,7 @@ import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { itemNeedsRev, replaceItemRevisionDrawing } from '../../lib/item-revision';
 import { likeEscape } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { listRevCorrections } from './corrections';
 
 const requireCompany = (user: AuthContext): string => {
@@ -109,7 +110,7 @@ export async function listItemRevisions(
         }`;
     const rows = (await tx.execute(sql`
       ${REV_SELECT} ${where}
-      ORDER BY i.code, ir.rev
+      ORDER BY ${newestFirst('ir')}
       LIMIT ${q.limit} OFFSET ${q.offset}`)) as unknown as Array<Record<string, unknown>>;
     const totalRows = (await tx.execute(sql`
       SELECT COUNT(*)::int AS n FROM public.item_revisions ir

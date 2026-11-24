@@ -13,6 +13,7 @@
 
 import { docNavPage } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
+import { createdKey } from '../../../lib/list-order';
 import type { RawRow } from '../personal/list-query';
 import { nextStep } from './next-step';
 import { type CheckCtx, type CheckDef, monthEnd, weekEnd } from './types';
@@ -30,7 +31,7 @@ export function salesLinesSql(c: CheckCtx, w: Window): SQL {
   return sql`
     SELECT sol.id::text AS row_key, so.id, so.code, 'so'::text AS kind,
            so.so_date::text AS doc_date, sol.due_date::text AS due_date,
-           sol.due_date::text AS sort_key,
+           ${createdKey('so.created_at')} AS sort_key,
            COALESCE(cl.name, so.customer_name)::text AS party,
            COALESCE(i.code, sol.item_code_text)::text AS item_code,
            sol.part_name::text AS item_name,
@@ -50,7 +51,7 @@ export function salesLinesSql(c: CheckCtx, w: Window): SQL {
     UNION ALL
     SELECT jwl.id::text AS row_key, jw.id, jw.code, 'jw'::text AS kind,
            jw.jw_date::text AS doc_date, jwl.due_date::text AS due_date,
-           jwl.due_date::text AS sort_key,
+           ${createdKey('jw.created_at')} AS sort_key,
            COALESCE(cl.name, jw.customer_name)::text AS party,
            COALESCE(i.code, jwl.item_code_text)::text AS item_code,
            jwl.part_name::text AS item_name,
@@ -101,7 +102,7 @@ const salesDef = (key: CheckDef['key'], label: string, w: Window): CheckDef => (
 export function soDraftSql(c: CheckCtx): SQL {
   return sql`
     SELECT so.id::text AS row_key, so.id, so.code, 'so'::text AS kind,
-           so.so_date::text AS doc_date, NULL::text AS due_date, so.so_date::text AS sort_key,
+           so.so_date::text AS doc_date, NULL::text AS due_date, ${createdKey('so.created_at')} AS sort_key,
            COALESCE(cl.name, so.customer_name)::text AS party,
            (ARRAY_AGG(COALESCE(i.code, sol.item_code_text) ORDER BY sol.line_no))[1]::text AS item_code,
            (ARRAY_AGG(sol.part_name ORDER BY sol.line_no))[1]::text AS item_name,

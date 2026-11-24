@@ -34,6 +34,7 @@ import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-tra
 import { withUniqueRetry } from '../../lib/db-retry';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { ITEM_SF_COLUMNS } from './sf-columns';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import {
@@ -194,13 +195,15 @@ export async function listItems(
 
     const where = and(...conditions);
 
-    // ADR-201: the order always ends on a unique key (code, then id) so a
+    // ADR-201: the order always ends on a unique key (code or created, then id) so a
     // 25-row page never skips or repeats an item — names are not unique.
     const dir = input.sortDir === 'desc' ? desc : asc;
     const baseOrder =
       input.sortBy === 'name'
         ? sql`${dir(items.name)}, ${dir(items.code)}, ${asc(items.id)}`
-        : sql`${dir(items.code)}, ${asc(items.id)}`;
+        : input.sortBy === 'code'
+          ? sql`${dir(items.code)}, ${asc(items.id)}`
+          : newestFirst('items'); // ADR-318: no sort asked = newest added first
 
     const [rows, totals] = await Promise.all([
       tx
@@ -712,7 +715,8 @@ function itemPlainUpdates(input: UpdateItemInput): Record<string, unknown> {
   // Product image: a string sets it, null clears it, undefined leaves it alone.
   if (input.imagePath !== undefined) updates.imagePath = input.imagePath ?? null;
   // ADR-290 — Customer Part No.: null / blank clears it.
-  if (input.customerPartNo !== undefined) updates.customerPartNo = emptyToNull(input.customerPartNo);
+  if (input.customerPartNo !== undefined)
+    updates.customerPartNo = emptyToNull(input.customerPartNo);
   return updates;
 }
 

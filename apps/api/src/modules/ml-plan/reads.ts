@@ -7,6 +7,7 @@ import { createdByNameSql } from '../../lib/created-by-sql';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { tsLike } from '../ml-bom/helpers';
 import { codeRevSql } from '../qc-history/sql';
 import { lineFactsFromSql, refusalSql } from './guards';
@@ -140,7 +141,7 @@ export async function listMlPlansTx(
   // Sort & Filter (ADR-200) on the page AND the count (ADR-201).
   const sf = readSf(input.sf);
   const sfFrag = sfWhere(ML_PLAN_SF_COLUMNS, sf);
-  const orderBy = sfOrderBy(ML_PLAN_SF_COLUMNS, sf, sql`mp.code DESC, mp.id DESC`);
+  const orderBy = sfOrderBy(ML_PLAN_SF_COLUMNS, sf, newestFirst('mp'));
 
   const fromWhere = sql`
     ${HEADER_FROM}

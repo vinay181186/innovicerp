@@ -16683,3 +16683,26 @@ WIP by Operation, Affected WIP (WIP part only). "Sr No from 14" was Queue No. be
    `createdAt` / `createdByName` (item_revisions.created_at / created_by). The register has no own
    document number, so it joins the guard's no-own-No. list. Fixes the lead-columns guard.
 No migration.
+
+## ADR-318: Every list opens newest first — by Created On time (owner 2026-11-24)
+
+Owner: "on table list … by default I want latest no. on top across system … my shared table and
+other dashboard list … latest to old by default … permanent fix." Answers: masters too; Home
+checks pure newest first (late rows stay red, not pulled up); latest = **Created On time**; work
+queues and value reports stay as they are.
+
+1. **One rule:** `apps/api/src/lib/list-order.ts` — `newestFirst(alias)` = `created_at DESC, id DESC`.
+   Created time is the order numbers were issued, so the newest number leads in every series
+   (sorting the number TEXT put every typed `SO-…` above every `IN-SO-…`, and `SO-99` above `SO-433`).
+   The id keeps paging stable. A ▾ column sort the user picks still wins; this order breaks ties.
+2. **Every list endpoint's default** (the sfOrderBy fallback or plain ORDER BY) uses it — documents,
+   their line views (header newest, then line order), masters (no sortBy → newest added first),
+   approval inboxes, QC pending lists.
+3. **Home:** `ROW_ORDER` = `sort_key DESC`; every check's `sort_key` = the document's created time
+   (`createdKey`). Personal Home lists the same. Approvals waiting newest first (`sortNewestFirst`).
+4. **Kept on purpose** (named in `list-order.guard.unit.test.ts` KEEP with the reason): Machine
+   Loading, Job Queue, Unplanned orders, value reports (Pending SO Value, Stock Valuation, OSP WIP,
+   SC summaries), stock views by item, running ops, lines inside one document, Day Log sheet, task
+   history timeline.
+5. **Guard:** `list-order.guard.unit.test.ts` fails when a module calls sfOrderBy without
+   list-order.ts and is not on KEEP. No migration.

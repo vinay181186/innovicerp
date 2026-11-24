@@ -1,6 +1,6 @@
 // ADR-265 — the pure pieces of the Approvals waiting list and history: the
 // Approval Type labels and their menu order, the one-line "what is asked"
-// texts, the counts and the oldest-first order. No database, no access —
+// texts, the counts and the newest-first order (ADR-318). No database, no access —
 // unit-tested on their own (waiting-text.unit.test.ts).
 
 import {
@@ -157,11 +157,12 @@ export function toIso(v: unknown): string {
   return Number.isNaN(ms) ? String(v ?? '') : new Date(ms).toISOString();
 }
 
-/** Oldest raisedAt first (a queue); id breaks ties so the order is stable. */
-export function sortOldestFirst<T extends { raisedAt: string; id: string }>(rows: T[]): T[] {
+/** ADR-318 — newest raisedAt first (owner: latest on top on every list); id
+ *  breaks ties so the order is stable. */
+export function sortNewestFirst<T extends { raisedAt: string; id: string }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => {
-    const d = Date.parse(a.raisedAt) - Date.parse(b.raisedAt);
+    const d = Date.parse(b.raisedAt) - Date.parse(a.raisedAt);
     if (d !== 0 && !Number.isNaN(d)) return d;
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
   });
 }

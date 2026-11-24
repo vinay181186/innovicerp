@@ -7,7 +7,7 @@
 // job_work_order_lines.returned_qty; the JWSO header status is then re-derived
 // by recomputeJwHeaderStatus (ADR-203, the only writer of that status).
 
-import { type SQL, and, count, desc, eq, ilike, isNull, like, ne, or, sql } from 'drizzle-orm';
+import { type SQL, and, count, eq, ilike, isNull, like, ne, or, sql } from 'drizzle-orm';
 import {
   ActivityAction,
   type CancelBlocker,
@@ -45,6 +45,7 @@ import { readRevBucketPosition } from '../../lib/stock-reservation';
 import { emitActivityLog } from '../activity-log/service';
 import { blockerRefusal } from '../cancel-requests/messages';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { JW_RETURN_SF_COLUMNS } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
@@ -985,13 +986,7 @@ export async function listJwReturnChallans(
       selectListItems(tx)
         .where(where)
         // id last: a unique tie-breaker so paging never skips or repeats a row.
-        .orderBy(
-          sfOrderBy(
-            JW_RETURN_SF_COLUMNS,
-            sf,
-            sql`${desc(jwReturnChallans.returnDate)}, ${desc(jwReturnChallans.code)}, ${desc(jwReturnChallans.id)}`,
-          ),
-        )
+        .orderBy(sfOrderBy(JW_RETURN_SF_COLUMNS, sf, newestFirst('jw_return_challans')))
         .limit(input.limit)
         .offset(input.offset),
       tx

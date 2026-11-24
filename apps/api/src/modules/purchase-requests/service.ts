@@ -59,6 +59,7 @@ import { emitActivityLog } from '../activity-log/service';
 import { assertMlNodeCapOnEdit, assertMlNodeItemUnchanged } from '../ml-plan/edit-cap';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { newestFirst } from '../../lib/list-order';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { stagedEditMessage } from '../cancel-requests/messages';
 import { releaseSourceJcOps } from './pr-cancel-writer';
@@ -696,7 +697,7 @@ export async function listPurchaseRequests(
     );
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(sfColumns, sf);
-    const orderBy = sfOrderBy(sfColumns, sf, sql`pr.pr_date DESC, pr.code DESC`);
+    const orderBy = sfOrderBy(sfColumns, sf, newestFirst('pr'));
 
     const result = await tx.execute(sql`
       SELECT
@@ -784,9 +785,8 @@ export async function listPurchaseRequests(
         ${convertibleFrag}
         ${ospFrag}
         ${sfFrag}
-      -- Newest first, matching the SO list (sales-orders/service.ts). This was
-      -- pr.code ASC, which sank every new PR to the last page. (The fallback
-      -- of the Sort & Filter order above.)
+      -- Newest created first (ADR-318). This was pr.code ASC, which sank every
+      -- new PR to the last page. (The fallback of the Sort & Filter order above.)
       ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
@@ -959,9 +959,7 @@ export async function getPurchaseRequest(
         // without migration 0119 the column is still the old integer, which
         // would arrive as a number wearing a string type. Never items.revision
         // -- that is a different column about the item master.
-        itemRevision: sql<
-          string | null
-        >`COALESCE(
+        itemRevision: sql<string | null>`COALESCE(
           CASE WHEN ${salesOrderLines.itemId} = ${purchaseRequests.itemId} THEN ${salesOrderLines.revision}::text END,
           CASE WHEN ${jobWorkOrderLines.itemId} = ${purchaseRequests.itemId} THEN ${jobWorkOrderLines.revision}::text END
         )`,

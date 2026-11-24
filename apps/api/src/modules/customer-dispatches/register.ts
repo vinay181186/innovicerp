@@ -22,6 +22,7 @@ import { withUserContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { liftLineFilters, likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { billedStatusOf, loadBilledQtyByDispatch } from './billed';
 import { DISPATCH_LINE_LIFT, DISPATCH_SF_COLUMNS } from './sf-columns';
 
@@ -173,12 +174,8 @@ export async function listDispatchRegister(
       WHERE l.customer_dispatch_id = h.id AND l.deleted_at IS NULL AND ${match}
     )
     ${sfWhere(DISPATCH_SF_COLUMNS, sfq)} ${soSfFrag}`;
-  // Ends on id so a page never skips / repeats a dispatch.
-  const order = sfOrderBy(
-    DISPATCH_SF_COLUMNS,
-    sfAll,
-    sql`h.dispatch_date DESC, h.created_at DESC, h.id DESC`,
-  );
+  // ADR-318 — newest created first; ends on id so a page never skips / repeats a dispatch.
+  const order = sfOrderBy(DISPATCH_SF_COLUMNS, sfAll, sql`${newestFirst('h')}`);
   const limitFrag = input.limit !== undefined ? sql`LIMIT ${input.limit}` : sql``;
 
   return withUserContext(user, async (tx) => {

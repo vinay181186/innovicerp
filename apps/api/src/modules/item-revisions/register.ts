@@ -26,6 +26,7 @@ import {
 } from '../../lib/errors';
 import { resolveItemRevision } from '../../lib/item-revision';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { emitActivityLog } from '../activity-log/service';
 import { DRAWING_REGISTER_SF_COLUMNS } from './sf-columns';
 
@@ -136,7 +137,7 @@ export async function listDrawingRegister(
                   ELSE COALESCE(NULLIF(btrim(cu.full_name), ''), split_part(cu.email, '@', 1)) END
                AS "createdByName"
       ${BASE_FROM} ${COUNTS} ${ORDERS} ${where}
-      ORDER BY ${sfOrderBy(DRAWING_REGISTER_SF_COLUMNS, sf, sql`i.code, ir.rev, ir.id`)}
+      ORDER BY ${sfOrderBy(DRAWING_REGISTER_SF_COLUMNS, sf, sql`${newestFirst('ir')}`)}
       LIMIT ${q.limit} OFFSET ${q.offset}`)) as unknown as Array<Record<string, unknown>>;
     // The count runs the three LATERAL subqueries only when a filter reads
     // one of them (a sort never changes the count).

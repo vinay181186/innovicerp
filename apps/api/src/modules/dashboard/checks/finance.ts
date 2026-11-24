@@ -19,6 +19,7 @@ import { docNavPage } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { invoiceBalanceSql, invoiceOverdueSql } from '../../../lib/invoice-overdue';
 import { jwLineLastReturnDateSql, jwLineToInvoiceSql } from '../../../lib/jw-to-invoice';
+import { createdKey } from '../../../lib/list-order';
 import { nextStep } from './next-step';
 import type { CheckCtx, CheckDef } from './types';
 
@@ -26,7 +27,7 @@ export function jwNotInvoicedSql(c: CheckCtx): SQL {
   return sql`
     SELECT jwl.id::text AS row_key, jw.id, jw.code, 'jw'::text AS kind,
            t.last_return::text AS doc_date, NULL::text AS due_date,
-           t.last_return::text AS sort_key,
+           ${createdKey('jw.created_at')} AS sort_key,
            COALESCE(cl.name, jw.customer_name)::text AS party,
            COALESCE(i.code, jwl.item_code_text)::text AS item_code,
            COALESCE(i.name, jwl.part_name)::text AS item_name,
@@ -48,7 +49,7 @@ export function invoiceOverdueCheckSql(c: CheckCtx): SQL {
   return sql`
     SELECT inv.id::text AS row_key, inv.id, inv.code, 'invoice'::text AS kind,
            inv.invoice_date::text AS doc_date, inv.due_date::text AS due_date,
-           inv.due_date::text AS sort_key,
+           ${createdKey('inv.created_at')} AS sort_key,
            COALESCE(cl.name, inv.client_name_text)::text AS party,
            NULL::text AS item_code, NULL::text AS item_name,
            b.balance::numeric AS qty, '₹'::text AS uom, NULL::numeric AS amount,

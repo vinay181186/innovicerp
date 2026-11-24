@@ -18,6 +18,7 @@ import { invoiceBalanceSql, invoiceOverdueSql } from '../../lib/invoice-overdue'
 import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { INVOICE_LINE_SF_COLUMNS } from './sf-columns';
 
 const n = (s: string | number | null | undefined): number => Number(s ?? 0) || 0;
@@ -89,12 +90,12 @@ export async function listInvoiceLines(
       AND il.deleted_at IS NULL
       ${searchFrag}
       ${sfWhere(INVOICE_LINE_SF_COLUMNS, sfq, sfOpts)}`;
-  // Newest invoice first (as GET /invoices), lines in line order, id last so
+  // ADR-318 — newest created invoice first (as GET /invoices), lines in line order, id last so
   // a page never skips / repeats a line.
   const order = sfOrderBy(
     INVOICE_LINE_SF_COLUMNS,
     sfq,
-    sql`invoices.invoice_date DESC, invoices.created_at DESC, invoices.id DESC, il.line_no ASC, il.id ASC`,
+    sql`${newestFirst('invoices')}, il.line_no ASC, il.id ASC`,
     sfOpts,
   );
   const limitFrag = input.limit !== undefined ? sql`LIMIT ${input.limit}` : sql``;

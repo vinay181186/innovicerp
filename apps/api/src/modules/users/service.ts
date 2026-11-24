@@ -1,4 +1,4 @@
-import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
@@ -11,6 +11,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { supabaseAdmin } from '../../lib/supabase-admin';
 import { syncTokenIdentity } from '../../lib/sync-token-identity';
@@ -101,7 +102,7 @@ export async function listUsers(
         .select()
         .from(users)
         .where(where)
-        .orderBy(sfOrderBy(USER_SF_COLUMNS, sf, asc(users.email)))
+        .orderBy(sfOrderBy(USER_SF_COLUMNS, sf, newestFirst('users')))
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(users).where(where),

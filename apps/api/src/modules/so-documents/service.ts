@@ -19,6 +19,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { newestFirst } from '../../lib/list-order';
 import { emitActivityLog } from '../activity-log/service';
 
 // ── Which permission gates this screen ─────────────────────────────────────
@@ -90,7 +91,7 @@ export async function listSoDocumentOverview(
         GROUP BY sales_order_id
       ) qd ON qd.sales_order_id = so.id
       WHERE so.company_id = ${companyId}::uuid AND so.deleted_at IS NULL
-      ORDER BY so.code DESC
+      ORDER BY ${newestFirst('so')}
     `);
     return {
       rows: rows(rs).map((r) => ({

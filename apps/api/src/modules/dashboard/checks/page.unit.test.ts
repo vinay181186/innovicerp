@@ -315,7 +315,7 @@ describe('check page search (ADR-312)', () => {
 
   it('the page orders by the home order and pages with LIMIT / OFFSET', () => {
     const q = render(page.checkPageSql(sql`SELECT 1`, sql`TRUE`, 25, 50));
-    expect(q.sql).toContain('ORDER BY f.is_late DESC, f.sort_key ASC NULLS LAST');
+    expect(q.sql).toContain('ORDER BY f.sort_key DESC NULLS LAST');
     expect(q.params).toEqual(expect.arrayContaining([25, 50]));
   });
 });

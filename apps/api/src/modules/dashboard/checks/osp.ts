@@ -19,6 +19,7 @@
 import { docNavPage } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { opPoLineIdsSql } from '../../../lib/osp-pr';
+import { createdKey } from '../../../lib/list-order';
 import { ospWipBucketSql } from '../../osp-wip/service';
 import type { RawRow } from '../personal/list-query';
 import { nextStep, nextStepAny } from './next-step';
@@ -28,7 +29,7 @@ export function ospReadyToSendSql(c: CheckCtx): SQL {
   return sql`
     SELECT w.jc_op_id::text AS row_key, w.job_card_id AS id, w.jc_code AS code,
            'osp'::text AS kind, jc.jc_date::text AS doc_date, jc.due_date::text AS due_date,
-           COALESCE(jc.due_date, DATE '9999-12-31')::text AS sort_key,
+           ${createdKey('jc.created_at')} AS sort_key,
            w.vendor_name::text AS party, w.item_code::text AS item_code,
            w.item_name::text AS item_name, w.ready_to_send_qty::numeric AS qty,
            i.uom::text AS uom, NULL::numeric AS amount, jc.created_by::text AS created_by,
@@ -57,7 +58,7 @@ export function ospAtVendorLateSql(c: CheckCtx): SQL {
   return sql`
     SELECT w.jc_op_id::text AS row_key, w.job_card_id AS id, w.jc_code AS code,
            'osp'::text AS kind, jc.jc_date::text AS doc_date, pd.po_due::text AS due_date,
-           pd.po_due::text AS sort_key,
+           ${createdKey('jc.created_at')} AS sort_key,
            w.vendor_name::text AS party, w.item_code::text AS item_code,
            w.item_name::text AS item_name, w.at_vendor_qty::numeric AS qty,
            i.uom::text AS uom, NULL::numeric AS amount, jc.created_by::text AS created_by,

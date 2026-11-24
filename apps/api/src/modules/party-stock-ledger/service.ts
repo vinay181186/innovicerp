@@ -18,6 +18,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 
 // The words the ledger screen prints (party-stock-ledger/routes/list.tsx) —
 // the search matches what the user reads, not the stored codes.
@@ -112,7 +113,7 @@ export async function listPartyStockLedger(
         u.full_name AS "createdByName",
         COALESCE(so.code, jw.code) AS "orderCode"
       ${fromWhere}
-      ORDER BY psl.created_at DESC, psl.id DESC
+      ORDER BY ${newestFirst('psl')}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `)) as unknown as Array<Record<string, unknown>>;
 

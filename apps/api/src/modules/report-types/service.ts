@@ -15,6 +15,7 @@ import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 
 /** Sort & Filter (ADR-200) — the Report Types sheet's columns, as SELECTed. */
 const REPORT_TYPE_SF_COLUMNS: SfColumnMap = {
@@ -61,11 +62,7 @@ export async function listReportTypes(
     isNull(reportTypes.deletedAt),
     sql`TRUE ${sfWhere(REPORT_TYPE_SF_COLUMNS, sf)}`,
   );
-  const orderBy = sfOrderBy(
-    REPORT_TYPE_SF_COLUMNS,
-    sf,
-    sql`${reportTypes.createdAt} DESC, ${reportTypes.id} DESC`,
-  );
+  const orderBy = sfOrderBy(REPORT_TYPE_SF_COLUMNS, sf, newestFirst('report_types'));
   return withUserContext(user, async (tx) => {
     const rows = await tx
       .select()

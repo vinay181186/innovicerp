@@ -25,6 +25,7 @@
 import { docNavPage } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { ospOpHasPurchaseSql } from '../../../lib/osp-pr';
+import { createdKey } from '../../../lib/list-order';
 import { NC_SOURCE_VENDOR_JOINS, rtvReadyForChallanSql } from '../../../lib/rtv-predicates';
 import { poDraftSql, poOverdueSql, prToPoSql } from '../personal/rows-purchase';
 import { nextStep } from './next-step';
@@ -34,7 +35,7 @@ export function ospOpsNoPrSql(c: CheckCtx): SQL {
   return sql`
     SELECT o.id::text AS row_key, jc.id, jc.code, 'osp_op'::text AS kind,
            jc.jc_date::text AS doc_date, jc.due_date::text AS due_date,
-           COALESCE(jc.due_date, DATE '9999-12-31')::text AS sort_key,
+           ${createdKey('jc.created_at')} AS sort_key,
            COALESCE(v.name, o.outsource_vendor_text)::text AS party,
            i.code::text AS item_code, i.name::text AS item_name,
            jc.order_qty::numeric AS qty, i.uom::text AS uom, NULL::numeric AS amount,
@@ -56,7 +57,7 @@ export function rtvChallanSql(c: CheckCtx): SQL {
   return sql`
     SELECT nc.id::text AS row_key, nc.id, nc.code, 'nc'::text AS kind,
            nc.disposition_date::text AS doc_date, NULL::text AS due_date,
-           nc.disposition_date::text AS sort_key,
+           ${createdKey('nc.created_at')} AS sort_key,
            v.name::text AS party,
            COALESCE(i.code, nc.item_code_text)::text AS item_code,
            COALESCE(i.name, nc.item_name_text)::text AS item_name,

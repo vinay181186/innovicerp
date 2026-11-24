@@ -48,6 +48,7 @@ import { AuthorizationError } from '../../lib/errors';
 import { loadOpenReworkByOp } from '../../lib/open-rework';
 import { readSf } from '../../lib/list-query';
 import { loadOspAcceptedByOp } from '../../lib/osp-accepted';
+import { newestFirst } from '../../lib/list-order';
 import { pageRows, sfFilterRows, sfSortRows } from './sf-memory';
 import { SO_OVERVIEW_SF_FIELDS } from './sf-fields';
 
@@ -103,7 +104,7 @@ export async function getSoOverview(
       })
       .from(salesOrders)
       .where(and(...conditions))
-      .orderBy(asc(salesOrders.code));
+      .orderBy(newestFirst('sales_orders'));
 
     if (soHeaders.length === 0) {
       return {

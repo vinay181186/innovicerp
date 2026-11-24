@@ -1,6 +1,6 @@
 import { ActivityAction } from '@innovic/shared';
 import type { DocumentEditStagedResult } from '@innovic/shared';
-import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { qcProcesses, reportTypes } from '../../db/schema';
 import { assertReportType, liveReportType, PROCESS_COLUMNS, readProcess } from './report-type';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -9,6 +9,7 @@ import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { DEFAULT_FINAL_QC_OP } from '../../lib/jc-default-qc';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import type {
   CreateQcProcessInput,
@@ -96,7 +97,7 @@ export async function listQcProcesses(
         .from(qcProcesses)
         .leftJoin(reportTypes, liveReportType)
         .where(where)
-        .orderBy(sfOrderBy(QC_PROCESS_SF_COLUMNS, sf, asc(qcProcesses.code)))
+        .orderBy(sfOrderBy(QC_PROCESS_SF_COLUMNS, sf, newestFirst('qc_processes')))
         .limit(input.limit)
         .offset(input.offset),
       tx.select({ value: count() }).from(qcProcesses).where(where),

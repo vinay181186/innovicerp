@@ -14,6 +14,7 @@ import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { billedStatusOf, loadBilledQtyByDispatch } from './billed';
 import {
   HEADER_JOINS,
@@ -41,11 +42,11 @@ export async function listDispatchLines(
   const scope = sql`
     h.company_id = ${companyId}::uuid AND h.deleted_at IS NULL ${soFrag}
     ${sfWhere(DISPATCH_LINE_SF_COLUMNS, sfq)}`;
-  // Newest dispatch first (as the register), lines in line order, line id last.
+  // ADR-318 — newest created dispatch first (as the register), lines in line order, line id last.
   const order = sfOrderBy(
     DISPATCH_LINE_SF_COLUMNS,
     sfq,
-    sql`h.dispatch_date DESC, h.created_at DESC, h.id DESC, l.line_no ASC, l.id ASC`,
+    sql`${newestFirst('h')}, l.line_no ASC, l.id ASC`,
   );
   const limitFrag = input.limit !== undefined ? sql`LIMIT ${input.limit}` : sql``;
 

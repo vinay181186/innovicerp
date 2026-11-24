@@ -39,6 +39,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { loadRelatedItems } from '../../lib/related-items';
 import {
   buildTimeline,
@@ -532,7 +533,7 @@ export async function listNcRegister(
       LEFT JOIN public.job_work_order_lines rev_jwl
         ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL`
         : sql``;
-    const orderBy = sfOrderBy(NC_SF_COLUMNS, sf, sql`nc.nc_date DESC, nc.code DESC`);
+    const orderBy = sfOrderBy(NC_SF_COLUMNS, sf, newestFirst('nc'));
 
     const result = await tx.execute(sql`
       SELECT

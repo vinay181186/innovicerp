@@ -45,6 +45,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { PARTY_MATERIAL_SF_COLUMNS } from './sf-columns';
 
 /** ADR-203: every read of the master is gated on the Party screens' view. */
@@ -117,11 +118,7 @@ export async function listPartyMaterials(
     // list's own field whitelist (sf-columns.ts). Applied to list AND count.
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(PARTY_MATERIAL_SF_COLUMNS, sf);
-    const orderBy = sfOrderBy(
-      PARTY_MATERIAL_SF_COLUMNS,
-      sf,
-      sql`COALESCE(i.code, pm.item_code_text, pm.code) ASC`,
-    );
+    const orderBy = sfOrderBy(PARTY_MATERIAL_SF_COLUMNS, sf, newestFirst('pm'));
     const fromWhere = sql`
       FROM public.party_materials pm
       LEFT JOIN public.clients c ON c.id = pm.client_id AND c.deleted_at IS NULL

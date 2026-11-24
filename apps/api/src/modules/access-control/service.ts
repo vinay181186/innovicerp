@@ -41,13 +41,14 @@ import {
   type UserAccess,
   type UserAccessListItem,
 } from '@innovic/shared';
-import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { userAccess, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole } from '../../lib/auth';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { labelOf, ROLE_LABEL } from '../../lib/status-labels';
@@ -203,13 +204,7 @@ export async function listUserAccess(
           sql`TRUE ${sfWhere(ACCESS_SF_COLUMNS, sf)}`,
         ),
       )
-      .orderBy(
-        sfOrderBy(
-          ACCESS_SF_COLUMNS,
-          sf,
-          sql`${desc(users.isActive)}, ${asc(users.fullName)}, ${asc(users.email)}, ${asc(users.id)}`,
-        ),
-      );
+      .orderBy(sfOrderBy(ACCESS_SF_COLUMNS, sf, newestFirst('users')));
 
     const items: UserAccessListItem[] = rows.map((r) => {
       const fullAccess = r.acFullAccess ?? false;

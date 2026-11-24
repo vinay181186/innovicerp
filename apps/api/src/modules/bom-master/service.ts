@@ -39,6 +39,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { BOM_SF_COLUMNS } from './sf-columns';
 import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { buildImportTemplateBuffer } from '../../lib/excel-template';
@@ -347,7 +348,7 @@ export async function listBomMasters(
     // is the number of rows the search + filters really match (ADR-201).
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(BOM_SF_COLUMNS, sf);
-    const orderBy = sfOrderBy(BOM_SF_COLUMNS, sf, sql`b.bom_no DESC, b.id DESC`);
+    const orderBy = sfOrderBy(BOM_SF_COLUMNS, sf, newestFirst('b'));
 
     const fromWhere = sql`
       FROM public.bom_masters b

@@ -93,6 +93,7 @@ import {
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { SO_SF_COLUMNS } from './sf-columns';
 import { SO_TOTAL_VALUE_BASIC_AGG, SO_VALUE_TO_DISPATCH_AGG } from './so-value-sql';
 import { logSoEdit } from './edit-log';
@@ -554,7 +555,7 @@ export async function listSalesOrders(
     const sf = readSf(input.sf);
     // ADR-303 — no price right → no sort / filter on the two value columns.
     const sfFrag = sfWhere(SO_SF_COLUMNS, sf, { canSeePrice: showMoney });
-    const orderBy = sfOrderBy(SO_SF_COLUMNS, sf, sql`so.so_date DESC, so.code DESC`, {
+    const orderBy = sfOrderBy(SO_SF_COLUMNS, sf, sql`${newestFirst('so')}`, {
       canSeePrice: showMoney,
     });
 

@@ -25,6 +25,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { canWrite } from '../../lib/access';
 import { requireAdminRole } from '../../lib/auth';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { loadDayLogReplies } from './day-log-replies';
 import {
   OPEN_STATUSES,
@@ -189,7 +190,7 @@ export async function listTasks(
           AND ua.deleted_at IS NULL AND ua.main_dept = ${query.dept})`);
     }
     const where = sql`${sql.join(parts, sql` AND `)} ${sfWhere(cols, sf)}`;
-    const order = sfOrderBy(cols, sf, sql`${tasks.createdAt} DESC, ${tasks.id} DESC`);
+    const order = sfOrderBy(cols, sf, newestFirst('tasks'));
 
     const base = tx.select().from(tasks).where(where).orderBy(order);
     const offset = query.offset ?? 0;

@@ -51,6 +51,7 @@ import { emitActivityLog } from '../activity-log/service';
 import { blockerRefusal } from '../cancel-requests/messages';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
+import { newestFirst } from '../../lib/list-order';
 import { DEFAULT_PAYMENT_TERMS_DAYS } from './constants';
 import {
   assertTaxTypeMatches,
@@ -191,13 +192,8 @@ export async function listInvoices(
       : undefined,
     sql`TRUE ${sfWhere(INVOICE_SF_COLUMNS, sfq, sfOpts)} ${soFrag}`,
   );
-  // Ends on id so a page never skips / repeats an invoice.
-  const order = sfOrderBy(
-    INVOICE_SF_COLUMNS,
-    sfAll,
-    sql`${invoices.invoiceDate} DESC, ${invoices.createdAt} DESC, ${invoices.id} DESC`,
-    sfOpts,
-  );
+  // ADR-318 — newest created first; ends on id so a page never skips / repeats an invoice.
+  const order = sfOrderBy(INVOICE_SF_COLUMNS, sfAll, sql`${newestFirst('invoices')}`, sfOpts);
   const today = todayStr();
   return withUserContext(user, async (tx) => {
     const base = tx

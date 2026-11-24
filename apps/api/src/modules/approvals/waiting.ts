@@ -54,7 +54,7 @@ import {
   orderedCounts,
   poRequestText,
   RC_REQUEST_TEXT,
-  sortOldestFirst,
+  sortNewestFirst,
   toIso,
   typeLabelOf,
 } from './waiting-text';
@@ -162,7 +162,7 @@ async function readEcrApprovals(
          AND e.submitted_by IS DISTINCT FROM ${user.id}::uuid
          AND NOT EXISTS (SELECT 1 FROM public.engineering_change_approvals a
                           WHERE a.ecr_id = e.id AND a.role = r.role AND a.deleted_at IS NULL)
-       ORDER BY e.submitted_at, e.code, r.role`)) as unknown as EcrWaiting[],
+       ORDER BY e.submitted_at DESC, e.code DESC, r.role`)) as unknown as EcrWaiting[],
   );
   return { roles, rows };
 }
@@ -342,7 +342,7 @@ export async function getWaitingApprovals(user: AuthContext): Promise<WaitingApp
     drawings.canApprove;
 
   return {
-    rows: sortOldestFirst(rows).slice(0, WAITING_APPROVALS_LIMIT),
+    rows: sortNewestFirst(rows).slice(0, WAITING_APPROVALS_LIMIT),
     counts,
     total,
     canApprove,

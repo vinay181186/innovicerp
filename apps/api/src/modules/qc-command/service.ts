@@ -188,7 +188,7 @@ export async function getQcCommand(
         WHERE vos.company_id = ${companyId}::uuid
           AND (vos.qc_required OR vos.op_type = 'qc')
           AND vos.qc_pending > 0
-        ORDER BY jc.code, vos.op_seq, vos.jc_op_id
+        ORDER BY jc.created_at DESC, jc.id DESC, vos.op_seq, vos.jc_op_id
       `),
 
       // 2. Every QC op_log row (for attempt counts, FPY, rework). Ordered so

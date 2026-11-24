@@ -20,6 +20,7 @@ import { createdByNameSql } from '../../lib/created-by-sql';
 import { opHoldReasonSql, releaseOpHolds } from '../../lib/jc-op-hold';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { describeMachineSplit, loadMachineSplit } from '../../lib/machine-split';
 import { polSql } from '../../lib/pol';
 import { emitActivityLog } from '../activity-log/service';
@@ -64,8 +65,9 @@ export async function listJcOpsBoard(
     // `total` (and the pager) match what the filters keep.
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(JC_OPS_SF_COLUMNS, sf);
+    // Default (ADR-318): newest job card first, then its ops in sequence.
     // Ends on op.id so 25-row pages never skip or repeat a row.
-    const orderBy = sfOrderBy(JC_OPS_SF_COLUMNS, sf, sql`jc.code, op.op_seq, op.id`);
+    const orderBy = sfOrderBy(JC_OPS_SF_COLUMNS, sf, sql`${newestFirst('jc')}, op.op_seq, op.id`);
 
     // The joins every filter can reach — shared by the page and its count.
     const baseFrom = sql`

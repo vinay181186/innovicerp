@@ -123,7 +123,7 @@ export const dashCheckSchema = z.object({
   /** Column names that differ per check: [document, reference, date].
    *  The others are fixed: Sr · Item · Qty · Status. */
   head: z.tuple([z.string(), z.string(), z.string()]),
-  /** First DASH_CHECK_ROW_LIMIT rows, late first then oldest. */
+  /** First DASH_CHECK_ROW_LIMIT rows, newest created first (ADR-318). */
   rows: z.array(dashCheckRowSchema),
   /** List page behind "View all". */
   href: z.string(),

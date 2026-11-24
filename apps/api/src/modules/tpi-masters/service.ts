@@ -1,12 +1,13 @@
 import { ActivityAction } from '@innovic/shared';
 import type { DocumentEditStagedResult } from '@innovic/shared';
-import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { tpiMasters } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { TPI_MASTER_SF_COLUMNS } from './sf-columns';
 import type {
@@ -123,7 +124,7 @@ export async function listTpiMasters(
         .where(where)
         .orderBy(
           // ADR-201: ends on id so a 25-row page never skips or repeats a row.
-          sfOrderBy(TPI_MASTER_SF_COLUMNS, sf, sql`${asc(tpiMasters.code)}, ${asc(tpiMasters.id)}`),
+          sfOrderBy(TPI_MASTER_SF_COLUMNS, sf, newestFirst('tpi_masters')),
         )
         .limit(input.limit)
         .offset(input.offset),

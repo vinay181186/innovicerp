@@ -12,6 +12,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { designIssueOpenSql } from '../../lib/design-status';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { DESIGN_ISSUE_SF_COLUMNS, ISSUE_AGE_DAYS_SQL } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
@@ -63,7 +64,7 @@ export async function listDesignIssuesAll(
         ${searchFrag}
         ${sfWhere(DESIGN_ISSUE_SF_COLUMNS, sf)}`;
     // Newest first; id breaks a created_at tie so paging never skips a row.
-    const orderBy = sfOrderBy(DESIGN_ISSUE_SF_COLUMNS, sf, sql`di.created_at DESC, di.id DESC`);
+    const orderBy = sfOrderBy(DESIGN_ISSUE_SF_COLUMNS, sf, sql`${newestFirst('di')}`);
 
     const result = await tx.execute(sql`
       SELECT

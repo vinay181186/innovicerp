@@ -28,6 +28,7 @@ import { AuthorizationError } from '../../lib/errors';
 import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
+import { newestFirstCols } from '../../lib/list-order';
 import {
   JW_DC_INWARD_LINES_SF_COLUMNS,
   JW_DC_OUTWARD_LINES_SF_COLUMNS,
@@ -126,7 +127,7 @@ export async function listJwDcOutwardLines(
     const orderBy = sfOrderBy(
       JW_DC_OUTWARD_LINES_SF_COLUMNS,
       sf,
-      sql`z."docDate" DESC, z."docCode" DESC, z."lineNo" ASC, z."lineId"`,
+      sql`${newestFirstCols('z."docCreatedAt"', 'z."docId"')}, z."lineNo" ASC, z."lineId"`,
     );
     const headerScope =
       input.includeCancelled === true
@@ -137,6 +138,7 @@ export async function listJwDcOutwardLines(
       SELECT
         jdol.id AS "lineId", jdol.line_no AS "lineNo",
         jdo.id AS "docId", jdo.code AS "docCode", jdo.dc_date AS "docDate",
+        jdo.created_at AS "docCreatedAt",
         jdo.cancel_reason AS "cancelReason", jdo.cancelled_at AS "cancelledAt",
         jdo.jwpo_code_text AS "jwpoCodeText",
         jdo.vendor_id AS "vendorId",
@@ -233,7 +235,7 @@ export async function listJwDcInwardLines(
     const orderBy = sfOrderBy(
       JW_DC_INWARD_LINES_SF_COLUMNS,
       sf,
-      sql`z."docDate" DESC, z."docCode" DESC, z."lineNo" ASC, z."lineId"`,
+      sql`${newestFirstCols('z."docCreatedAt"', 'z."docId"')}, z."lineNo" ASC, z."lineId"`,
     );
     const headerScope =
       input.includeCancelled === true
@@ -244,6 +246,7 @@ export async function listJwDcInwardLines(
       SELECT
         jdil.id AS "lineId", jdol.line_no AS "lineNo",
         jdi.id AS "docId", jdi.code AS "docCode", jdi.inward_date AS "docDate",
+        jdi.created_at AS "docCreatedAt",
         jdi.cancel_reason AS "cancelReason", jdi.cancelled_at AS "cancelledAt",
         jdi.jw_dc_outward_id AS "jwDcOutwardId",
         jdi.dc_code_text AS "dcCodeText",

@@ -18,6 +18,7 @@ import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { itemsSummaryOf, slipSummaryLateral } from '../../lib/material-requirement';
 import { roundQty } from '../../lib/stock-ledger';
+import { newestFirst } from '../../lib/list-order';
 import { STORE_ISSUE_SF_COLUMNS } from './sf-columns';
 
 export function requireCompany(user: AuthContext): string {
@@ -168,7 +169,7 @@ export async function listStoreIssues(
     // list's own field whitelist (sf-columns.ts). Applied to list AND count.
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(STORE_ISSUE_SF_COLUMNS, sf);
-    const orderBy = sfOrderBy(STORE_ISSUE_SF_COLUMNS, sf, sql`si.issue_date DESC, si.code DESC`);
+    const orderBy = sfOrderBy(STORE_ISSUE_SF_COLUMNS, sf, newestFirst('si'));
     const where = sql`
       WHERE si.company_id = ${companyId}::uuid
         AND si.deleted_at IS NULL

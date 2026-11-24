@@ -24,6 +24,7 @@
 import { docNavPage, INCOMING_QC_GRN_TYPES } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { ncPendingDispositionSql } from '../../../lib/nc-pending';
+import { createdKey } from '../../../lib/list-order';
 import { CALIBRATION_LEAD_DAYS, calibrationDueSql } from '../../instruments/common';
 import { PEND_IS_LAST, opStageWhere, pendingFrom } from '../../qc-history/sql';
 import { pendingFrom as tpiPendingFrom } from '../../tpi/service';
@@ -40,7 +41,7 @@ function qcOpRow(today: string, from: SQL, where: SQL = sql``): SQL {
   return sql`
     SELECT vos.jc_op_id::text AS row_key, jc.id, jc.code, so.code::text AS kind,
            jo.qc_call_date::text AS doc_date, jc.due_date::text AS due_date,
-           COALESCE(jo.qc_call_date, jc.jc_date)::text AS sort_key,
+           ${createdKey('jc.created_at')} AS sort_key,
            NULL::text AS party, i.code::text AS item_code, i.name::text AS item_name,
            vos.qc_pending::numeric AS qty, i.uom::text AS uom, NULL::numeric AS amount,
            jo.created_by::text AS created_by,
@@ -59,7 +60,7 @@ export const qcTpiSql = (c: CheckCtx): SQL => qcOpRow(c.today, tpiPendingFrom(c.
 export function ncPendingSql(c: CheckCtx): SQL {
   return sql`
     SELECT nc.id::text AS row_key, nc.id, nc.code, 'nc'::text AS kind,
-           nc.nc_date::text AS doc_date, NULL::text AS due_date, nc.nc_date::text AS sort_key,
+           nc.nc_date::text AS doc_date, NULL::text AS due_date, ${createdKey('nc.created_at')} AS sort_key,
            NULL::text AS party,
            COALESCE(i.code, nc.item_code_text)::text AS item_code,
            COALESCE(i.name, nc.item_name_text)::text AS item_name,
@@ -77,7 +78,7 @@ export function calibrationDueCheckSql(c: CheckCtx): SQL {
   return sql`
     SELECT ins.id::text AS row_key, ins.id, ins.serial_no::text AS code, ins.status::text AS kind,
            ins.last_calibrated_on::text AS doc_date, ins.calibration_due_on::text AS due_date,
-           ins.calibration_due_on::text AS sort_key,
+           ${createdKey('ins.created_at')} AS sort_key,
            NULLIF(btrim(ins.location), '')::text AS party,
            i.code::text AS item_code, i.name::text AS item_name,
            NULL::numeric AS qty, NULL::text AS uom, NULL::numeric AS amount,

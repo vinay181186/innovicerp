@@ -27,6 +27,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { newestFirst } from '../../lib/list-order';
 import { emitActivityLog } from '../activity-log/service';
 import type { CancelRevSubstitutionInput, ListRevSubstitutionsQuery } from './schema';
 import { REV_SUBSTITUTION_SF_COLUMNS } from './sf-columns';
@@ -121,7 +122,7 @@ export async function listRevSubstitutions(
   return withUserContext(user, async (tx) => {
     const rows = (await tx.execute(sql`
       ${SELECT} ${FROM} ${where}
-      ORDER BY ${sfOrderBy(REV_SUBSTITUTION_SF_COLUMNS, sf, sql`rs.approved_at DESC, rs.id`)}
+      ORDER BY ${sfOrderBy(REV_SUBSTITUTION_SF_COLUMNS, sf, sql`${newestFirst('rs')}`)}
       LIMIT ${q.limit} OFFSET ${q.offset}`)) as unknown as Array<Record<string, unknown>>;
     const total = (await tx.execute(
       sql`SELECT COUNT(*)::int AS n ${FROM} ${where}`,

@@ -29,6 +29,7 @@ import { AuthorizationError } from '../../lib/errors';
 import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
+import { newestFirst } from '../../lib/list-order';
 import { PO_LINE_ORDER_JOINS, PO_LINE_SO_CODE } from '../purchase-orders/list-lines';
 import type { ListGoodsReceiptNotesQuery } from './schema';
 
@@ -147,7 +148,7 @@ export async function listGoodsReceiptNoteLines(
     const orderBy = sfOrderBy(
       GRN_LINE_SF_COLUMNS,
       sf,
-      sql`grn.grn_date DESC, grn.code DESC, gl.line_no ASC, gl.id`,
+      sql`${newestFirst('grn')}, gl.line_no ASC, gl.id`,
     );
 
     const from = sql`

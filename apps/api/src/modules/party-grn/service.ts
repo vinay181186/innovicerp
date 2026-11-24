@@ -57,6 +57,7 @@ import { createdByNameSql } from '../../lib/created-by-sql';
 import { PARTY_GRN_SF_COLUMNS } from './sf-columns';
 import { lockSoRow } from '../../lib/assembly-parts';
 import { readSoCustomerParts } from '../../lib/party-so-parts';
+import { newestFirst } from '../../lib/list-order';
 import { createPartyGrnForSo, soGrnCancelBlockers } from './so-grn';
 
 export function requireCompany(user: AuthContext): string {
@@ -215,7 +216,7 @@ export async function listPartyGrn(
     // total/summary query.
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(PARTY_GRN_SF_COLUMNS, sf);
-    const orderBy = sfOrderBy(PARTY_GRN_SF_COLUMNS, sf, sql`pg.grn_date DESC, pg.code DESC`);
+    const orderBy = sfOrderBy(PARTY_GRN_SF_COLUMNS, sf, newestFirst('pg'));
 
     const result = await tx.execute(sql`
       SELECT

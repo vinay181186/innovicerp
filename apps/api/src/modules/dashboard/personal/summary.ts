@@ -70,11 +70,14 @@ export function buildHeadline(
   const late = lists.find((l) => l.lateTotal > 0);
   const busy = late ?? lists.find((l) => l.list.total > 0);
   if (busy) {
-    const first = busy.list.rows[0];
+    // ADR-318: rows are newest first, so rows[0] is the NEWEST. Name the
+    // newest late row on the page; when no late row is on it, name none
+    // (never a row that is not late).
+    const first = late ? busy.list.rows.find((r) => r.tone === 'late') : busy.list.rows[0];
     const lead = late
       ? `${busy.lateTotal} late in ${busy.list.title}`
       : `${busy.list.total} in ${busy.list.title}`;
-    out.push({ text: first ? `${lead} — oldest ` : `${lead}.` });
+    out.push({ text: first ? `${lead} — newest ` : `${lead}.` });
     if (first) {
       out.push({ code: first.docCode, href: first.docHref });
       out.push({ text: '.' });
