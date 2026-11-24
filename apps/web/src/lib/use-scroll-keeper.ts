@@ -3,8 +3,8 @@
 // Two things scroll in this app: #content (the page area, innovic-theme.css)
 // and, on FIT lists, the table's own box (`.tbl-wrap`, ADR-199) — the page
 // itself does not move there. The router's scroll restoration knows neither.
-// This remembers #content's scrollTop AND every table box's, per address
-// (path + query), in sessionStorage, and when the user comes back through the
+// This remembers #content's scrollTop AND every table box's, per page path
+// (the query is ignored), in sessionStorage, and when the user comes back through the
 // open-pages tab bar scrolls them there again. Rows arrive after the page
 // mounts, so it waits (up to 4 s) until each one is tall enough; the user's own
 // wheel / touch / key stops the wait at once. Any other navigation behaves
@@ -38,11 +38,13 @@ function read(key: string): Saved | null {
 }
 
 export function useScrollKeeper(): void {
-  const href = useLocation({ select: (l) => l.href });
+  // Per PATH, not path + query: lists rewrite their query on arrival (?page=1),
+  // which would miss the saved key and re-run this effect after the mark is used.
+  const path = useLocation({ select: (l) => l.pathname });
   useEffect(() => {
     const el = document.getElementById('content');
     if (!el) return;
-    const key = SCROLL_PREFIX + href;
+    const key = SCROLL_PREFIX + path;
     const boxes = (): HTMLElement[] => Array.from(el.querySelectorAll<HTMLElement>(BOX));
     let stopped = false;
     let frame = 0;
@@ -110,5 +112,5 @@ export function useScrollKeeper(): void {
       el.removeEventListener('touchstart', stop);
       window.removeEventListener('keydown', stop);
     };
-  }, [href]);
+  }, [path]);
 }
