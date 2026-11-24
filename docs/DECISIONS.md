@@ -16523,3 +16523,13 @@ writes `Planned Machine` + `Machine Name` (NAMING.md), always writes the ▸ det
 Qty, Completed, Actual Machine) — a Job Queue exception to D1 — and Actual Machine as `CNC-01` or
 `CNC-01: 5 pcs · CNC-02: 3 pcs`. Machine Load stays out (whole-machine summary). Guard: a list with `groupRow` and
 `exportSpec` must give `groupColumns`. Web only, no migration. Other lists' exports unchanged.
+
+## ADR-312: SO No. column on the Drawing Register
+
+**Date:** 2026-11-24 · **Status:** Accepted (owner, 23-Nov "approve")
+
+The Drawing Register shows **SO No.** after Sr No: every live SO / JWSO line naming the Rev
+(closed orders included — history), newest first. The cell shows the first number (opens that
+order) and "+N" for more; the tooltip and Excel list them all. Register search matches SO / JWSO
+No.; Sort & Filter on `orders` (`so.codes`). Field `orders: {kind, id, code}[]` on
+`DrawingRegisterRow`. No migration — reuses the SO / JWSO line → Rev link (`item_revision_id`).

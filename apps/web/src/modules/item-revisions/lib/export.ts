@@ -31,6 +31,7 @@ function withValues<T>(columns: DataTableColumn<T>[], ev: Ev<T>): DataTableColum
 
 const REGISTER_EV: Ev<DrawingRegisterRow> = {
   item_code: (r) => r.label,
+  so_no: (r) => r.orders.map((o) => o.code).join(', ') || null,
   drawing_file: (r) => (r.hasFile ? 'Yes' : 'No'),
   release_status: (r) => REV_RELEASE_STATUS_LABELS[r.releaseStatus],
   pending_correction: (r) => (r.pendingCorrection ? 'Waiting' : null),

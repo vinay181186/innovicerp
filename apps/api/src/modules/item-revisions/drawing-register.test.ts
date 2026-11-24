@@ -440,6 +440,12 @@ describe('ADR-290 Drawing Register', () => {
     const one = reg.items.find((x) => x.id === r1);
     expect(one?.releaseStatus).toBe('superseded');
     expect(one?.openLines).toBe(1);
+    // ADR-312 — SO No.: the order on that line, and the search finds the Rev by it.
+    expect(one?.orders).toHaveLength(1);
+    const soCode = one!.orders[0]!.code;
+    expect(one!.orders[0]!.kind).toBe('so');
+    const bySo = await listDrawingRegister({ search: soCode, limit: 25, offset: 0 }, admin);
+    expect(bySo.items.some((x) => x.id === r1)).toBe(true);
     expect(reg.items.find((x) => x.id === r2)?.releaseStatus).toBe('released');
     const sorted = await listDrawingRegister(
       {
