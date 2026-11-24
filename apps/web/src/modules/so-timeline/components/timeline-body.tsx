@@ -84,12 +84,23 @@ export function SoTimelineBody({ data }: { data: SoTimelineResponse }): React.JS
               >
                 <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: evt.color }}>
                   {evt.label}
+                  {/* ADR-320 — the server flags a row dated before the document it comes from. */}
+                  {evt.flag === 'date_check' ? (
+                    <span className="badge b-orange" style={{ marginLeft: 'var(--sp-2)' }}>
+                      Date check
+                    </span>
+                  ) : null}
                 </span>
                 <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
                   {fmtDateTime(evt.date)}
                 </span>
               </div>
               <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text2)' }}>{evt.detail}</div>
+              {evt.flag === 'date_check' && evt.flagReason ? (
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--orange2)' }}>
+                  {evt.flagReason}
+                </div>
+              ) : null}
             </div>
           </div>
         ))}

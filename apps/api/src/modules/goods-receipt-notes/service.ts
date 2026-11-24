@@ -46,6 +46,8 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertNotBefore } from '../../lib/doc-date-order';
+import { fmtDate } from '../../lib/format-date';
 import { polSql } from '../../lib/pol';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
@@ -291,6 +293,29 @@ async function assertPurchaseOrderExists(
   if (rows.length === 0) {
     throw new ValidationError('Selected PO was not found. Please select the PO again.');
   }
+}
+
+/** ADR-320 — a GRN is never dated before its PO. No PO (direct purchase): no check. */
+async function assertGrnDateNotBeforePo(
+  tx: DbTransaction,
+  companyId: string,
+  grnDate: string,
+  purchaseOrderId: string | null | undefined,
+): Promise<void> {
+  if (!purchaseOrderId) return;
+  const po = (
+    await tx
+      .select({ code: purchaseOrders.code, poDate: purchaseOrders.poDate })
+      .from(purchaseOrders)
+      .where(and(eq(purchaseOrders.id, purchaseOrderId), eq(purchaseOrders.companyId, companyId)))
+      .limit(1)
+  )[0];
+  if (!po) return;
+  assertNotBefore(
+    grnDate,
+    po.poDate,
+    `GRN date ${fmtDate(grnDate)} cannot be before PO ${po.code} date ${fmtDate(po.poDate)}.`,
+  );
 }
 
 async function assertItemIdsExist(
@@ -1301,6 +1326,12 @@ export async function createGoodsReceiptNote(
     }
     if (input.header.purchaseOrderId) {
       await assertPurchaseOrderExists(tx, input.header.purchaseOrderId, companyId);
+      await assertGrnDateNotBeforePo(
+        tx,
+        companyId,
+        input.header.grnDate,
+        input.header.purchaseOrderId,
+      );
     }
 
     const directIds = input.lines.flatMap((l) => (l.itemId ? [l.itemId] : []));
@@ -1477,6 +1508,8 @@ export async function insertGrnForOspReceipt(
     }>;
   },
 ): Promise<{ id: string; code: string }> {
+  // ADR-320 — the DC-receive GRN follows the same date rule as a typed one.
+  await assertGrnDateNotBeforePo(tx, companyId, args.grnDate, args.purchaseOrderId);
   const code = await nextGrnCode(tx, companyId);
   const inserted = await tx
     .insert(goodsReceiptNotes)
@@ -1647,6 +1680,20 @@ export async function updateGoodsReceiptNoteTx(
       input.header,
       existingHdrRows[0]!.vendorId ?? null,
     );
+
+    // ADR-320 — GRN date vs its PO, only when this save moves the date or the
+    // PO, so an old GRN already out of order still saves otherwise.
+    {
+      const before = existingHdrRows[0]!;
+      const nextDate = input.header.grnDate ?? before.grnDate;
+      const nextPoId =
+        input.header.purchaseOrderId !== undefined
+          ? (input.header.purchaseOrderId ?? null)
+          : (before.purchaseOrderId ?? null);
+      if (nextDate !== before.grnDate || nextPoId !== (before.purchaseOrderId ?? null)) {
+        await assertGrnDateNotBeforePo(tx, companyId, nextDate, nextPoId);
+      }
+    }
 
     // Before → after (ADR-197): read inside this transaction, before the UPDATE.
     const auditBefore = await readGrnAuditSnapshot(tx, id);

@@ -47,9 +47,10 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
     // The status of THIS LINE, not of the whole SO.
     'Line Status': LINE_STATUS_LABEL[l.status],
     'JC Issued': l.chips.jcIssued.qty,
-    'PO Raised': l.chips.poRaised.qty,
-    'GRN Received': l.chips.grnReceived.qty,
-    'QC Accepted': l.chips.qcAccepted.qty,
+    // ADR-320 — a line with no outsourced operation reads "Not required", never 0.
+    'PO Raised': l.chips.poRaised.required ? l.chips.poRaised.qty : 'Not required',
+    'GRN Received': l.chips.grnReceived.required ? l.chips.grnReceived.qty : 'Not required',
+    'QC Accepted': l.chips.qcAccepted.required ? l.chips.qcAccepted.qty : 'Not required',
     Dispatched: l.chips.dispatched.qty,
   }));
 

@@ -7,13 +7,16 @@
 // feeds enrichOps its optional `ospAcceptedByOp` map.
 //
 // Same rollup rule as v_jc_op_status (0128) widened to the multi-PO link table
-// (jc_op_po_lines): an op's PO lines are its `outsource_po_line_id` UNION every
-// live jc_op_po_lines row for it — UNION (not UNION ALL) so a line present in
-// both is summed once. Then Σ goods_receipt_note_lines.qc_accepted_qty over
+// (jc_op_po_lines): an op's PO lines come from the ONE shared link
+// (ospOpPoLinkSql, lib/so-line-osp-cover.ts — ADR-320): outsource_po_line_id ∪
+// live jc_op_po_lines ∪ purchase_order_lines.source_jc_op_id, UNION so a line
+// reached two ways is summed once. (source_jc_op_id added 24-11-2026; checked
+// on TEST first — no op's accepted figure changed.) Then Σ goods_receipt_note_lines.qc_accepted_qty over
 // live GRN lines on those PO lines.
 
 import { sql } from 'drizzle-orm';
 import type { DbTransaction } from '../db/with-user-context';
+import { ospOpPoLinkSql } from './so-line-osp-cover';
 
 /** Σ GRN qc_accepted_qty keyed by jc_ops.id, for every op on the given job
  *  cards that has at least one PO line. Ops with nothing accepted are absent
@@ -28,27 +31,7 @@ export async function loadOspAcceptedByOp(
   const rows = await tx.execute(sql`
     SELECT l.jc_op_id AS "jcOpId",
            COALESCE(SUM(grl.qc_accepted_qty), 0)::numeric AS "acceptedQty"
-    FROM (
-      SELECT o.id AS jc_op_id, o.outsource_po_line_id AS po_line_id
-      FROM public.jc_ops o
-      WHERE o.company_id = ${companyId}::uuid
-        AND o.job_card_id IN (${sql.join(
-          jobCardIds.map((id) => sql`${id}::uuid`),
-          sql`, `,
-        )})
-        AND o.deleted_at IS NULL
-        AND o.outsource_po_line_id IS NOT NULL
-      UNION
-      SELECT jl.jc_op_id, jl.purchase_order_line_id
-      FROM public.jc_op_po_lines jl
-      JOIN public.jc_ops o ON o.id = jl.jc_op_id AND o.deleted_at IS NULL
-      WHERE jl.company_id = ${companyId}::uuid
-        AND o.job_card_id IN (${sql.join(
-          jobCardIds.map((id) => sql`${id}::uuid`),
-          sql`, `,
-        )})
-        AND jl.deleted_at IS NULL
-    ) l
+    FROM (${ospOpPoLinkSql(companyId, jobCardIds)}) l
     JOIN public.goods_receipt_note_lines grl
       ON grl.purchase_order_line_id = l.po_line_id
       AND grl.deleted_at IS NULL

@@ -1327,3 +1327,36 @@ a release. Claude Design also fell behind and nobody was told.
 
 The check reads patterns only. It cannot judge a screen, and it cannot tell a master list
 passed to `Select`. Rules 1 to 3 and the code review cover those.
+
+---
+
+## Section 26 — Numbers That Are Read (owner rule 2026-11-24, ADR-320)
+
+_The bug:_ SO Status showed PO Raised 170 / 34 on a 34-piece line. It added one PO line per
+outsourced operation, plus a cancelled PO and its draft replacements. The same page said GRN
+34 / 170, QC 7 / 7 on one line and 0 / 34 on the next, a blank Due Date, and ✓ on the ops that
+were NOT done. Section 20 protects numbers that are written; this section protects numbers
+that are shown.
+
+1. **Count only live documents.** A sum or count over a line table joins its header and leaves
+   out cancelled, rejected and deleted documents, and drafts unless the screen says "draft".
+   Check the GRN / DC header's own `deleted_at`, not only the line's.
+2. **Every figure names its level and its cap.** Say whether it is per SO line, per Job Card
+   or per operation, and cap it at the parent's qty. One SO line through four vendors is still
+   34 pieces, never 136. A piece is covered only when every step it needs is covered.
+3. **One number, one reader.** A figure shown on two screens (a chip and an op tick, a list and
+   a print) comes from one function. Two queries for one fact will disagree.
+4. **No "x or y" totals.** Never `recvQty || orderQty` as a denominator. Show the right total,
+   or "Not required" when the step does not apply.
+5. **No hard-coded blanks.** A field in a response is filled or removed from the contract —
+   never `dueDate: null` "for later".
+6. **Names come from the master.** A vendor, client or item name is joined from its master;
+   `xxxText` is only the fallback (§18).
+7. **One meaning per symbol.** ✓ = done, everywhere. A symbol that means something else on one
+   screen is a defect (`docs/NAMING.md`).
+8. **Dates follow the chain.** A document is never dated before the document it comes from
+   (PR → PO → GRN, SO → Job Card). The server refuses it on save.
+
+**Verify before you finish.** For every figure you touch: name the documents counted, the
+statuses left out, the level and the cap; then check one real document on TEST (read-only)
+and say the figure you expect and the figure the screen shows.

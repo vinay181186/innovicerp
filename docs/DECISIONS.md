@@ -16740,3 +16740,40 @@ Without that file SO can be saved."
 3. **Effect:** an SO line saved with no file leaves its Drawing Rev **Draft** (only a Rev with a file
    goes to Under Review, ADR-311). Design adds the file later with "Upload drawing…" (ADR-319). The
    release gate before Plan / PRO / Job Card is unchanged. No migration.
+
+## ADR-320: SO Status — PO / GRN / QC per outsourced operation, approved POs only (owner 2026-11-24)
+
+**Date:** 2026-11-24
+**Status:** Accepted
+
+### Context
+PROD SO-517 (30 lines) showed PO Raised 170 / 34 on Ln 1. `so-status/service.ts` summed every
+`purchase_order_lines.qty` on the SO line: one line per outsourced operation (4), plus cancelled
+IN-JWPO-00003/4/5 and their 13 draft replacements. GRN target used that sum; QC target was
+`recvQty || orderQty`; header Due Date was hard-coded null; Timeline showed `vendor_code_text`
+(empty) as the vendor; the op chip ✓ meant "QC required" and was read as "done".
+
+### Decision (owner answers 24-11-2026)
+1. PO Raised = per outsourced operation, APPROVED POs only (draft never counted, cancelled never),
+   capped at the JC qty; JC = lowest op; line = Σ JCs, capped at order qty. Hover shows each op.
+2. An approved PO edited back to draft keeps counting its last approved qty — new column
+   `purchase_order_lines.approved_qty` (0262), one writer `stampPoApprovedQty`.
+3. GRN Received total = PO Raised; QC Accepted total = qty received. No outsourced op = "Not required".
+4. Header Due Date = earliest open line due date.
+5. ✓ = operation done; QC-required = small "QC" tag.
+6. Timeline: vendor name from the master, PO status, "Date check" when a PO/GRN is dated before
+   its PR / PO. SO-517's SO date 25-10-2025 is real — no SO date check.
+7. Server refuses a new PO dated before its PR, a GRN before its PO, a JC before its SO.
+8. New project rule CLAUDE.md §26 "Numbers that are read".
+
+### Alternatives considered
+- Count drafts — rejected by owner (not sent to the vendor; can still be cancelled).
+- Add op figures together — rejected: not pieces (gave 170).
+- Keep last approved qty from the activity log — rejected: fragile; one column is smaller.
+
+**Build notes (24-11-2026).** Job Card date guard is on `createJobCard` only (the path where a
+user types the date). The plan / BOM / NC / recovery paths set `jc_date = today` on the server, so
+an earlier-than-SO date is impossible there unless the SO is future-dated — blocking those would
+stop automatic JC creation, so they are left unguarded on purpose. `osp-accepted.ts` now shares the
+op → PO-line link (`ospOpPoLinkSql`) with SO Status and also follows `purchase_order_lines.source_jc_op_id`;
+on TEST this changed no op's accepted figure.

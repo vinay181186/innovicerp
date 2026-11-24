@@ -13,6 +13,7 @@ import {
   type SoStatusJc,
   type SoStatusLine,
   type SoStatusOp,
+  type SoStatusOspOp,
   type SoStatusOutsourceAlert,
   type SoStatusPendingOsPrOp,
   opSrNo,
@@ -1055,6 +1056,8 @@ function LinePanel({
             tint={CHIP_TINT.purple}
             qty={line.chips.poRaised.qty}
             total={line.chips.poRaised.total}
+            notRequired={!line.chips.poRaised.required}
+            hover={line.chips.poRaised.required ? ospChipHover(line.ospOps, 'poRaised') : undefined}
           />
           <Chip
             label="GRN Received"
@@ -1062,6 +1065,10 @@ function LinePanel({
             tint={CHIP_TINT.blue}
             qty={line.chips.grnReceived.qty}
             total={line.chips.grnReceived.total}
+            notRequired={!line.chips.grnReceived.required}
+            hover={
+              line.chips.grnReceived.required ? ospChipHover(line.ospOps, 'grnReceived') : undefined
+            }
           />
           <Chip
             label="QC Accepted"
@@ -1069,6 +1076,10 @@ function LinePanel({
             tint={CHIP_TINT.green}
             qty={line.chips.qcAccepted.qty}
             total={line.chips.qcAccepted.total}
+            notRequired={!line.chips.qcAccepted.required}
+            hover={
+              line.chips.qcAccepted.required ? ospChipHover(line.ospOps, 'qcAccepted') : undefined
+            }
           />
           <Chip
             label="JC Completed"
@@ -1274,8 +1285,9 @@ function opCodeLabel(raw: string): string {
   return OP_CODE_LABEL[raw] ?? raw.replace(/_/g, ' ').replace(/\b[a-z]/g, (c) => c.toUpperCase());
 }
 
-// Legacy op chip (L4335-4341): an inline outlined chip — not a .badge. The
-// trailing ✓ marks QC-REQUIRED (op.qcReq), not completion. 🏭 marks outsource.
+// Legacy op chip (L4335-4341): an inline outlined chip — not a .badge. ADR-320:
+// the trailing ✓ means the operation is DONE (status complete); a small "QC" tag
+// after the op number means QC is required on it. 🏭 marks outsource.
 function OpChip({ op }: { op: SoStatusOp }): React.JSX.Element {
   const isOS = op.opType === 'outsource';
   const ic = opChipColor(op);
@@ -1286,7 +1298,9 @@ function OpChip({ op }: { op: SoStatusOp }): React.JSX.Element {
     (op.qcRequired || op.opType === 'qc'
       ? ` · Accepted ${op.qcAccepted} · Deviated ${op.qcRejected} · QC Pending ${op.qcPending}`
       : '') +
-    `\nStatus: ${opCodeLabel(op.status)}`;
+    (op.qcRequired ? ' · QC required' : '') +
+    `\nStatus: ${opCodeLabel(op.status)}` +
+    (op.status === 'complete' ? ' ✓' : '');
   return (
     <>
       <span
@@ -1302,7 +1316,12 @@ function OpChip({ op }: { op: SoStatusOp }): React.JSX.Element {
         }}
       >
         {isOS ? '🏭' : ''}Op {opSrNo(op.opSeq)}
-        {op.qcRequired ? '✓' : ''}
+        {op.qcRequired ? (
+          <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, marginLeft: 'var(--sp-1)' }}>
+            QC
+          </span>
+        ) : null}
+        {op.status === 'complete' ? ' ✓' : ''}
       </span>{' '}
     </>
   );
@@ -1338,6 +1357,30 @@ function ProgBar({ pct }: { pct: number }): React.JSX.Element {
   );
 }
 
+// ADR-320 — hover text for the PO Raised / GRN Received / QC Accepted chips:
+// one row per outsourced operation. Display only — every figure is the server's.
+function ospChipHover(
+  ospOps: SoStatusOspOp[],
+  chip: 'poRaised' | 'grnReceived' | 'qcAccepted',
+): string | undefined {
+  if (ospOps.length === 0) return undefined;
+  return ospOps
+    .map((o) => {
+      const parts: string[] = [];
+      if (o.poState === 'none') parts.push('no PO');
+      else {
+        parts.push(`PO ${o.approvedPoQty} approved`);
+        if (o.draftPoQty > 0) parts.push(`${o.draftPoQty} draft`);
+        if (o.poState === 'reapproval') parts.push('waiting re-approval');
+      }
+      if (chip === 'poRaised' && o.poCodes.length > 0) parts.push(o.poCodes.join(', '));
+      if (chip === 'grnReceived') parts.push(`GRN ${o.grnReceivedQty}`);
+      if (chip === 'qcAccepted') parts.push(`QC ${o.qcAcceptedQty}`);
+      return `${o.jcCode} Op ${opSrNo(o.opSeq)} ${o.operation}: ${parts.join(' · ')}`;
+    })
+    .join('\n');
+}
+
 // Legacy _stChip (L4396-4406): icon + label on the left, val/total on the
 // right, a colour-filled bar beneath. Unfilled (val=0) chips stay grey.
 function Chip({
@@ -1346,17 +1389,24 @@ function Chip({
   tint,
   qty,
   total,
+  notRequired = false,
+  hover,
 }: {
   label: string;
   icon: string;
   tint: ChipTint;
   qty: number;
   total: number;
+  /** ADR-320 — the line has no outsourced operation: show "Not required". */
+  notRequired?: boolean;
+  /** ADR-320 — per-operation breakdown, one row per outsourced op. */
+  hover?: string | undefined;
 }): React.JSX.Element {
-  const pct = total > 0 ? Math.min(100, Math.round((qty / total) * 100)) : 0;
-  const filled = qty > 0;
+  const pct = !notRequired && total > 0 ? Math.min(100, Math.round((qty / total) * 100)) : 0;
+  const filled = !notRequired && qty > 0;
   return (
     <div
+      title={hover}
       style={{
         flex: 1,
         minWidth: 100,
@@ -1377,20 +1427,26 @@ function Chip({
         <span className="text3" style={{ fontSize: 'var(--fs-xs)', fontWeight: 600 }}>
           {icon} {label}
         </span>
-        <span
-          className="mono"
-          style={{
-            fontSize: 'var(--fs-sm)',
-            fontWeight: 800,
-            color: filled ? tint.color : 'var(--text3)',
-          }}
-        >
-          {qty}
-          <span className="text3" style={{ fontSize: 'var(--fs-xs)', fontWeight: 400 }}>
-            {' '}
-            /{total}
+        {notRequired ? (
+          <span className="text3" style={{ fontSize: 'var(--fs-xs)', fontWeight: 600 }}>
+            Not required
           </span>
-        </span>
+        ) : (
+          <span
+            className="mono"
+            style={{
+              fontSize: 'var(--fs-sm)',
+              fontWeight: 800,
+              color: filled ? tint.color : 'var(--text3)',
+            }}
+          >
+            {qty}
+            <span className="text3" style={{ fontSize: 'var(--fs-xs)', fontWeight: 400 }}>
+              {' '}
+              /{total}
+            </span>
+          </span>
+        )}
       </div>
       <div style={{ height: 4, background: 'var(--bg5)', borderRadius: 2 }}>
         <div style={{ width: `${pct}%`, height: 4, background: tint.color, borderRadius: 2 }} />

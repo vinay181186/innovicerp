@@ -26,14 +26,12 @@ import {
   bomMasters,
   deliveryChallanLines,
   deliveryChallans,
-  goodsReceiptNoteLines,
   itemStockBalances,
   items,
   jcOps,
   jobCards,
   opLog,
   plans,
-  purchaseOrderLines,
   runningOps,
   salesOrderLines,
   salesOrders,
@@ -51,6 +49,11 @@ import { readSoCustomerParts, type SoCustomerPart } from '../../lib/party-so-par
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { loadOpenReworkByOp } from '../../lib/open-rework';
 import { loadOspAcceptedByOp } from '../../lib/osp-accepted';
+import {
+  type CoverJcInput,
+  computeLineOspCover,
+  loadOspPoLinesByOp,
+} from '../../lib/so-line-osp-cover';
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -114,9 +117,9 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
     // either `lineIds` or `jcIds` / `opIds` derived from the JC fetch, so
     // queries 3+4 must run before 5..8. Three sequential rounds total.
 
-    // Round 1: JCs for these lines + PO/GRN/Disp aggs keyed by lineIds (no
+    // Round 1: JCs for these lines + the dispatch agg keyed by lineIds (no
     // JC dependency).
-    const [jcRows, poAggRes, grnAggRes, dispAggRes] = await Promise.all([
+    const [jcRows, dispAggRes] = await Promise.all([
       tx
         .select({
           id: jobCards.id,
@@ -172,39 +175,10 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
         )
         .orderBy(asc(jobCards.code)),
 
-      tx
-        .select({
-          lineId: purchaseOrderLines.sourceSoLineId,
-          qty: sql<number>`COALESCE(SUM(${purchaseOrderLines.qty}), 0)::numeric`,
-        })
-        .from(purchaseOrderLines)
-        .where(
-          and(
-            inArray(purchaseOrderLines.sourceSoLineId, lineIds),
-            isNull(purchaseOrderLines.deletedAt),
-          ),
-        )
-        .groupBy(purchaseOrderLines.sourceSoLineId),
-
-      tx
-        .select({
-          lineId: purchaseOrderLines.sourceSoLineId,
-          recvQty: sql<number>`COALESCE(SUM(${goodsReceiptNoteLines.receivedQty}), 0)::numeric`,
-          qcAccQty: sql<number>`COALESCE(SUM(${goodsReceiptNoteLines.qcAcceptedQty}), 0)::numeric`,
-        })
-        .from(goodsReceiptNoteLines)
-        .innerJoin(
-          purchaseOrderLines,
-          eq(purchaseOrderLines.id, goodsReceiptNoteLines.purchaseOrderLineId),
-        )
-        .where(
-          and(
-            inArray(purchaseOrderLines.sourceSoLineId, lineIds),
-            isNull(goodsReceiptNoteLines.deletedAt),
-            isNull(purchaseOrderLines.deletedAt),
-          ),
-        )
-        .groupBy(purchaseOrderLines.sourceSoLineId),
+      // ADR-320: PO Raised / GRN Received / QC Accepted are no longer summed
+      // per SO line here (that added one PO line per op, cancelled POs and
+      // drafts — 170/34 on SO-517). They come per outsourced op from
+      // lib/so-line-osp-cover.ts below.
 
       // Customer dispatch DCs = SO-line-linked AND no procurement PO link
       // (OSP DCs have purchase_order_id set; customer dispatches don't) AND
@@ -298,7 +272,7 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
       else logsByOp.set(log.jcOpId, [log]);
     }
     const runningOpIds = new Set(runningRows.map((r) => r.jcOpId));
-    const [ospAcceptedByOp, openReworkByOp, atVendorByOp] = await Promise.all([
+    const [ospAcceptedByOp, openReworkByOp, atVendorByOp, ospPoLinesByOp] = await Promise.all([
       // G9c: what Incoming QC accepted off each outsource op's GRNs, so the op
       // reads complete once the vendor has returned everything.
       loadOspAcceptedByOp(tx, companyId, jcIds),
@@ -309,6 +283,8 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
       // ADR-276: the Job Card's At Vendor, every op (a part-outsourced in-house
       // op counts too).
       loadAtVendorByOp(tx, companyId, jcIds),
+      // ADR-320: every live PO line behind each outsourced op, one query.
+      loadOspPoLinesByOp(tx, companyId, jcIds),
     ]);
 
     // Build JC rollups via calc-engine.
@@ -333,19 +309,6 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
     }
 
     // Aggs by line id
-    const poAggByLine = new Map<string, number>();
-    for (const r of poAggRes) {
-      if (r.lineId) poAggByLine.set(r.lineId, Number(r.qty));
-    }
-    const grnAggByLine = new Map<string, { recvQty: number; qcAccQty: number }>();
-    for (const r of grnAggRes) {
-      if (r.lineId) {
-        grnAggByLine.set(r.lineId, {
-          recvQty: Number(r.recvQty ?? 0),
-          qcAccQty: Number(r.qcAccQty ?? 0),
-        });
-      }
-    }
     const dispAggByLine = new Map<string, number>();
     for (const r of dispAggRes) {
       if (r.lineId) dispAggByLine.set(r.lineId, Number(r.qty));
@@ -370,10 +333,23 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
       const soLineRollup = rollupSoLine(line.id, line.orderQty, rollupsForLine);
 
       const jcIssuedQty = jcsForLine.reduce((s, j) => s + j.orderQty, 0);
-      const poQty = poAggByLine.get(line.id) ?? 0;
-      const grnAgg = grnAggByLine.get(line.id);
-      const recvQty = grnAgg?.recvQty ?? 0;
-      const qcAccQty = grnAgg?.qcAccQty ?? 0;
+      // ADR-320 rules 3-6: approved PO / GRN / QC cover per outsourced op,
+      // lowest op per job card, summed over job cards, capped at the line.
+      const coverJcs: CoverJcInput[] = jcsForLine.map((jc) => ({
+        jcId: jc.id,
+        jcCode: jc.code,
+        jcOrderQty: jc.orderQty,
+        ops: rollupByJcId
+          .get(jc.id)!
+          .ops.filter((op) => op.opType === 'outsource')
+          .map((op) => ({
+            jcOpId: op.id,
+            opSeq: op.opSeq,
+            operation: op.operation,
+            poLines: ospPoLinesByOp.get(op.id) ?? [],
+          })),
+      }));
+      const ospCover = computeLineOspCover(line.orderQty, coverJcs);
       const dispQty = dispAggByLine.get(line.id) ?? 0;
 
       // Outsource tracking across all ops of all JCs linked to this line.
@@ -470,12 +446,12 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
         remainingQty: soLineRollup.remainingQty,
         completionPct: soLineRollup.completionPct,
         chips: {
-          jcIssued: { qty: jcIssuedQty, total: line.orderQty },
-          poRaised: { qty: poQty, total: line.orderQty },
-          grnReceived: { qty: recvQty, total: poQty || line.orderQty },
-          qcAccepted: { qty: qcAccQty, total: recvQty || line.orderQty },
-          produced: { qty: soLineRollup.doneQty, total: line.orderQty },
-          dispatched: { qty: dispQty, total: line.orderQty },
+          jcIssued: { qty: jcIssuedQty, total: line.orderQty, required: true },
+          poRaised: ospCover.poRaised,
+          grnReceived: ospCover.grnReceived,
+          qcAccepted: ospCover.qcAccepted,
+          produced: { qty: soLineRollup.doneQty, total: line.orderQty, required: true },
+          dispatched: { qty: dispQty, total: line.orderQty, required: true },
         },
         outsourceAlert: {
           // Whole number in the contract; an op's figure can be a decimal.
@@ -485,10 +461,12 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
           prRaisedCount,
           pendingOps,
         },
+        ospOps: ospCover.ospOps,
         jobCards: jobCardsOut,
       };
     });
 
+    const headerDueDate = earliestOpenDueDate(lines);
     const totalQty = lines.reduce((s, l) => s + l.orderQty, 0);
     const totalDoneQty = lines.reduce((s, l) => s + l.doneQty, 0);
     const overallPct =
@@ -656,7 +634,7 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
         type: header.type,
         status: header.status,
         soDate: header.soDate,
-        dueDate: null,
+        dueDate: headerDueDate,
         customerName: header.customerName,
         clientPoNo: header.clientPoNo,
         remarks: header.remarks,
@@ -672,6 +650,22 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
       bomItems,
     };
   });
+}
+
+/** ADR-320 rule 7 — the SO's Due Date: earliest due date among lines not yet
+ *  complete; when none of those carries one, the earliest due date among their
+ *  job cards not complete; else null. Dates are YYYY-MM-DD, so text order is
+ *  date order. */
+function earliestOpenDueDate(lines: readonly SoStatusLine[]): string | null {
+  const open = lines.filter((l) => l.status !== 'complete');
+  const minOf = (dates: Array<string | null>): string | null =>
+    dates.reduce<string | null>((m, d) => (d && (!m || d < m) ? d : m), null);
+  return (
+    minOf(open.map((l) => l.dueDate)) ??
+    minOf(
+      open.flatMap((l) => l.jobCards.filter((j) => j.status !== 'complete').map((j) => j.dueDate)),
+    )
+  );
 }
 
 function buildEmptyResponse(

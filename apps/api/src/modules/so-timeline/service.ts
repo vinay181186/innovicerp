@@ -90,6 +90,8 @@ export async function getSoTimeline(
       detail: `${so.internalSoNo ? `${so.code} · ${so.internalSoNo}` : so.code} — ${so.customerName ?? ''}`,
       dept: 'sales',
       color: DEPT_COLORS.sales,
+      flag: null,
+      flagReason: null,
     });
 
     if (lineIds.length > 0) {
@@ -120,6 +122,8 @@ export async function getSoTimeline(
           detail: `${row.plan_code} — ${row.plan_type} — ${row.plan_qty} pcs`,
           dept: 'planning',
           color: DEPT_COLORS.planning,
+          flag: null,
+          flagReason: null,
         });
       }
 
@@ -153,6 +157,8 @@ export async function getSoTimeline(
           detail: `${row.jc_code} — ${row.item_code ?? '—'} × ${row.order_qty}`,
           dept: 'production',
           color: DEPT_COLORS.production,
+          flag: null,
+          flagReason: null,
         });
         if (row.closed_at !== null) {
           events.push({
@@ -163,6 +169,8 @@ export async function getSoTimeline(
             detail: row.jc_code,
             dept: 'production',
             color: DEPT_COLORS.sales,
+            flag: null,
+            flagReason: null,
           });
         }
       }
@@ -196,72 +204,138 @@ export async function getSoTimeline(
           detail: `${row.pr_code} — ${row.item_code ?? '—'} × ${row.qty} — ${row.status}`,
           dept: 'purchase',
           color: DEPT_COLORS.purchase,
+          flag: null,
+          flagReason: null,
         });
       }
 
       // 6+7. PO Created (via PO line FK) + GRN Received.
+      // ADR-320: vendor name from the vendor master (vendor_code_text only as
+      // the fallback), the PO's status in the detail (a cancelled PO stays
+      // listed, saying Cancelled), and a date check against the latest PR
+      // behind the PO's lines (purchase_order_lines.source_pr_id). Warning only.
+      const lineList = sql.join(
+        lineIds.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      );
       const poRows = await tx.execute(sql`
-        SELECT DISTINCT
-          po.id         AS po_id,
-          po.code       AS po_code,
-          po.po_date    AS po_date,
-          po.vendor_code_text AS vendor_code
+        SELECT
+          po.id               AS po_id,
+          po.code             AS po_code,
+          po.po_date::text    AS po_date,
+          po.status::text     AS status,
+          v.name              AS vendor_name,
+          po.vendor_code_text AS vendor_code,
+          pr.pr_code          AS pr_code,
+          pr.pr_date          AS pr_date
         FROM public.purchase_orders po
-        JOIN public.purchase_order_lines pol
-          ON pol.purchase_order_id = po.id AND pol.deleted_at IS NULL
+        LEFT JOIN public.vendors v
+          ON v.id = po.vendor_id AND v.deleted_at IS NULL
+        LEFT JOIN LATERAL (
+          SELECT r.code AS pr_code, r.pr_date::text AS pr_date
+          FROM public.purchase_order_lines l
+          JOIN public.purchase_requests r
+            ON r.id = l.source_pr_id AND r.deleted_at IS NULL
+          WHERE l.purchase_order_id = po.id AND l.deleted_at IS NULL
+          ORDER BY r.pr_date DESC, r.code DESC
+          LIMIT 1
+        ) pr ON TRUE
         WHERE po.company_id = ${companyId}::uuid
           AND po.deleted_at IS NULL
-          AND pol.source_so_line_id IN (${sql.join(lineIds.map((id) => sql`${id}::uuid`), sql`, `)})
-        ORDER BY po.po_date ASC
+          AND EXISTS (
+            SELECT 1 FROM public.purchase_order_lines pol
+            WHERE pol.purchase_order_id = po.id
+              AND pol.deleted_at IS NULL
+              AND pol.source_so_line_id IN (${lineList})
+          )
+        ORDER BY po.po_date ASC, po.code ASC
       `);
-      const poIds: string[] = [];
+      const poById = new Map<
+        string,
+        { code: string; poDate: string; prCode: string | null; prDate: string | null }
+      >();
       for (const row of poRows as unknown as Array<{
         po_id: string;
         po_code: string;
         po_date: string;
+        status: string;
+        vendor_name: string | null;
         vendor_code: string | null;
+        pr_code: string | null;
+        pr_date: string | null;
       }>) {
-        poIds.push(row.po_id);
+        poById.set(row.po_id, {
+          code: row.po_code,
+          poDate: row.po_date,
+          prCode: row.pr_code,
+          prDate: row.pr_date,
+        });
+        const vendor = blankToNull(row.vendor_name) ?? blankToNull(row.vendor_code) ?? '—';
+        const prLate = row.pr_date !== null && row.po_date < row.pr_date;
         events.push({
           date: row.po_date,
           kind: 'po_created',
           icon: '💳',
           label: 'PO Created',
-          detail: `${row.po_code} — ${row.vendor_code ?? '—'}`,
+          detail: `${row.po_code} — ${vendor} · ${poStatusLabel(row.status)}`,
           dept: 'purchase',
           color: DEPT_COLORS.purchase,
+          flag: prLate ? 'date_check' : null,
+          flagReason:
+            prLate && row.pr_date
+              ? `PO date ${dmy(row.po_date)} is before PR ${row.pr_code ?? '—'} (${dmy(row.pr_date)})`
+              : null,
         });
       }
 
+      const poIds = [...poById.keys()];
       if (poIds.length > 0) {
         const grnRows = await tx.execute(sql`
           SELECT
-            grn.code       AS grn_code,
-            grn.grn_date   AS grn_date,
-            grn.po_code_text AS po_code
+            grn.code              AS grn_code,
+            grn.grn_date::text    AS grn_date,
+            grn.purchase_order_id AS po_id,
+            grn.po_code_text      AS po_code
           FROM public.goods_receipt_notes grn
           WHERE grn.company_id = ${companyId}::uuid
             AND grn.deleted_at IS NULL
-            AND grn.purchase_order_id IN (${sql.join(poIds.map((id) => sql`${id}::uuid`), sql`, `)})
+            AND grn.purchase_order_id IN (${sql.join(
+              poIds.map((id) => sql`${id}::uuid`),
+              sql`, `,
+            )})
           ORDER BY grn.grn_date ASC
         `);
         for (const row of grnRows as unknown as Array<{
           grn_code: string;
           grn_date: string;
+          po_id: string;
           po_code: string | null;
         }>) {
+          const po = poById.get(row.po_id);
+          const reasons: string[] = [];
+          if (po && row.grn_date < po.poDate) {
+            reasons.push(`GRN date ${dmy(row.grn_date)} is before PO ${po.code} (${dmy(po.poDate)})`);
+          }
+          if (po?.prDate && row.grn_date < po.prDate) {
+            reasons.push(
+              `GRN date ${dmy(row.grn_date)} is before PR ${po.prCode ?? '—'} (${dmy(po.prDate)})`,
+            );
+          }
           events.push({
             date: row.grn_date,
             kind: 'grn_received',
             icon: '📥',
             label: 'GRN Received',
-            detail: `${row.grn_code} — PO ${row.po_code ?? '—'}`,
+            detail: `${row.grn_code} — PO ${po?.code ?? row.po_code ?? '—'}`,
             dept: 'store',
             color: DEPT_COLORS.store,
+            flag: reasons.length > 0 ? 'date_check' : null,
+            flagReason: reasons.length > 0 ? reasons.join('; ') : null,
           });
         }
       }
     }
+
 
     // Final sort — pure date ascending; ties broken by insertion order
     // (legacy renders in this same order: source-traversal order).
@@ -277,6 +351,33 @@ export async function getSoTimeline(
       events,
     };
   });
+}
+
+// Screen words for PO status (same words as modules/purchase-orders and the
+// web's po-labels.ts).
+const PO_STATUS_LABEL: Record<string, string> = {
+  draft: 'Draft',
+  open: 'Open',
+  partial: 'Partly Received',
+  qc_pending: 'QC Pending',
+  closed: 'Closed',
+  cancelled: 'Cancelled',
+};
+function poStatusLabel(status: string): string {
+  return (
+    PO_STATUS_LABEL[status] ??
+    status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
+
+function blankToNull(v: string | null | undefined): string | null {
+  return v && v.trim() !== '' ? v : null;
+}
+
+/** YYYY-MM-DD → dd-mm-yyyy (owner date format). */
+function dmy(d: string): string {
+  const [y, m, day] = d.slice(0, 10).split('-');
+  return y && m && day ? `${day}-${m}-${y}` : d;
 }
 
 function tsLike(v: unknown): string {
