@@ -1,11 +1,13 @@
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useDraftSink } from '@/lib/use-form-draft';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { BOM_CREATE_STATUS } from '@innovic/shared';
+import { useSalesOrder } from '@/modules/sales-orders/api';
 import { useCreateBomMaster } from '../api';
 import {
   BomForm,
@@ -18,6 +20,10 @@ import { useToast } from '@/ui/feedback';
 export const bomMasterNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'bom-masters/new',
+  // ADR-312 — ?soId=<Equipment SO> (the home "BOMs needed" check): the form
+  // opens on that SO's equipment item as the Parent Item. Read once, then
+  // stripped from the URL. A BOM carries no SO field, so the item is the seed.
+  validateSearch: z.object({ soId: z.string().uuid().optional().catch(undefined) }),
   component: BomMasterNewPage,
 });
 
@@ -36,6 +42,23 @@ function BomMasterNewPage(): React.JSX.Element {
     onExit: goBack,
     draft: pageDraft,
   });
+  const search = bomMasterNewRoute.useSearch();
+  const [seedSoId] = useState(search.soId);
+  const seedSo = useSalesOrder(seedSoId);
+  useEffect(() => {
+    if (!search.soId) return;
+    void navigate({
+      to: '/bom-masters/new',
+      search: (prev) => ({ ...prev, soId: undefined }),
+      replace: true,
+    });
+  }, [search.soId, navigate]);
+  // The first live line by line no. that has an item — cancelled / closed
+  // lines are skipped, as the "Equipment SO waiting BOM" check does.
+  const seedLine =
+    [...(seedSo.data?.lines ?? [])]
+      .filter((l) => l.itemId && l.status !== 'cancelled' && l.status !== 'closed')
+      .sort((a, b) => a.lineNo - b.lineNo)[0] ?? null;
 
   const submit = async (header: BomFormHeaderDraft, lines: BomFormLineDraft[]): Promise<void> => {
     setSubmitError(null);
@@ -65,6 +88,11 @@ function BomMasterNewPage(): React.JSX.Element {
     );
   }
 
+  // Wait for the linked SO (a failed read just opens a blank form).
+  if (seedSoId && seedSo.isLoading) {
+    return <div className="empty-state">Loading sales order…</div>;
+  }
+
   return (
     <>
       {exit.dialog}
@@ -78,9 +106,9 @@ function BomMasterNewPage(): React.JSX.Element {
         mode="create"
         initialHeader={{
           bomNo: '',
-          bomName: '',
-          parentItemId: '',
-          parentItemCodeText: '',
+          bomName: seedLine?.partName ?? '',
+          parentItemId: seedLine?.itemId ?? '',
+          parentItemCodeText: seedLine ? (seedLine.itemCode ?? seedLine.itemCodeText ?? '') : '',
           status: BOM_CREATE_STATUS,
         }}
         // Start with no part rows: the parent has to be chosen first, and an

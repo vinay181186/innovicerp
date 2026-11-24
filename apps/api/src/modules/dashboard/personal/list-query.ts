@@ -47,6 +47,10 @@ export interface RawRow {
   x1: string | null;
   x2: string | null;
   x3: string | null;
+  /** ADR-312: an optional extra id for a home check's next-step link. An
+   *  inner query MAY carry column x4; the checks runner reads it as NULL when
+   *  absent (checks/types.ts x4Of). The ADR-250 lists never read it. */
+  x4?: string | null;
 }
 
 export interface ListResult {

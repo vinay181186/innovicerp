@@ -197,6 +197,13 @@ export const STORE_CHECKS: readonly CheckDef[] = [
     href: '/issue-register?tab=tools',
     query: toolsOutSql,
     docHref: (r) => `/issue-register?tab=tools&search=${encodeURIComponent(r.code)}`,
+    // ADR-312: the issue, to book its return — the right tool-issues/
+    // returns.ts recordToolReturn demands (toolissue_create·advance).
+    actionHref: nextStep(
+      'toolissue_create',
+      'advance',
+      (r) => `/issue-register?tab=tools&open=${r.id}`,
+    ),
     refCode: (r) => r.x1,
     dated: true,
   },

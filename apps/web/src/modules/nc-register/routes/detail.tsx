@@ -24,6 +24,7 @@ import {
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Shield, Stamp, Truck } from 'lucide-react';
 import { useState } from 'react';
+import { z } from 'zod';
 import { useCanOpen } from '@/components/shared/action-link';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
@@ -56,6 +57,7 @@ import {
 } from '../api';
 import { CreateNcDcPanel } from '../components/create-nc-dc-panel';
 import { DisposeNcPanel } from '../components/dispose-nc-panel';
+import { useNcOpenLink } from '../components/use-nc-open-link';
 import { NcDispositionBadge } from '../components/nc-disposition-badge';
 import { NcLinksBlock } from '../components/nc-links-block';
 import { Note } from '../components/nc-note';
@@ -68,6 +70,8 @@ import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 export const ncRegisterDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'nc-register/$id',
+  // ADR-312 — ?open=dispose | dc opens that pop-up once (useNcOpenLink).
+  validateSearch: z.object({ open: z.enum(['dispose', 'dc']).optional().catch(undefined) }),
   component: NcRegisterDetailPage,
 });
 
@@ -119,6 +123,15 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const [reworkDoneQty, setReworkDoneQty] = useState<number | ''>('');
   const [closeError, setCloseError] = useState<string | null>(null);
   const [capaError, setCapaError] = useState<string | null>(null);
+  const linkOpen = ncRegisterDetailRoute.useSearch().open;
+  useNcOpenLink({
+    open: linkOpen,
+    updatedAt: detail?.updatedAt,
+    canDispose: eff ? effectiveFormPerms(eff, 'nc_dispose').advance : undefined,
+    onDispose: () => setShowDispose(true),
+    onDc: setCreateDcOn,
+    strip: () => void navigate({ to: '/nc-register/$id', params: { id }, replace: true }),
+  });
 
   // Full op list for the NC's JC — drives the dispose panel's legacy rework-op
   // dropdown (legacy `_disposeNC` renders every op of the JC, HTML L22637) and

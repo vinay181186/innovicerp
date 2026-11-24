@@ -163,8 +163,10 @@ export const dashCheckPageResponseSchema = z.object({
 });
 export type DashCheckPageResponse = z.infer<typeof dashCheckPageResponseSchema>;
 
-/** GET /dashboard/checks — only departments the caller has a tier in, and
- *  inside them only checks whose "View all" page the caller can open. */
+/** GET /dashboard/checks — only departments the caller has a tier in (any
+ *  level, or Super Admin / Full Access / Auditor), and every check of each such
+ *  department (owner "follow access tier"). The level decides only where a row's
+ *  number goes (CheckDef.actionHref, ADR-312), never which checks show. */
 export const dashChecksResponseSchema = z.object({
   depts: z.array(dashCheckDeptBlockSchema),
 });

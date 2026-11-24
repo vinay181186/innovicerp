@@ -73,6 +73,16 @@ export function salesLinesSql(c: CheckCtx, w: Window): SQL {
 export const orderHref = (r: RawRow): string =>
   r.kind === 'jw' ? docNavPage('job-work-order', r.id) : docNavPage('sales-order', r.id);
 
+/** ADR-312: an SO row opens New Dispatch for that SO; a JWSO row opens the
+ *  JW Return tab on that JWSO — jw-returns/service.ts createJwReturnChallan's
+ *  right (jw_create·entry). */
+const newDispatch = nextStep('dispatch_create', 'entry', (r) =>
+  r.kind === 'so' ? `/customer-dispatches/new?so=${r.id}` : null,
+);
+const newJwReturn = nextStep('jw_create', 'entry', (r) =>
+  r.kind === 'jw' ? `/customer-dispatches?tab=jw&jw=${r.id}` : null,
+);
+
 const salesDef = (key: CheckDef['key'], label: string, w: Window): CheckDef => ({
   key,
   dept: 'sales',
@@ -81,10 +91,7 @@ const salesDef = (key: CheckDef['key'], label: string, w: Window): CheckDef => (
   href: '/sales-orders',
   query: (c) => salesLinesSql(c, w),
   docHref: orderHref,
-  // ADR-312: SO rows open New Dispatch for that SO (JWSO rows: the JWSO).
-  actionHref: nextStep('dispatch_create', 'entry', (r) =>
-    r.kind === 'so' ? `/customer-dispatches/new?so=${r.id}` : null,
-  ),
+  actionHref: (r, a) => (r.kind === 'jw' ? newJwReturn(r, a) : newDispatch(r, a)),
   refCode: (r) => r.x1,
   dated: true,
 });

@@ -24,6 +24,7 @@
 import { docNavPage } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { PLAN_PENDING_QTY_SQL, planDerivedStatusSql } from '../../../lib/plan-order-coverage';
+import { routeCardForItemRevSql } from '../../../lib/route-card-for-rev';
 import type { RawRow } from '../personal/list-query';
 import { planToProSql } from '../personal/rows-planning';
 import { jcRunningSql, opsReadySql, opsRunningSql } from '../personal/rows-production';
@@ -57,7 +58,16 @@ export function planRcPendingSql(c: CheckCtx): SQL {
            plans.created_by::text AS created_by,
            (CASE WHEN plans.planned_start_date < ${c.today}::date THEN 1 ELSE 0 END)::int AS is_late,
            COALESCE(so.id, jw.id)::text AS x1, COALESCE(so.code, jw.code)::text AS x2,
-           (CASE WHEN so.id IS NOT NULL THEN 'so' WHEN jw.id IS NOT NULL THEN 'jw' END)::text AS x3
+           (CASE WHEN so.id IS NOT NULL THEN 'so' WHEN jw.id IS NOT NULL THEN 'jw' END)::text AS x3,
+           -- ADR-312 next step: no card → the plan's item (New Route Card);
+           -- card waiting → that card (Approve). The card is the plan's own
+           -- Item + Rev one (routeCardForItemRevSql, the rule ds.st reads).
+           (CASE WHEN ds.st = ${RC_WAITING} THEN (
+              SELECT rcw.id FROM public.route_cards rcw
+              WHERE rcw.company_id = plans.company_id
+                AND ${routeCardForItemRevSql('rcw', sql`plans.item_id`, sql`plans.item_revision_id`)}
+              ORDER BY rcw.id LIMIT 1)
+            ELSE plans.item_id END)::text AS x4
     FROM public.plans
     ${PLAN_ORDER_JOINS}
     CROSS JOIN LATERAL (SELECT ${planDerivedStatusSql()} AS st) ds
@@ -120,7 +130,19 @@ export const PLAN_RC_PENDING_CHECK: CheckDef = {
   query: planRcPendingSql,
   statusText: (r) =>
     r.kind === RC_WAITING ? 'RC Not Approved' : r.kind === RC_MISSING ? 'No Route Card' : null,
+  actionHref: (r, a) => (r.kind === RC_WAITING ? rcApprove(r, a) : rcNew(r, a)),
 };
+
+/** ADR-312: no Route Card → New Route Card for the plan's item (x4 = item
+ *  id); a card waiting approval → that card, to Approve (x4 = card id). */
+const rcNew = nextStep('routecard_create', 'entry', (r) =>
+  r.kind === RC_MISSING && r.x4
+    ? `/route-cards/new?itemId=${r.x4}&itemCode=${enc(r.itemCode ?? '')}&itemName=${enc(r.itemName ?? '')}`
+    : null,
+);
+const rcApprove = nextStep('routecard_create', 'approve', (r) =>
+  r.kind === RC_WAITING && r.x4 ? `/route-cards/${r.x4}` : null,
+);
 
 const jcHref = (r: RawRow): string => docNavPage('job-card', r.id);
 
@@ -199,6 +221,10 @@ export const PRODUCTION_CHECKS: readonly CheckDef[] = [
     // ops_running rule, only runs past their expected time (is_late).
     query: (c) => narrow(opsRunningSql(c.cid, {}), sql`x.is_late = 1`),
     docHref: jcHref,
+    // ADR-312: Complete Operation on the running op (x4 = op id).
+    actionHref: nextStep('op_entry', 'entry', (r) =>
+      r.x4 ? `/op-entry?jc=${enc(r.code)}&op=${r.x4}&mode=complete` : null,
+    ),
     dated: false,
     statusText: runningText,
   },

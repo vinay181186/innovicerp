@@ -34,12 +34,19 @@ export const jcOpsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'jc-ops',
   // 25 ops a page (ADR-201); the page lives in the URL.
-  validateSearch: z.object({ page: pageSearchParam }),
+  // ADR-312 — ?op=<jcOpId>&open=pr opens Raise PR for that op once.
+  validateSearch: z.object({
+    page: pageSearchParam,
+    op: z.string().uuid().optional().catch(undefined),
+    open: z.enum(['pr']).optional().catch(undefined),
+    /** ADR-312 — the linked op's JC No.: the board opens filtered to it. */
+    jc: z.string().max(64).optional().catch(undefined),
+  }),
   component: JcOpsPage,
 });
 
 function JcOpsPage(): React.JSX.Element {
-  const { page } = jcOpsRoute.useSearch();
+  const { page, op: linkOp, open: linkOpen, jc: linkJc } = jcOpsRoute.useSearch();
   const navigate = jcOpsRoute.useNavigate();
   const gotoPage = useCallback(
     (p: number) => void navigate({ search: (prev) => ({ ...prev, page: p }), replace: true }),
@@ -55,7 +62,7 @@ function JcOpsPage(): React.JSX.Element {
   // ▶ Start / ✚ Log deep links into Op Entry — the same gate the Job Queue
   // uses for the same two links.
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
-  const [jcCode, setJcCode] = useState('');
+  const [jcCode, setJcCode] = useState(linkJc ?? '');
   // Server-side `?search=` (GET /jc-ops matches JC no., operation, item code
   // and POL). The box shows every keystroke; the query waits 300ms.
   const [searchInput, setSearchInput] = useState('');
@@ -104,6 +111,21 @@ function JcOpsPage(): React.JSX.Element {
     limit: LIST_PAGE_SIZE,
     offset: pageOffset(page),
   });
+  // ADR-312 — the link's op, when it is on the loaded page, gets the same
+  // Raise PR box as its ⋯ item, only where that item is live (PR right, an
+  // outsource op still pending). Otherwise the board shows as normal.
+  const linkDoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!linkOp || linkOpen !== 'pr' || !data || !eff || linkDoneRef.current === linkOp) return;
+    linkDoneRef.current = linkOp;
+    const row = data.items.find((r) => r.jcOpId === linkOp);
+    const pending = row?.opType === 'outsource' && (row.outsourceStatus || 'pending') === 'pending';
+    if (row && pending && canCreatePr) setPrRow(row);
+    void navigate({
+      search: (prev) => ({ ...prev, op: undefined, open: undefined, jc: undefined }),
+      replace: true,
+    });
+  }, [linkOp, linkOpen, data, eff, canCreatePr, navigate]);
   const total = data?.total ?? 0;
   useClampPage(page, data?.total, gotoPage);
 

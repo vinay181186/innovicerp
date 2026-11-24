@@ -39,6 +39,8 @@ import {
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { z } from 'zod';
+import { useLinkOpen } from '@/lib/use-link-open';
 import { useCanOpen } from '@/components/shared/action-link';
 import { useHistoryTab } from '@/components/shared/document-history';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
@@ -72,6 +74,8 @@ const INVOICE_STATUS_LABEL: Record<string, string> = {
 export const invoiceDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'invoices/$id',
+  // ADR-312 — ?open=payment opens the Add Payment form once (where its button shows).
+  validateSearch: z.object({ open: z.enum(['payment']).optional().catch(undefined) }),
   component: InvoiceDetailPage,
 });
 
@@ -117,6 +121,17 @@ function InvoiceDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'invoice_create');
   // ADR-197 — who did what to this invoice. Before the early returns (hooks rule).
   const historyTab = useHistoryTab({ entity: 'Invoice', entityId: inv?.id, refId: inv?.code });
+  const linkOpen = invoiceDetailRoute.useSearch().open;
+  const navigate = invoiceDetailRoute.useNavigate();
+  useLinkOpen(
+    linkOpen,
+    Boolean(eff && inv),
+    () => {
+      if (perms.entry && inv && inv.status !== 'paid' && inv.status !== 'cancelled')
+        setPayOpen(true);
+    },
+    () => void navigate({ search: (prev) => ({ ...prev, open: undefined }), replace: true }),
+  );
 
   if (eff && !perms.view) {
     return (

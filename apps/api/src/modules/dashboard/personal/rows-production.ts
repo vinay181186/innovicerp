@@ -80,7 +80,9 @@ export function opsRunningSql(cid: string, f: ListFilter): SQL {
            ro.created_by::text AS created_by,
            (CASE WHEN t.expected_min > 0 AND t.elapsed_min >= t.expected_min
                  THEN 1 ELSE 0 END)::int AS is_late,
-           ROUND(t.elapsed_min)::text AS x1, o.op_seq::text AS x2, o.operation::text AS x3
+           ROUND(t.elapsed_min)::text AS x1, o.op_seq::text AS x2, o.operation::text AS x3,
+           -- ADR-312: the op id, for the home check's Complete Operation link.
+           o.id::text AS x4
     FROM public.running_ops ro
     JOIN public.jc_ops o ON o.id = ro.jc_op_id AND o.deleted_at IS NULL
     JOIN public.job_cards jc ON jc.id = o.job_card_id AND jc.deleted_at IS NULL

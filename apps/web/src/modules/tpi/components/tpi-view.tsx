@@ -14,8 +14,9 @@
 import { Icon } from '@/ui/core';
 import type { ListTpiQuery, OrderOption } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePersistentState } from '@/lib/use-persistent-state';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, fetchAllPages, pageOffset, useClampPage } from '@/lib/list-paging';
 import { OrderSelect } from '@/modules/order-options/components/order-select';
@@ -37,14 +38,24 @@ const STRIP: React.CSSProperties = {
   alignItems: 'center',
 };
 
-export function TpiView(props: { title?: string; tabs?: React.ReactNode }): React.JSX.Element {
+export function TpiView(props: {
+  title?: string;
+  tabs?: React.ReactNode;
+  /** ADR-312 — a link's ?tpiOp=: open this op's card once the list loads. */
+  openOpId?: string | undefined;
+  /** Called once the link has been acted on, to strip it from the URL. */
+  onOpened?: () => void;
+  /** ADR-312 — the page's ?search= (a link passes the JC No.). */
+  initialSearch?: string | undefined;
+}): React.JSX.Element {
+  const { openOpId, onOpened } = props;
   const [openId, setOpenId] = useState<string | null>(null);
 
   // Search over every text column the two lists show (JC, SO, POL, item code /
   // name, operation, inspector, organisation, certificate) — on the server,
   // 300 ms after typing stops; both lists go back to page 1.
-  const [term, setTerm] = useState('');
-  const [q, setQ] = useState('');
+  const [term, setTerm] = useState(props.initialSearch ?? '');
+  const [q, setQ] = useState(props.initialSearch ?? '');
   const [pendPage, setPendPage] = useState(1);
   const [compPage, setCompPage] = useState(1);
   useEffect(() => {
@@ -91,6 +102,21 @@ export function TpiView(props: { title?: string; tabs?: React.ReactNode }): Reac
   useClampPage(pendPage, pendQ.data?.total, setPendPage);
   useClampPage(compPage, compQ.data?.total, setCompPage);
   const completedColumns = useMemo(() => tpiCompletedColumns(pageOffset(compPage) + 1), [compPage]);
+
+  // ADR-312 — open the linked op's card once, only for a user who may save a
+  // TPI (the card's own test); else the list shows as normal. The link also
+  // passes the JC No. as ?search=, so the op is on the first page. Only the loaded
+  // page is searched: a call further down the list is not opened.
+  const { data: eff } = useMyAccess();
+  const linkDoneRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!openOpId || linkDoneRef.current === openOpId || !pendQ.data || !eff) return;
+    linkDoneRef.current = openOpId;
+    const canTpi =
+      effectiveFormPerms(eff, 'qc_submit').entry && effectiveFormPerms(eff, 'tpi_submit').entry;
+    if (canTpi && pendQ.data.items.some((o) => o.jcOpId === openOpId)) setOpenId(openOpId);
+    onOpened?.();
+  }, [openOpId, onOpened, pendQ.data, eff]);
 
   const pending = pendQ.data?.items ?? [];
   const completed = compQ.data?.items ?? [];

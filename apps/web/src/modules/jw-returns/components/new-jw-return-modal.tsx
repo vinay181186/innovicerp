@@ -14,10 +14,17 @@ import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api
 import { useCreateJwReturnChallan, useJwReturnable } from '../api';
 import { PrintJwReturnButton } from './print-jw-return-button';
 
-export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JSX.Element {
+export function NewJwReturnModal({
+  onClose,
+  initialJwId,
+}: {
+  onClose: () => void;
+  /** ADR-312 — a link's JWSO, picked when the popup opens (like NewJwInvoiceModal). */
+  initialJwId?: string | undefined;
+}): React.JSX.Element {
   const [returnDate, setReturnDate] = useState(todayLocal());
   const [jwSearch, setJwSearch] = useState('');
-  const [jwId, setJwId] = useState<string | null>(null);
+  const [jwId, setJwId] = useState<string | null>(() => initialJwId ?? null);
   const [jobWorkOrderLineId, setJobWorkOrderLineId] = useState('');
   const [qty, setQty] = useState('');
   const [transport, setTransport] = useState('');
@@ -188,6 +195,13 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
               }}
               onSearch={setJwSearch}
               loading={jwQuery.isFetching}
+              // The pre-picked JWSO may sit outside the first 50 the picker
+              // lists, so its label comes from the loaded detail.
+              valueLabel={
+                jwId && jwDetailQ.data?.id === jwId
+                  ? `${jwDetailQ.data.code} — ${jwDetailQ.data.customerName ?? ''}`
+                  : undefined
+              }
               placeholder="🔍 Select JWSO — type number or customer…"
               options={jwHeaders.map((j) => ({
                 id: j.jwId,

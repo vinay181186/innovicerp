@@ -94,11 +94,201 @@ describe('actionHref (ADR-312)', () => {
     const admin = dash({}, true);
     const keep = (key: string, over: Parameters<typeof raw>[0]) =>
       expect(href(key, admin, over)).toBe(def(key).docHref(raw(over)));
-    keep('sales_overdue', { kind: 'jw' }); // JWSO line: no SO dispatch
-    keep('qc_incoming', { kind: 'party_grn', x1: LINE }); // Party GRN keeps its page
+    keep('qc_incoming', { kind: 'purchase', x1: null }); // purchase GRN without a line
     keep('qc_reports', { kind: 'so', x1: null }); // standalone job card
     keep('prod_due_week', { x1: null }); // PRO with no plan
     keep('prod_ops_ready', { x1: null });
+  });
+});
+
+// ADR-312 phase 2: [check, right, row, link]. Each link opens with its right,
+// falls back to docHref without it, and (where the step needs an id the row
+// may lack) falls back to docHref when that id is missing.
+type Case = {
+  key: string;
+  form: string;
+  action: 'entry' | 'edit' | 'approve' | 'advance';
+  row: Parameters<typeof raw>[0];
+  to: string;
+  missing?: Parameters<typeof raw>[0];
+  /** The form whose View opens the target page, when not `form` itself. */
+  pageForm?: string;
+  /** The step also needs entry on pageForm (e.g. TPI needs QC Submit entry). */
+  pageEntry?: boolean;
+};
+const ITEM = '66666666-6666-4666-8666-666666666666';
+const PHASE2: Case[] = [
+  {
+    key: 'prod_ops_overtime',
+    form: 'op_entry',
+    action: 'entry',
+    row: { code: 'IN-JC 1', x4: OP },
+    to: `/op-entry?jc=IN-JC%201&op=${OP}&mode=complete`,
+    missing: { code: 'IN-JC 1', x4: null },
+  },
+  {
+    key: 'prod_osp_send',
+    form: 'ospdc_create',
+    action: 'entry',
+    row: { x4: PR },
+    to: `/delivery-challans/new?poId=${PR}`,
+    missing: { x4: null },
+  },
+  {
+    key: 'prod_osp_at_vendor',
+    form: 'ospdc_create',
+    action: 'entry',
+    row: { x4: PR },
+    to: `/delivery-challans/${PR}/receive`,
+    missing: { x4: null },
+  },
+  {
+    key: 'prod_rc_pending',
+    form: 'routecard_create',
+    action: 'entry',
+    row: { kind: 'route_card_pending', x4: ITEM, itemCode: 'A&B', itemName: 'Shaft 1' },
+    to: `/route-cards/new?itemId=${ITEM}&itemCode=A%26B&itemName=Shaft%201`,
+    missing: { kind: 'route_card_pending', x4: null },
+  },
+  {
+    key: 'prod_rc_pending',
+    form: 'routecard_create',
+    action: 'approve',
+    row: { kind: 'route_card_approval_pending', x4: PLAN },
+    to: `/route-cards/${PLAN}`,
+    missing: { kind: 'route_card_approval_pending', x4: null },
+  },
+  {
+    key: 'qc_tpi',
+    form: 'tpi_submit',
+    action: 'entry',
+    row: { x1: OP },
+    to: `/qc-call-register?tab=tpi&tpiOp=${OP}&search=IN-PO-00001`,
+    pageForm: 'qc_submit',
+    // A TPI save also needs QC Submit entry (tpi-pending-card.tsx).
+    pageEntry: true,
+    missing: { x1: null },
+  },
+  {
+    key: 'des_bom_pending',
+    form: 'bom_create',
+    action: 'entry',
+    row: { id: PR },
+    to: `/bom-masters/new?soId=${PR}`,
+  },
+  {
+    key: 'qc_nc_pending',
+    form: 'nc_dispose',
+    action: 'advance',
+    row: { id: PR },
+    to: `/nc-register/${PR}?open=dispose`,
+  },
+  {
+    key: 'pur_rtv_challan',
+    form: 'ospdc_create',
+    action: 'entry',
+    row: { id: PR },
+    to: `/nc-register/${PR}?open=dc`,
+    pageForm: 'nc_dispose',
+  },
+  {
+    key: 'pur_osp_no_pr',
+    form: 'pr_create',
+    action: 'entry',
+    row: { x1: OP },
+    to: `/jc-ops?op=${OP}&open=pr&jc=IN-PO-00001`,
+    pageForm: 'jc_create',
+    missing: { x1: null },
+  },
+  {
+    key: 'qc_calibration',
+    form: 'toolissue_create',
+    action: 'entry',
+    row: { id: PR },
+    to: `/instruments?open=${PR}`,
+  },
+  {
+    key: 'store_tools_out',
+    form: 'toolissue_create',
+    action: 'advance',
+    row: { id: PR },
+    to: `/issue-register?tab=tools&open=${PR}`,
+  },
+  {
+    key: 'fin_invoice_overdue',
+    form: 'invoice_create',
+    action: 'entry',
+    row: { id: PR },
+    to: `/invoices/${PR}?open=payment`,
+  },
+  {
+    key: 'qc_incoming',
+    form: 'qc_incoming',
+    action: 'entry',
+    row: { kind: 'party_grn', id: PR, x1: LINE },
+    to: `/incoming-qc?pgrn=${PR}`,
+  },
+  ...(['sales_overdue', 'sales_due_week', 'sales_due_month'] as const).map(
+    (key): Case => ({
+      key,
+      form: 'jw_create',
+      action: 'entry',
+      row: { kind: 'jw', id: PR },
+      to: `/customer-dispatches?tab=jw&jw=${PR}`,
+      pageForm: 'dispatch_create',
+    }),
+  ),
+];
+
+describe('actionHref phase 2 (ADR-312)', () => {
+  // The tick, plus View on the target page when another form owns it
+  // (nextStep's canSeeLink: the page must open for the caller).
+  const pageView = (c: Case) =>
+    c.pageForm
+      ? { [c.pageForm]: perms({ view: true, ...(c.pageEntry ? { entry: true } : {}) }) }
+      : {};
+  const withRight = (c: Case) =>
+    dash({ forms: { ...pageView(c), [c.form]: perms({ view: true, [c.action]: true }) } });
+
+  it.each(PHASE2)('$key ($action) with $form opens the next step', (c) => {
+    expect(href(c.key, withRight(c), c.row)).toBe(c.to);
+  });
+
+  it.each(PHASE2)('$key ($action) without the right keeps docHref', (c) => {
+    const viewer = dash({ forms: { ...pageView(c), [c.form]: perms({ view: true }) } });
+    expect(href(c.key, viewer, c.row)).toBe(def(c.key).docHref(raw(c.row)));
+  });
+
+  it.each(PHASE2.filter((c) => c.missing))('$key ($action) lacking its id keeps docHref', (c) => {
+    const m = c.missing as Parameters<typeof raw>[0];
+    expect(href(c.key, withRight(c), m)).toBe(def(c.key).docHref(raw(m)));
+  });
+
+  it('an RC waiting approval needs Approve, not Entry (and the reverse)', () => {
+    const entryOnly = dash({ forms: { routecard_create: perms({ view: true, entry: true }) } });
+    const waiting = { kind: 'route_card_approval_pending', x4: PLAN };
+    expect(href('prod_rc_pending', entryOnly, waiting)).toBe(
+      def('prod_rc_pending').docHref(raw(waiting)),
+    );
+    const approveOnly = dash({ forms: { routecard_create: perms({ view: true, approve: true }) } });
+    const missing = { kind: 'route_card_pending', x4: ITEM };
+    expect(href('prod_rc_pending', approveOnly, missing)).toBe(
+      def('prod_rc_pending').docHref(raw(missing)),
+    );
+  });
+
+  it('SO rows still need the dispatch right; JWSO rows need the JW Return right', () => {
+    const jwOnly = dash({
+      forms: {
+        dispatch_create: perms({ view: true }),
+        jw_create: perms({ view: true, entry: true }),
+      },
+    });
+    const so = { kind: 'so', id: PR };
+    expect(href('sales_overdue', jwOnly, so)).toBe(def('sales_overdue').docHref(raw(so)));
+    const dispatchOnly = dash({ forms: { dispatch_create: perms({ view: true, entry: true }) } });
+    const jw = { kind: 'jw', id: PR };
+    expect(href('sales_overdue', dispatchOnly, jw)).toBe(def('sales_overdue').docHref(raw(jw)));
   });
 });
 

@@ -69,6 +69,8 @@ const searchSchema = z.object({
   tab: z.enum(['so', 'jw']).optional(),
   search: z.string().optional(),
   page: pageSearchParam,
+  // ADR-312 — ?tab=jw&jw=<jwsoId> opens New JW Return on that JWSO once.
+  jw: z.string().uuid().optional().catch(undefined),
 });
 
 export const customerDispatchListRoute = createRoute({
@@ -203,6 +205,10 @@ function CustomerDispatchListPage(): React.JSX.Element {
         <JwDispatchView
           key={routeSearch.search ?? ''}
           initialSearch={routeSearch.search}
+          linkJwId={routeSearch.jw}
+          onLinkOpened={() =>
+            void navigate({ search: (prev) => ({ ...prev, jw: undefined }), replace: true })
+          }
           tabs={tabBar}
         />
       </div>

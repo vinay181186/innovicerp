@@ -36,6 +36,7 @@ import { NO_QC_FILTER, type QcFilter, qcFilterNote } from './qc-call-operation';
 import { useQcCallData, useQcTableSf } from './qc-call-data';
 import { PgrnQcPopup, RaisedNcBanner, exportRegister } from './qc-call-extras';
 import { useQcInspect } from './use-qc-inspect';
+import { LinkedPgrnQc, type QcScreenParams, type QcScreenPatch } from './qc-register-links';
 import { QcCallRegisterHeader, type QcScreenMode } from './qc-call-register-header';
 import {
   PENDING_HIDDEN,
@@ -52,16 +53,7 @@ import {
 } from './qc-call-completed-columns';
 import { TabStrip } from '@/ui/navigation';
 
-/** The URL params the screen reads (each route validates its own). */
-export interface QcScreenParams {
-  line?: string | undefined;
-  op?: string | undefined;
-  tab?: 'qc' | 'tpi' | undefined;
-  search?: string | undefined;
-  page?: number | undefined;
-}
-/** The URL writes the screen makes: the page, and stripping a consumed link. */
-export type QcScreenPatch = { page?: number | undefined; line?: undefined; op?: undefined };
+export type { QcScreenParams, QcScreenPatch } from './qc-register-links';
 
 /** Columns Incoming QC leaves out — no job-card op (so no step, no machine)
  *  stands behind a GRN / Party GRN call; QC Command assigns process calls only. */
@@ -228,7 +220,12 @@ export function QcRegisterScreen(props: {
   if (!incoming && tab === 'tpi') {
     return (
       <div>
-        <TpiView tabs={tabBar} />
+        <TpiView
+          tabs={tabBar}
+          openOpId={params.tpiOp}
+          initialSearch={params.search}
+          onOpened={() => patchSearch({ tpiOp: undefined })}
+        />
       </div>
     );
   }
@@ -392,6 +389,8 @@ export function QcRegisterScreen(props: {
       {inspectPgrn && canIncoming ? (
         <PgrnQcPopup key={inspectPgrn.partyGrnLineId} row={inspectPgrn} onClose={closeInspect} />
       ) : null}
+      {/* ADR-312 — ?pgrn= (Incoming QC only; the register route never sets it). */}
+      <LinkedPgrnQc pgrnId={params.pgrn} patch={patchSearch} onClose={closeInspect} />
     </div>
   );
 }
