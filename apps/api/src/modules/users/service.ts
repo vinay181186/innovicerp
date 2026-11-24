@@ -323,6 +323,8 @@ export async function updateUser(
     if (input.role !== undefined) updates.role = input.role;
     if (input.phone !== undefined) updates.phone = emptyToNull(input.phone);
     if (input.isActive !== undefined) updates.isActive = input.isActive;
+    // ADR-314 — Desktop Pop-ups switch; same save path, lock and version check.
+    if (input.desktopPopups !== undefined) updates.desktopPopups = input.desktopPopups;
     // approval_limit is a numeric column → store as string; null clears it.
     if (input.approvalLimit !== undefined) {
       updates.approvalLimit = input.approvalLimit === null ? null : String(input.approvalLimit);

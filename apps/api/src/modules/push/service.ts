@@ -3,16 +3,18 @@
 // connects as postgres, so RLS is not enforced at runtime).
 
 import type {
+  DesktopPopups,
   PushConfigResponse,
   PushTestResponse,
   RemovePushSubscriptionInput,
   SavePushSubscriptionInput,
 } from '@innovic/shared';
 import { and, eq, isNotNull, isNull } from 'drizzle-orm';
-import { pushSubscriptions } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { pushSubscriptions, users } from '../../db/schema';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AppError, AuthorizationError } from '../../lib/errors';
 import { logger } from '../../lib/logger';
+import { assertDesktopPopupsAllowed, pushConfigFor } from './payload';
 import { applySendResults, sendToSubscriptions, testPayload, vapid } from './sender';
 
 const requireCompany = (user: AuthContext): string => {
@@ -32,10 +34,32 @@ export class PushSubscriptionGoneError extends AppError {
   }
 }
 
-/** GET /me/push — is pop-up delivery set up, and the public key. */
-export function getPushConfig(): PushConfigResponse {
+/** ADR-314 — the caller's own Desktop Pop-ups switch (null = no row). */
+async function desktopPopupsOf(
+  tx: DbTransaction,
+  user: AuthContext,
+): Promise<DesktopPopups | null> {
+  const rows = await tx
+    .select({ desktopPopups: users.desktopPopups })
+    .from(users)
+    .where(eq(users.id, user.id))
+    .limit(1);
+  return rows[0]?.desktopPopups ?? null;
+}
+
+/** ADR-314 — refuse (403) a caller whose Desktop Pop-ups are disabled. */
+async function refuseIfPopupsDisabled(tx: DbTransaction, user: AuthContext): Promise<void> {
+  assertDesktopPopupsAllowed(await desktopPopupsOf(tx, user));
+}
+
+/** GET /me/push — is pop-up delivery set up FOR THIS PERSON, and the public
+ *  key. A disabled login (ADR-314) reads enabled:false, like a server with no
+ *  keys, so the web shows no band and no bell switch. */
+export async function getPushConfig(user: AuthContext): Promise<PushConfigResponse> {
   const keys = vapid();
-  return { enabled: keys !== null, publicKey: keys?.publicKey ?? null };
+  if (!keys) return pushConfigFor(null, null);
+  const popups = await withUserContext(user, (tx) => desktopPopupsOf(tx, user));
+  return pushConfigFor(popups, keys);
 }
 
 /** POST /me/push/subscription — save this browser for the caller. One
@@ -51,6 +75,7 @@ export async function savePushSubscription(
   const companyId = requireCompany(user);
   const ua = userAgent ? userAgent.slice(0, USER_AGENT_MAX) : null;
   await withUserContext(user, async (tx) => {
+    await refuseIfPopupsDisabled(tx, user);
     const dead = await tx
       .select({ id: pushSubscriptions.id })
       .from(pushSubscriptions)
@@ -117,6 +142,7 @@ export async function sendTestPush(user: AuthContext): Promise<PushTestResponse>
   const companyId = requireCompany(user);
   const keys = vapid();
   if (!keys) return { sent: 0 };
+  await withUserContext(user, (tx) => refuseIfPopupsDisabled(tx, user));
   // Read in the user's context; send and record OUTSIDE it (no network call
   // inside a transaction).
   const subs = await withUserContext(user, async (tx) =>

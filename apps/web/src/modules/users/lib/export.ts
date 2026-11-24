@@ -1,7 +1,8 @@
 // ADR-310 — the User Management list's shared Export (copies the JWSO pilot).
 //
 // One sheet "User Management": ONLY the columns the user sees (Name,
-// Department, Access, Email, Phone, Status, Approver). The list API carries
+// Department, Access, Email, Phone, Status, Desktop Pop-ups,
+// Approver). The list API carries
 // no password or token, and nothing beyond the visible columns is written.
 // Status is a StatusBadge and Access a component, so both get plain words.
 
@@ -33,6 +34,11 @@ export function withUserExportValues(
     if (c.id === 'access') return { ...c, exportValue: (u) => accessWords(accessByUser.get(u.id)) };
     if (c.id === 'status')
       return { ...c, exportValue: (u) => (u.isActive ? 'Active' : 'Inactive') };
+    if (c.id === 'desktopPopups')
+      return {
+        ...c,
+        exportValue: (u) => (u.desktopPopups === 'disabled' ? 'Disabled' : 'Allowed'),
+      };
     return c;
   });
 }

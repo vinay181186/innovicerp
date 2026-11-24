@@ -16,6 +16,13 @@ import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 
 export const userRoleSchema = z.enum(USER_ROLES);
 
+/** ADR-314 (owner 2026-11-23) — per-person Desktop pop-ups switch. `disabled`
+ *  = no Windows pop-up on any laptop, no band, no bell switch; bell notes and
+ *  Task Board stay. Default `allowed`. */
+export const DESKTOP_POPUPS = ['allowed', 'disabled'] as const;
+export const desktopPopupsSchema = z.enum(DESKTOP_POPUPS);
+export type DesktopPopups = z.infer<typeof desktopPopupsSchema>;
+
 export const userSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid().nullable(),
@@ -24,6 +31,7 @@ export const userSchema = z.object({
   role: userRoleSchema,
   phone: z.string().nullable(),
   isActive: z.boolean(),
+  desktopPopups: desktopPopupsSchema,
   // Per-user PO approval ceiling (₹). numeric column → surfaced as a string
   // (same convention as PO rate/qty). Null = no personal limit; the company
   // approval_config.po_manager_limit applies instead. See ADR-038.
@@ -63,6 +71,7 @@ export const updateUserInputSchema = z.object({
   role: userRoleSchema.optional(),
   phone: z.string().max(32).optional(),
   isActive: z.boolean().optional(),
+  desktopPopups: desktopPopupsSchema.optional(),
   // null clears the personal limit (falls back to company po_manager_limit);
   // a non-negative number sets it. Mirror of legacy renderUsers approvalLimit
   // field (L13579). See ADR-038.

@@ -1,7 +1,8 @@
 // Sort & Filter (ADR-200) — the User Management list's sortable / filterable
 // fields. listUsers reads the users table alone (drizzle builder), list and
 // count over the same WHERE, so every expression is a users column. Status is
-// the is_active boolean as text ('true' / 'false'). Department, Access and
+// the is_active boolean as text ('true' / 'false'); Desktop Pop-ups is
+// 'allowed' / 'disabled' (ADR-314). Department, Access and
 // Approver are not here: they come from other endpoints (access control,
 // approval config) and are drawn in the browser, not stored on this row.
 
@@ -15,4 +16,5 @@ export const USER_SF_COLUMNS: SfColumnMap = {
   email: { sql: sql`${users.email}`, type: 'text' },
   phone: { sql: sql`${users.phone}`, type: 'text' },
   isActive: { sql: sql`${users.isActive}`, type: 'list' },
+  desktopPopups: { sql: sql`${users.desktopPopups}`, type: 'list' },
 };

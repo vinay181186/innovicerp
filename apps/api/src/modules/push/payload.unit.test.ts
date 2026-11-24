@@ -5,9 +5,12 @@ import { describe, expect, it } from 'vitest';
 import { taskNote } from '../dashboard/personal/task-notes';
 import { claimPendingSql } from './claim';
 import {
+  assertDesktopPopupsAllowed,
   buildTaskPushPayload,
+  DESKTOP_POPUPS_DISABLED_MESSAGE,
   ddmmyyyy,
   initialsOf,
+  pushConfigFor,
   pushDecision,
   taskNoticeHref,
   vapidFrom,
@@ -112,6 +115,32 @@ describe('claim statement', () => {
     expect(text).toContain('ORDER BY p.event_at');
     expect(text).toContain('RETURNING');
     expect(q.params).toEqual([15_000, 50]);
+  });
+  it("ADR-314: flags rows whose recipient's Desktop Pop-ups are disabled", () => {
+    const text = q.sql.replace(/\s+/g, ' ');
+    expect(text).toContain(
+      "COALESCE((SELECT u.desktop_popups = 'disabled' FROM public.users u WHERE u.id = n.recipient_id), false) AS popups_off",
+    );
+  });
+});
+
+describe('Desktop Pop-ups switch (ADR-314)', () => {
+  const keys = { publicKey: 'pub' };
+  it('disabled → config enabled false, no key; allowed → on; no server keys → off', () => {
+    expect(pushConfigFor('disabled', keys)).toEqual({ enabled: false, publicKey: null });
+    expect(pushConfigFor('allowed', keys)).toEqual({ enabled: true, publicKey: 'pub' });
+    expect(pushConfigFor(null, keys)).toEqual({ enabled: true, publicKey: 'pub' });
+    expect(pushConfigFor('allowed', null)).toEqual({ enabled: false, publicKey: null });
+  });
+  it('subscribe / test refused with 403 for a disabled login only', () => {
+    expect(() => assertDesktopPopupsAllowed('disabled')).toThrow(DESKTOP_POPUPS_DISABLED_MESSAGE);
+    try {
+      assertDesktopPopupsAllowed('disabled');
+    } catch (e) {
+      expect((e as { statusCode?: number }).statusCode).toBe(403);
+    }
+    expect(() => assertDesktopPopupsAllowed('allowed')).not.toThrow();
+    expect(() => assertDesktopPopupsAllowed(null)).not.toThrow();
   });
 });
 

@@ -10,7 +10,7 @@
 // shows the department, with the derived role underneath it.
 
 import { Icon } from '@/ui/core';
-import type { UpdateUserInput } from '@innovic/shared';
+import type { DesktopPopups, UpdateUserInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, KeyRound, Loader2, Lock } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -33,6 +33,7 @@ import { roleLabel } from '@/lib/role-label';
 import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
 import { FormActions } from '@/ui/layout';
 import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
+import { Select } from '@/ui/forms';
 
 /** The bottom bar sits outside the form's panel; `form=` keeps Save its submit button. */
 const FORM_ID = 'user-edit-form';
@@ -55,6 +56,7 @@ interface FormValues {
   fullName: string;
   phone: string;
   isActive: boolean;
+  desktopPopups: DesktopPopups;
 }
 
 // ADR-226 — the fields THIS screen can edit, and what the user calls each one.
@@ -68,7 +70,7 @@ interface FormValues {
 // both (see the file header and the payload comment below), so this screen must
 // never report them as its own edit and must never send a stale copy of them.
 // `email` is read-only here and `code`-like permanent, so it is out too.
-const USER_EDITABLE = ['fullName', 'phone', 'isActive'] as const;
+const USER_EDITABLE = ['fullName', 'phone', 'isActive', 'desktopPopups'] as const;
 
 // The screen's own labels, so a notice reads "Name", never `fullName`. No row
 // exists in docs/NAMING.md for any of the three; these are the labels already
@@ -77,12 +79,18 @@ const USER_LABELS: Record<string, string> = {
   fullName: 'Name',
   phone: 'Phone',
   isActive: 'Status',
+  desktopPopups: 'Desktop Pop-ups', // ADR-314
 };
 
 /** What the form holds before the user has loaded. One module-level object, so
  *  the `values` react-hook-form is handed is identical on every render until the
  *  real seed arrives. */
-const BLANK_FORM: FormValues = { fullName: '', phone: '', isActive: true };
+const BLANK_FORM: FormValues = {
+  fullName: '',
+  phone: '',
+  isActive: true,
+  desktopPopups: 'allowed',
+};
 
 function UserEditPage(): React.JSX.Element {
   const { id } = userEditRoute.useParams();
@@ -136,6 +144,7 @@ function UserEditPage(): React.JSX.Element {
       fullName: detail.fullName ?? '',
       phone: detail.phone ?? '',
       isActive: detail.isActive,
+      desktopPopups: detail.desktopPopups,
     };
   }
   const { register, handleSubmit, formState, watch, reset } = useForm<FormValues>({
@@ -215,6 +224,7 @@ function UserEditPage(): React.JSX.Element {
       fullName: values.fullName.trim(),
       phone: values.phone.trim(),
       isActive: values.isActive,
+      desktopPopups: values.desktopPopups,
     };
     try {
       // Only the fields that actually moved are sent; a 409 re-reads and retries
@@ -366,6 +376,20 @@ function UserEditPage(): React.JSX.Element {
                   <option value="false">Inactive</option>
                 </select>
                 {isSelf ? <div className="form-help">Cannot deactivate yourself.</div> : null}
+              </div>
+              {/* ADR-314 — per-person switch for the desktop pop-ups (Web Push). */}
+              <div className="form-grp">
+                <label className="form-label" htmlFor="desktopPopups">
+                  Desktop Pop-ups
+                </label>
+                <Select
+                  id="desktopPopups"
+                  options={[
+                    { value: 'allowed', label: 'Allowed' },
+                    { value: 'disabled', label: 'Disabled' },
+                  ]}
+                  {...register('desktopPopups')}
+                />
               </div>
               <div className="form-grp">
                 <label className="form-label">Department &amp; Access</label>

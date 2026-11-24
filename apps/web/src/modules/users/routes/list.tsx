@@ -289,6 +289,21 @@ function UsersListPage(): React.JSX.Element {
         render: (u) => <StatusBadge kind="useractive" status={String(u.isActive)} />,
       },
       {
+        // ADR-314 — same chip as Status: green Allowed, amber Disabled.
+        id: 'desktopPopups',
+        kind: 'badge',
+        header: 'Desktop Pop-ups',
+        width: '8%',
+        nowrap: true,
+        render: (u) => (
+          <StatusBadge
+            kind="useractive"
+            status={String(u.desktopPopups !== 'disabled')}
+            label={u.desktopPopups === 'disabled' ? 'Disabled' : 'Allowed'}
+          />
+        ),
+      },
+      {
         id: 'approver',
         header: 'Approver',
         width: '8%',

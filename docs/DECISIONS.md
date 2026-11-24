@@ -16576,3 +16576,29 @@ refetch made 60+ screens early-return on `isError` and replace the loaded screen
 - Positive: coming back through a tab shows the same list view, sub-tab, scroll and half-typed form.
 - Negative: a draft is per browser tab; closing the Chrome tab still loses it (browser prompt warns).
 - Risk: a form whose `apply` misses a field restores partially — each wired form was opened on TEST.
+
+
+## ADR-314: Per-person Desktop Pop-ups switch (owner 2026-11-23)
+
+**Date:** 2026-11-23
+**Status:** Accepted
+
+### Context
+
+The owner wants one login (Vinay N Makwana) never to get desktop (Web Push) pop-ups on any laptop, and never to see
+the every-page "Desktop pop-ups are off" band, while still getting task notes in the bell and keeping Task Board.
+
+### Decision
+
+New column `users.desktop_popups` (`allowed` default | `disabled`, migration 0261), set on User Management › Edit
+("Desktop Pop-ups: Allowed / Disabled") through the normal user update (same lock / edit-conflict path as
+`is_active`). For a disabled login: GET /me/push answers `{ enabled: false, publicKey: null }`, so the web hides the
+band and the bell switch with no web change there; POST /me/push/subscription and /me/push/test answer 403 "Desktop
+pop-ups are disabled for your login."; the sender's claim returns `popups_off` and those notices are settled `off`
+without sending or retrying. `task_notices` (bell notes) are still written for everyone. Stored subscriptions are kept,
+so setting the login back to Allowed resumes pop-ups with no re-subscribe.
+
+### Consequences
+
+- Positive: one switch, enforced on the server; no new infrastructure.
+- Negative: GET /me/push reads the caller's users row (one small query).

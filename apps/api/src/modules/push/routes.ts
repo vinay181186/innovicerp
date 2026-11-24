@@ -12,7 +12,7 @@ import * as service from './service';
 export async function pushRoutes(app: FastifyInstance): Promise<void> {
   app.get('/me/push', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return service.getPushConfig();
+    return service.getPushConfig(req.user);
   });
 
   app.post('/me/push/subscription', async (req) => {
