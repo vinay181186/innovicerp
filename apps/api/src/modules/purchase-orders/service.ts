@@ -110,6 +110,12 @@ import { assertPrsHaveNoPendingCancel } from '../purchase-requests/cancel';
 import { assertPrsFitPoVendor, assertPrsShareOneOrder, prIdsAfterSave } from './pr-one-order';
 import { markPoCancelledTx, releaseJcOpsForCancelledPo } from './po-cancel-writer';
 import {
+  assertPoDateNotBeforePrRows,
+  assertPoDateNotBeforePrs,
+  isPoApprovedStatus,
+  stampPoApprovedQty,
+} from './po-approved-qty';
+import {
   PO_FIRST_SO_CODE,
   PO_FIRST_SO_INTERNAL_NO,
   PO_LINE_LIFT,
@@ -1558,6 +1564,8 @@ export async function createPurchaseOrder(
         },
         distinctPrIds,
       );
+      // ADR-320 — the PO is never dated before the PRs it is raised from.
+      assertPoDateNotBeforePrRows(input.header.poDate, sourcePrs);
     }
     // Header `pr_id` can only hold ONE PR, so it is stamped only when there IS
     // one — same rule (and same reason) as the batch path. `pr_code_text` is the
@@ -1679,6 +1687,8 @@ export async function createPurchaseOrder(
     // Decimal Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
     await assertLineQtysFitUom(tx, companyId, lineValues);
     const insertedLines = await tx.insert(purchaseOrderLines).values(lineValues).returning();
+    // ADR-320 — born approved (PO approval off) = its qty is the approved qty.
+    if (headerStatus === 'open') await stampPoApprovedQty(tx, companyId, inserted[0]!.id);
 
     // Advance every linked outsource op, exactly as the from-PR path does at
     // createPurchaseOrderFromPr. Once the op knows its PO line, the outward-DC
@@ -2429,9 +2439,25 @@ export async function updatePurchaseOrderTx(
       { vendorId: nextVendorId ?? null, vendorCodeText: nextVendorCodeText },
       vendorEdited ? afterPrIds : afterPrIds.filter((p) => !beforePrIds.includes(p)),
     );
+    // ADR-320 — PO date vs its PRs, checked ONLY when this save moves the date
+    // (against every PR) or adds a PR (against the new PRs), so an old PO whose
+    // dates are already out of order still saves when neither changes.
+    const poDateChanged = h.poDate !== undefined && h.poDate !== existingHdr.poDate;
+    await assertPoDateNotBeforePrs(
+      tx,
+      companyId,
+      poDateChanged ? h.poDate! : existingHdr.poDate,
+      poDateChanged ? afterPrIds : afterPrIds.filter((p) => !beforePrIds.includes(p)),
+    );
   }
   if (input.lines !== undefined) {
     await mergeLines(tx, id, companyId, input.lines, user, showMoney);
+  }
+  // ADR-320 — still approved after the save (switch off, or goods already
+  // moved): the saved qty is the approved qty. Sent back to Draft: keep the
+  // last approved qty untouched, and an added line stays null.
+  if (isPoApprovedStatus(updates['status'] as string | undefined)) {
+    await stampPoApprovedQty(tx, companyId, id);
   }
 
   let updatedHdr = (
@@ -3189,6 +3215,8 @@ export async function createPurchaseOrderFromPr(
       fromPrGst.gstPercent,
       fromPrGst.taxType,
     );
+    // ADR-320 — the PO is never dated before the PR it is raised from.
+    assertPoDateNotBeforePrRows(input.header.poDate, [pr]);
     // Insert PO header (vendor + audit-snapshot of PR code).
     const insertedPos = await tx
       .insert(purchaseOrders)
@@ -3269,6 +3297,8 @@ export async function createPurchaseOrderFromPr(
         updatedBy: user.id,
       })
       .returning();
+    // ADR-320 — born approved (PO approval off) = its qty is the approved qty.
+    if (header.status === 'open') await stampPoApprovedQty(tx, companyId, header.id);
 
     // Side-effect: stamp PR with the status flip, and with the PO link only if
     // this is its FIRST purchase order (firstPoStamp) — a later PO must not
@@ -3556,6 +3586,8 @@ export async function approvePurchaseOrder(
       .where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.status, 'draft')))
       .returning({ id: purchaseOrders.id });
     assertRowUpdated(approvedRows, `PO ${po.code}`);
+    // ADR-320 — the qty just approved is the qty SO Status counts.
+    await stampPoApprovedQty(tx, companyId, id);
 
     await emitActivityLog(
       tx,
@@ -3973,6 +4005,8 @@ export async function createPurchaseOrderFromPrBatch(
 
     // Sort PRs by created_at so line_no ordering is stable.
     const sortedPrs = [...prRows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    // ADR-320 — the PO is never dated before the latest PR it is raised from.
+    assertPoDateNotBeforePrRows(input.header.poDate, sortedPrs);
 
     // Quantity guard, not "has a PO at all" (ADR-152 phase 2). One round trip
     // for the whole batch — a per-PR lookup inside this loop would be the N+1
@@ -4083,6 +4117,8 @@ export async function createPurchaseOrderFromPrBatch(
       companyId,
     );
     const insertedLines = await tx.insert(purchaseOrderLines).values(lineRows).returning();
+    // ADR-320 — born approved (PO approval off) = its qty is the approved qty.
+    if (header.status === 'open') await stampPoApprovedQty(tx, companyId, header.id);
     // ADR-291 — no PO for an OSP op on hold / on a not-released Rev. All ops
     // locked at once, in id order, so two batch converts cannot deadlock.
     await lockAndAssertJcOpsWorkable(

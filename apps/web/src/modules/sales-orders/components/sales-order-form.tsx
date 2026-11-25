@@ -99,7 +99,6 @@ import {
   useRevConfirmGate,
 } from '@/modules/item-revisions/components/rev-confirm-gate';
 import { SoLineDrawingCell } from './so-line-drawing-cell';
-import { useDrawingFileCheck } from '@/modules/item-revisions/components/drawing-rev-field';
 import {
   CustomerAddressField,
   OrderSupplyFormFields,
@@ -505,8 +504,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const [lineError, setLineError] = useState<string | null>(null);
   // ADR-290 — "Confirmed" ticks for lines on an older Rev than the latest released.
   const revConfirm = useRevConfirmGate();
-  // ADR-311 — drawing file compulsory on new / Item-or-Rev-changed lines.
-  const checkDrawingFiles = useDrawingFileCheck();
   // At least one of Client PO No. / Email Ref must be provided (create form).
   const [poEmailError, setPoEmailError] = useState<string | null>(null);
   // Client-PO document (legacy _cpoFileSelected L12315) — captured here, the
@@ -772,37 +769,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         return;
       }
 
-      // ADR-311: drawing file compulsory on a new line (make item) and on a
-      // saved line whose Item or Rev changed — also refuses clearing the file
-      // on such a line. Old saved lines with only other edits pass. On a NEW
-      // Equipment SO the file is compulsory outright.
-      {
-        const savedById = new Map(
-          (props.mode === 'edit' ? props.detail.lines : []).map((d) => [d.id, d]),
-        );
-        const checkLines = (equip ? values.lines.slice(0, 1) : values.lines).map((l, i) => {
-          const saved = l.id ? savedById.get(l.id) : undefined;
-          return {
-            lineNo: i + 1,
-            itemId: l.itemId,
-            itemCode: l.itemCodeText,
-            rev: String(l.revision ?? ''),
-            drawingFilePath: l.drawingFilePath,
-            saved: saved
-              ? {
-                  itemId: saved.itemId,
-                  rev: saved.revision,
-                  drawingFilePath: saved.drawingFilePath,
-                }
-              : undefined,
-          };
-        });
-        const fileMsg = await checkDrawingFiles(checkLines, { force: equip && isCreate });
-        if (fileMsg) {
-          setLineError(fileMsg);
-          return;
-        }
-      }
+      // ADR-321 (owner 24-Nov-2026): the drawing file is optional on an SO —
+      // new, edited and Equipment lines alike. The ADR-311 check is gone here;
+      // the JWSO form keeps it.
 
       // ADR-236: POL (the customer's PO line number) is compulsory on every
       // line — the equipment line included. Same rule and words as the API
@@ -1378,7 +1347,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 {...upperCaseRevField(register('lines.0.revision'))}
               />
             </FormField>
-            <FormField label="Drawing File" required={isCreate} size="md">
+            <FormField label="Drawing File" size="md">
               <SoLineDrawingCell
                 value={watch('lines.0.drawingFilePath')}
                 onChange={(p) => setValue('lines.0.drawingFilePath', p, { shouldDirty: true })}

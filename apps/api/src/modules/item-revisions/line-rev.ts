@@ -34,6 +34,11 @@ import { emitActivityLog } from '../activity-log/service';
 
 export type LineKind = 'so' | 'jw';
 
+/** ADR-321 (owner 24-Nov-2026) — the drawing file is optional on a Sales Order
+ *  line; it stays compulsory on a JWSO line (ADR-311). An SO line saved with no
+ *  file leaves its Rev as Draft until Design uploads one in the Drawing Register. */
+const fileCompulsory = (kind: LineKind): boolean => kind === 'jw';
+
 export interface StoredLineRev {
   id: string;
   lineNo: number;
@@ -127,9 +132,10 @@ export async function resolveLineRevision(
         drawingFilePath: undefined,
         registerDrawingNo: null,
       };
-    // ADR-311 — a NEW line of a make item must carry a drawing file (its own
-    // or the register's).
-    if (!(sent ?? r.drawingFilePath)) await refuseNoFile(tx, companyId, input, r.rev);
+    // ADR-311 — a NEW JWSO line of a make item must carry a drawing file (its
+    // own or the register's). ADR-321: not on an SO line.
+    if (fileCompulsory(input.kind) && !(sent ?? r.drawingFilePath))
+      await refuseNoFile(tx, companyId, input, r.rev);
     return {
       touched: true,
       itemRevisionId: r.id,
@@ -222,7 +228,12 @@ export async function resolveLineRevision(
   // ADR-311 — a saved line whose Item / Rev changed must end with a file, and
   // the user may not clear the file of a make-item line. Untouched old lines
   // returned above and are never checked (owner 23-Nov).
-  if (!copy && (itemChanged || revChanged || (fileChanged && sent === null)))
+  // ADR-321: JWSO lines only — an SO line may change Rev / clear its file.
+  if (
+    fileCompulsory(input.kind) &&
+    !copy &&
+    (itemChanged || revChanged || (fileChanged && sent === null))
+  )
     await refuseNoFile(tx, companyId, input, r.rev);
 
   if (!itemChanged && st.itemRevisionId !== r.id) {

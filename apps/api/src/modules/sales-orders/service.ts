@@ -129,7 +129,6 @@ import type {
   ClientPoCheckResponse,
   DocumentEditStagedResult,
 } from '@innovic/shared';
-import { drawingFileRequiredMessage } from '@innovic/shared';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -1765,13 +1764,8 @@ function createSalesOrderOnce(
       if (bomId) await assertBomLinkable(tx, companyId, bomId);
     }
     const headerType = input.header.type ?? 'component_manufacturing';
-    // ADR-311 — the equipment line (the first line of an Equipment SO, as the
-    // form sends it) must carry its drawing file on a NEW SO. Its part No. may
-    // have no item, so resolveLineRevision does not see it.
-    const equipLine = headerType === 'equipment' ? input.lines[0] : undefined;
-    if (equipLine && !equipLine.drawingFilePath?.trim()) {
-      throw new ValidationError(drawingFileRequiredMessage(equipLine.lineNo ?? 1, 'the equipment'));
-    }
+    // ADR-321 (owner 24-Nov-2026) — the drawing file is optional on an SO,
+    // the Equipment line included (ADR-311's compulsory check removed).
     // ADR-243 — tax type from the customer's State (unknown only warns).
     const tax = await decideOrderTax(tx, companyId, input.header.clientId);
     const inserted = await tx

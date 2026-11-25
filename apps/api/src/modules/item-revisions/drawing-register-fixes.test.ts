@@ -371,12 +371,12 @@ describe('ADR-290 Drawing Register fixes', () => {
 
   // ─── ADR-311 ──────────────────────────────────────────────────────────────
 
-  const newLine = (itemId: string, rev: string, file: string | null) =>
+  const newLine = (itemId: string, rev: string, file: string | null, kind: 'so' | 'jw' = 'so') =>
     withUserContext(admin, (tx) =>
       resolveLineRevision(tx, admin, companyId, {
-        kind: 'so',
+        kind,
         orderId: '00000000-0000-0000-0000-000000000000',
-        docCode: `${P}SO-311`,
+        docCode: `${P}${kind === 'so' ? 'SO' : 'JW'}-311`,
         lineNo: 1,
         itemId,
         rev,
@@ -386,17 +386,24 @@ describe('ADR-290 Drawing Register fixes', () => {
       }),
     );
 
-  it('8. ADR-311: a new SO line of a make item without a drawing file is refused; a buy item saves', async () => {
+  it('8. ADR-311: a new JWSO line of a make item without a drawing file is refused; a buy item saves', async () => {
     const make = await mkItem(`${P}F311`);
-    await expect(newLine(make, '1', null)).rejects.toThrow(
+    await expect(newLine(make, '1', null, 'jw')).rejects.toThrow(
       drawingFileRequiredMessage(1, `${P}F311/1`),
     );
     // Refused inside the transaction → no register record was left behind.
     const left = await db.select().from(itemRevisions).where(eq(itemRevisions.itemId, make));
     expect(left).toHaveLength(0);
     const buy = await mkItem(`${P}B311`, 'buy');
-    const res = await newLine(buy, '1', null);
+    const res = await newLine(buy, '1', null, 'jw');
     expect(res.itemRevisionId).toBeNull();
+  });
+
+  it('ADR-321: a new SO line of a make item saves without a drawing file; its Rev stays Draft', async () => {
+    const make = await mkItem(`${P}S321`);
+    const res = await newLine(make, '1', null);
+    expect(res.itemRevisionId).not.toBeNull();
+    expect((await revRow(res.itemRevisionId!)).releaseStatus).toBe('draft');
   });
 
   it('8. ADR-311: a new SO line with a file → Rev Under Review at once, logged as automatic', async () => {

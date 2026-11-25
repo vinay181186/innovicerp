@@ -16724,3 +16724,64 @@ possible. File must sync and update to every doc."
    Unverified (Verify & Release now possible). A replace still needs a reason (min 5).
 4. Shared `replaceItemRevisionDrawingInputSchema.reason` defaults to '' — the server enforces the
    min-5 rule only when the Rev already has a file. No migration.
+
+## ADR-321: Drawing file optional on a Sales Order (owner 2026-11-24)
+
+Owner: "during SO creation … user compulsory have to upload drawing file. Change it not compulsory.
+Without that file SO can be saved."
+
+1. **SO only.** New SO line, edited SO line (Item / Rev changed, file cleared) and the Equipment SO
+   line all save without a drawing file. Drawing Rev stays compulsory. ADR-311's rule is withdrawn for
+   SO; **JWSO keeps it** (owner asked about SO only).
+2. **Server:** `item-revisions/line-rev.ts` refuses a missing file only when `kind === 'jw'`
+   (`fileCompulsory`); the Equipment-line check in `sales-orders/service.ts` createSalesOrder is gone.
+   **Web:** `sales-order-form.tsx` no longer calls `useDrawingFileCheck`; the Equipment "Drawing File"
+   field lost its ★. Shared refusal text now names JWSO only.
+3. **Effect:** an SO line saved with no file leaves its Drawing Rev **Draft** (only a Rev with a file
+   goes to Under Review, ADR-311). Design adds the file later with "Upload drawing…" (ADR-319). The
+   release gate before Plan / PRO / Job Card is unchanged. No migration.
+
+## ADR-320: SO Status — PO / GRN / QC per outsourced operation, approved POs only (owner 2026-11-24)
+
+**Date:** 2026-11-24
+**Status:** Accepted
+
+### Context
+PROD SO-517 (30 lines) showed PO Raised 170 / 34 on Ln 1. `so-status/service.ts` summed every
+`purchase_order_lines.qty` on the SO line: one line per outsourced operation (4), plus cancelled
+IN-JWPO-00003/4/5 and their 13 draft replacements. GRN target used that sum; QC target was
+`recvQty || orderQty`; header Due Date was hard-coded null; Timeline showed `vendor_code_text`
+(empty) as the vendor; the op chip ✓ meant "QC required" and was read as "done".
+
+### Decision (owner answers 24-11-2026)
+1. PO Raised = per outsourced operation, APPROVED POs only (draft never counted, cancelled never),
+   capped at the JC qty; JC = lowest op; line = Σ JCs, capped at order qty. Hover shows each op.
+2. An approved PO edited back to draft keeps counting its last approved qty — new column
+   `purchase_order_lines.approved_qty` (0262), one writer `stampPoApprovedQty`.
+3. GRN Received total = PO Raised; QC Accepted total = qty received. No outsourced op = "Not required".
+4. Header Due Date = earliest open line due date.
+5. ✓ = operation done; QC-required = small "QC" tag.
+6. Timeline: vendor name from the master, PO status, "Date check" when a PO/GRN is dated before
+   its PR / PO. SO-517's SO date 25-10-2025 is real — no SO date check.
+7. Server refuses a new PO dated before its PR, a GRN before its PO, a JC before its SO.
+8. New project rule CLAUDE.md §26 "Numbers that are read".
+
+### Alternatives considered
+- Count drafts — rejected by owner (not sent to the vendor; can still be cancelled).
+- Add op figures together — rejected: not pieces (gave 170).
+- Keep last approved qty from the activity log — rejected: fragile; one column is smaller.
+
+**Build notes (24-11-2026).** Job Card date guard is on `createJobCard` only (the path where a
+user types the date). The plan / BOM / NC / recovery paths set `jc_date = today` on the server, so
+an earlier-than-SO date is impossible there unless the SO is future-dated — blocking those would
+stop automatic JC creation, so they are left unguarded on purpose. `osp-accepted.ts` shares the op →
+PO-line link (`ospOpPoLinkSql`) in its old two-way form, the same set as `v_jc_op_status`, so the
+Job Card screens and SO Status agree on when an op is done; the PO cover also follows
+`purchase_order_lines.source_jc_op_id`.
+
+**Code review fixes (25-11-2026).** Equipment / BOM line: job cards grouped by item, line = lowest
+item (a child part with no PO keeps the line at 0). A job card with no outsourced op counts as covered.
+NC replacement PO lines (`source_nc_id`) add receipts, no PO cover. 0262 also backfills Drafts waiting
+re-approval (`approval_remarks LIKE 'Re-approval needed%'`) with their current qty. JC date checked on
+edit too. DC / JW DC receive says "Receipt date". Timeline PR date also via `purchase_orders.pr_id`.
+Known and accepted: a line REMOVED while a PO waits re-approval stops counting at once.

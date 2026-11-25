@@ -107,8 +107,41 @@ export const soStatusChipSchema = z.object({
   // PO / GRN / QC chips carry purchase qty — decimal on KGS / MTR since 0172.
   qty: z.number().nonnegative(),
   total: z.number().nonnegative(),
+  /** ADR-320 — false = "Not required": the line has no outsourced operation,
+   *  so PO Raised / GRN Received / QC Accepted do not apply. Always true on the
+   *  other three chips. */
+  required: z.boolean().default(true),
 });
 export type SoStatusChip = z.infer<typeof soStatusChipSchema>;
+
+/** ADR-320 — where one outsourced operation's PO stands, for the hover. */
+export const SO_STATUS_OSP_PO_STATES = ['approved', 'reapproval', 'draft', 'none'] as const;
+export const soStatusOspPoStateEnum = z.enum(SO_STATUS_OSP_PO_STATES);
+export type SoStatusOspPoState = z.infer<typeof soStatusOspPoStateEnum>;
+
+/** ADR-320 — one outsourced operation of one job card on the line. The line's
+ *  PO Raised / GRN Received / QC Accepted chips are the LOWEST of these
+ *  (a piece is covered only when every outsourced operation is). */
+export const soStatusOspOpSchema = z.object({
+  jcId: z.string().uuid(),
+  jcCode: z.string(),
+  jcOpId: z.string().uuid(),
+  opSeq: z.number().int().positive(),
+  operation: z.string(),
+  /** Σ approved qty of this op's live PO lines (purchase_order_lines.approved_qty;
+   *  a PO waiting re-approval keeps its last approved qty). Capped at the JC qty. */
+  approvedPoQty: z.number().nonnegative(),
+  /** Σ qty on draft PO lines never approved — shown, never counted. */
+  draftPoQty: z.number().nonnegative(),
+  poState: soStatusOspPoStateEnum,
+  /** PO codes behind this op (live POs only), for the hover. */
+  poCodes: z.array(z.string()),
+  /** Σ GRN received on this op's approved PO lines, capped at approvedPoQty. */
+  grnReceivedQty: z.number().nonnegative(),
+  /** Σ Incoming QC accepted on those GRN lines, capped at grnReceivedQty. */
+  qcAcceptedQty: z.number().nonnegative(),
+});
+export type SoStatusOspOp = z.infer<typeof soStatusOspOpSchema>;
 
 /** Per-op handle for the "Raise PR for Op <N>" action on the SO Status
  *  detail (PL-1b §2.3). The web raises the PR through the JC Ops flow:
@@ -172,6 +205,9 @@ export const soStatusLineSchema = z.object({
     dispatched: soStatusChipSchema,
   }),
   outsourceAlert: soStatusOutsourceAlertSchema,
+  /** ADR-320 — every outsourced operation behind the PO / GRN / QC chips,
+   *  ordered by JC then op. Empty = "Not required". */
+  ospOps: z.array(soStatusOspOpSchema).default([]),
   /** Linked Job Cards, ordered by jc.code. */
   jobCards: z.array(soStatusJcSchema),
 });

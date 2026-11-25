@@ -132,6 +132,7 @@ import { polSql } from '../../lib/pol';
 import { displayRouteCardIdSql } from '../../lib/route-card-for-rev';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 import { JC_SF_COLUMNS } from './sf-columns';
+import { assertJcDateNotBeforeSo } from './jc-date-order';
 import { JC_LIST_JOINS, jcListWhere, jcStatusCounts } from './list-filters';
 
 const requireCompany = (user: AuthContext): string => {
@@ -2205,6 +2206,8 @@ export async function createJobCard(
     // ADR-292 — Drawing Rev strict switch: a MAKE item needs a Rev.
     await assertMakeItemHasRev(tx, companyId, item.id, itemRevisionId);
     await assertNoDirectJcDrawing(tx, itemRevisionId, item.code, input.drawingFilePath, null);
+    // ADR-320 — never dated before the SO it is raised from.
+    await assertJcDateNotBeforeSo(tx, companyId, input.jcDate, input.sourceSoLineId);
 
     const code = await nextJcCode(tx, companyId);
     const [jc] = await tx
@@ -3666,6 +3669,11 @@ export async function updateJobCardTx(
   // ADR-290 Step 3 — a re-picked item's Rev must allow work (the same item
   // keeps the Rev the card already has).
   if (item.id !== head.itemId) await assertRevReleasedForWork(tx, companyId, itemRevisionId);
+  // ADR-320 / §26.8 — an edited JC Date is never before its SO (only when it changes,
+  // so an old out-of-order card still saves its other edits).
+  if (input.jcDate !== head.jcDate) {
+    await assertJcDateNotBeforeSo(tx, companyId, input.jcDate, head.sourceSoLineId);
+  }
   await assertNoDirectJcDrawing(
     tx,
     itemRevisionId,

@@ -495,6 +495,10 @@ with no live `xxx` to fall back from is a defect (C-13).
 | Party GRN line / receipt with some pieces inspected and some still waiting for Incoming QC (ADR-260) | `Part QC` (badge `Part QC · n pending`) | derived: qcPendingQty > 0 after the first inspection | `party_grn_lines` accepted/rejected running totals | `Partial` (that is a Customer RM Status), `In Progress` |
 | Route-card plan with an open Production Order AND qty still Pending (no order for it yet) — owner 2026-11-03 (plan 0182) | `Part Prod` | derived status `partly_in_production` (`PLAN_DERIVED_STATUSES`) | `apps/api/src/lib/plan-derived-status.ts` + SQL twin `planDerivedStatusSql` (open orders > 0 and Pending > 0) | `In Production` for this case (hid the un-ordered qty), `Partial`, `Partly in Production` |
 | A Party GRN line's running accepted / deviated totals shown in the Incoming QC popup | `Inspected So Far` | `acceptedQty` / `rejectedQty` | `party_grn_lines.accepted_qty` / `rejected_qty` | `Done`, `Already QC'd` |
+| SO Status PO Raised / GRN Received / QC Accepted chip on a line with no outsourced operation — the step does not apply (ADR-320); also the Excel export cell | `Not required` | `chips.poRaised.required` / `chips.grnReceived.required` / `chips.qcAccepted.required` = false | computed by the SO Status service (`ospOps` empty) | `0 / 0`, `N/A`, `—` |
+| SO Timeline row dated before the document it comes from (PR → PO → GRN, SO → Job Card), with its reason under the detail (ADR-320) | `Date check` (orange tag) | `flag` = `date_check`, `flagReason` | computed by the SO Timeline service | `Date error`, `Invalid date`, `Warning` |
+| Small tag after the op number on an SO Status op chip: QC is required on this operation (ADR-320) | `QC` (tag) | `qcRequired` | `jc_ops.qc_required` | `✓` (✓ means done — §26.7) |
+| Mark after the op number on an SO Status op chip: the operation is done (op status Completed) — ✓ means done everywhere (ADR-320, CLAUDE.md §26.7) | `✓` | `status` = `complete` | computed op status | `✓` for QC required (retired 24-11-2026) |
 
 ---
 
