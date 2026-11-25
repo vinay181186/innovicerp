@@ -334,11 +334,13 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
 
       const jcIssuedQty = jcsForLine.reduce((s, j) => s + j.orderQty, 0);
       // ADR-320 rules 3-6: approved PO / GRN / QC cover per outsourced op,
-      // lowest op per job card, summed over job cards, capped at the line.
+      // lowest op per job card, summed within an item, lowest item (BOM
+      // children), capped at the line.
       const coverJcs: CoverJcInput[] = jcsForLine.map((jc) => ({
         jcId: jc.id,
         jcCode: jc.code,
         jcOrderQty: jc.orderQty,
+        itemId: jc.itemId ?? null,
         ops: rollupByJcId
           .get(jc.id)!
           .ops.filter((op) => op.opType === 'outsource')
@@ -349,7 +351,7 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
             poLines: ospPoLinesByOp.get(op.id) ?? [],
           })),
       }));
-      const ospCover = computeLineOspCover(line.orderQty, coverJcs);
+      const ospCover = computeLineOspCover(line.orderQty, coverJcs, line.itemId ?? null);
       const dispQty = dispAggByLine.get(line.id) ?? 0;
 
       // Outsource tracking across all ops of all JCs linked to this line.

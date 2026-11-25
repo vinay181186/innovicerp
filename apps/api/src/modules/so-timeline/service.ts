@@ -232,11 +232,18 @@ export async function getSoTimeline(
         LEFT JOIN public.vendors v
           ON v.id = po.vendor_id AND v.deleted_at IS NULL
         LEFT JOIN LATERAL (
+          -- The PO's PRs: per line (source_pr_id) and, for older single-PR POs,
+          -- the header link (purchase_orders.pr_id).
           SELECT r.code AS pr_code, r.pr_date::text AS pr_date
-          FROM public.purchase_order_lines l
-          JOIN public.purchase_requests r
-            ON r.id = l.source_pr_id AND r.deleted_at IS NULL
-          WHERE l.purchase_order_id = po.id AND l.deleted_at IS NULL
+          FROM public.purchase_requests r
+          WHERE r.deleted_at IS NULL
+            AND (
+              r.id = po.pr_id
+              OR r.id IN (
+                SELECT l.source_pr_id FROM public.purchase_order_lines l
+                WHERE l.purchase_order_id = po.id AND l.deleted_at IS NULL
+              )
+            )
           ORDER BY r.pr_date DESC, r.code DESC
           LIMIT 1
         ) pr ON TRUE

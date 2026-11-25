@@ -16774,6 +16774,14 @@ IN-JWPO-00003/4/5 and their 13 draft replacements. GRN target used that sum; QC 
 **Build notes (24-11-2026).** Job Card date guard is on `createJobCard` only (the path where a
 user types the date). The plan / BOM / NC / recovery paths set `jc_date = today` on the server, so
 an earlier-than-SO date is impossible there unless the SO is future-dated — blocking those would
-stop automatic JC creation, so they are left unguarded on purpose. `osp-accepted.ts` now shares the
-op → PO-line link (`ospOpPoLinkSql`) with SO Status and also follows `purchase_order_lines.source_jc_op_id`;
-on TEST this changed no op's accepted figure.
+stop automatic JC creation, so they are left unguarded on purpose. `osp-accepted.ts` shares the op →
+PO-line link (`ospOpPoLinkSql`) in its old two-way form, the same set as `v_jc_op_status`, so the
+Job Card screens and SO Status agree on when an op is done; the PO cover also follows
+`purchase_order_lines.source_jc_op_id`.
+
+**Code review fixes (25-11-2026).** Equipment / BOM line: job cards grouped by item, line = lowest
+item (a child part with no PO keeps the line at 0). A job card with no outsourced op counts as covered.
+NC replacement PO lines (`source_nc_id`) add receipts, no PO cover. 0262 also backfills Drafts waiting
+re-approval (`approval_remarks LIKE 'Re-approval needed%'`) with their current qty. JC date checked on
+edit too. DC / JW DC receive says "Receipt date". Timeline PR date also via `purchase_orders.pr_id`.
+Known and accepted: a line REMOVED while a PO waits re-approval stops counting at once.

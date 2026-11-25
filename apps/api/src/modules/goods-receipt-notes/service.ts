@@ -301,6 +301,7 @@ async function assertGrnDateNotBeforePo(
   companyId: string,
   grnDate: string,
   purchaseOrderId: string | null | undefined,
+  dateLabel = 'GRN date',
 ): Promise<void> {
   if (!purchaseOrderId) return;
   const po = (
@@ -314,7 +315,7 @@ async function assertGrnDateNotBeforePo(
   assertNotBefore(
     grnDate,
     po.poDate,
-    `GRN date ${fmtDate(grnDate)} cannot be before PO ${po.code} date ${fmtDate(po.poDate)}.`,
+    `${dateLabel} ${fmtDate(grnDate)} cannot be before PO ${po.code} date ${fmtDate(po.poDate)}.`,
   );
 }
 
@@ -1509,7 +1510,7 @@ export async function insertGrnForOspReceipt(
   },
 ): Promise<{ id: string; code: string }> {
   // ADR-320 — the DC-receive GRN follows the same date rule as a typed one.
-  await assertGrnDateNotBeforePo(tx, companyId, args.grnDate, args.purchaseOrderId);
+  await assertGrnDateNotBeforePo(tx, companyId, args.grnDate, args.purchaseOrderId, 'Receipt date');
   const code = await nextGrnCode(tx, companyId);
   const inserted = await tx
     .insert(goodsReceiptNotes)

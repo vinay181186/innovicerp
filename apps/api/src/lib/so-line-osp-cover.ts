@@ -63,6 +63,9 @@ export interface OspPoLineRow {
   poCode: string;
   poStatus: string;
   poShortClosed: boolean;
+  /** An NC return-to-vendor replacement line (source_nc_id set, pre-ADR-221):
+   *  it re-orders pieces already counted, so it adds receipts but no PO cover. */
+  isReplacement: boolean;
   qty: number;
   /** null = never approved. */
   approvedQty: number | null;
@@ -84,6 +87,7 @@ export async function loadOspPoLinesByOp(
            po.code                           AS "poCode",
            po.status::text                   AS "poStatus",
            (po.short_closed_at IS NOT NULL)  AS "poShortClosed",
+           (pol.source_nc_id IS NOT NULL)    AS "isReplacement",
            pol.qty::text                     AS "qty",
            pol.approved_qty::text            AS "approvedQty",
            COALESCE(g.recv, 0)::text         AS "receivedQty",
@@ -110,6 +114,7 @@ export async function loadOspPoLinesByOp(
     poCode: string;
     poStatus: string;
     poShortClosed: boolean;
+    isReplacement: boolean;
     qty: string;
     approvedQty: string | null;
     receivedQty: string;
@@ -119,6 +124,7 @@ export async function loadOspPoLinesByOp(
       poCode: r.poCode,
       poStatus: r.poStatus,
       poShortClosed: r.poShortClosed === true,
+      isReplacement: r.isReplacement === true,
       qty: Number(r.qty),
       approvedQty: r.approvedQty === null ? null : Number(r.approvedQty),
       receivedQty: Number(r.receivedQty),
@@ -157,6 +163,11 @@ export function computeOpCover(lines: readonly OspPoLineRow[], jcOrderQty: numbe
   for (const l of lines) {
     if (l.poStatus === 'cancelled') continue; // defensive — loader already drops them
     codes.add(l.poCode);
+    if (l.isReplacement) {
+      received += l.receivedQty;
+      accepted += l.acceptedQty;
+      continue;
+    }
     const isDraft = l.poStatus === 'draft';
     if (l.approvedQty === null) {
       if (isDraft) {
@@ -195,7 +206,10 @@ export interface CoverJcInput {
   jcId: string;
   jcCode: string;
   jcOrderQty: number;
-  /** The job card's outsourced ops, in op_seq order. */
+  /** The job card's item. On an Equipment / BOM line the child parts' job cards
+   *  carry the SAME SO line but a different item (plans.soLineId). */
+  itemId: string | null;
+  /** The job card's outsourced ops, in op_seq order. Empty = all in-house. */
   ops: ReadonlyArray<{
     jcOpId: string;
     opSeq: number;
@@ -212,19 +226,35 @@ export interface LineOspCover {
 }
 
 /** Rules 4-6 — the line's three purchase chips + the per-op list. Pure.
- *  `jobCards` in JC-code order. */
+ *  `jobCards` in JC-code order.
+ *
+ *  Job cards are grouped by item. Within one item the job cards split the
+ *  pieces, so their cover adds up; a job card of that item with no outsourced
+ *  op needs no PO, so all its pieces count as covered. Across items (an
+ *  Equipment / BOM line: one job card per child part) a set is covered only when
+ *  EVERY part is, so the line takes the LOWEST item, as a share of what that item
+ *  needs: the line's own item needs the line order qty, a child part needs its
+ *  job cards' qty. Items with no outsourced op at all do not take part. */
 export function computeLineOspCover(
   lineOrderQty: number,
   jobCards: readonly CoverJcInput[],
+  lineItemId: string | null = null,
 ): LineOspCover {
   const ospOps: SoStatusOspOp[] = [];
-  let po = 0;
-  let grn = 0;
-  let qc = 0;
-  let anyOp = false;
+  const groups = new Map<string, { need: number; po: number; grn: number; qc: number; anyOp: boolean }>();
   for (const jc of jobCards) {
-    if (jc.ops.length === 0) continue;
-    anyOp = true;
+    // A job card with no item (legacy) belongs to the line's own item.
+    const key = jc.itemId ?? lineItemId ?? 'line';
+    const g = groups.get(key) ?? { need: 0, po: 0, grn: 0, qc: 0, anyOp: false };
+    groups.set(key, g);
+    g.need += jc.jcOrderQty;
+    if (jc.ops.length === 0) {
+      g.po += jc.jcOrderQty;
+      g.grn += jc.jcOrderQty;
+      g.qc += jc.jcOrderQty;
+      continue;
+    }
+    g.anyOp = true;
     let jcPo = Infinity;
     let jcGrn = Infinity;
     let jcQc = Infinity;
@@ -242,13 +272,33 @@ export function computeLineOspCover(
         ...c,
       });
     }
-    po += jcPo;
-    grn += jcGrn;
-    qc += jcQc;
+    g.po += jcPo;
+    g.grn += jcGrn;
+    g.qc += jcQc;
   }
-  if (!anyOp) {
+  const req = [...groups.entries()].filter(([, g]) => g.anyOp);
+  if (req.length === 0) {
     const none: SoStatusChip = { qty: 0, total: 0, required: false };
     return { poRaised: none, grnReceived: { ...none }, qcAccepted: { ...none }, ospOps };
+  }
+  const single = groups.size === 1;
+  let po = Infinity;
+  let grn = Infinity;
+  let qc = Infinity;
+  for (const [key, g] of req) {
+    const own = single || key === (lineItemId ?? 'line');
+    if (own) {
+      // The line's own item: pieces, against the line order qty.
+      po = Math.min(po, g.po);
+      grn = Math.min(grn, g.grn);
+      qc = Math.min(qc, g.qc);
+    } else {
+      // A child part: its share of what it needs, in line units (sets).
+      const share = (v: number): number => (g.need > 0 ? (Math.min(v, g.need) / g.need) * lineOrderQty : 0);
+      po = Math.min(po, share(g.po));
+      grn = Math.min(grn, share(g.grn));
+      qc = Math.min(qc, share(g.qc));
+    }
   }
   const poQty = r3(Math.min(po, lineOrderQty));
   const grnQty = r3(Math.min(grn, poQty));

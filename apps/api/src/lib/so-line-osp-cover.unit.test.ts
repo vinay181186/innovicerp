@@ -13,6 +13,7 @@ const line = (p: Partial<OspPoLineRow> = {}): OspPoLineRow => ({
   poCode: 'IN-PO-00001',
   poStatus: 'open',
   poShortClosed: false,
+  isReplacement: false,
   qty: 34,
   approvedQty: 34,
   receivedQty: 0,
@@ -24,10 +25,12 @@ const jc = (
   jcCode: string,
   jcOrderQty: number,
   ops: OspPoLineRow[][],
+  itemId: string | null = 'ITEM-A',
 ): CoverJcInput => ({
   jcId: `00000000-0000-0000-0000-${jcCode.padStart(12, '0')}`,
   jcCode,
   jcOrderQty,
+  itemId,
   ops: ops.map((poLines, i) => ({
     jcOpId: `10000000-0000-0000-0000-${String(i).padStart(12, '0')}`,
     opSeq: (i + 1) * 10,
@@ -147,5 +150,58 @@ describe('computeOpCover', () => {
     expect(c.approvedPoQty).toBe(0.3);
     expect(c.grnReceivedQty).toBe(0.3);
     expect(c.qcAcceptedQty).toBe(0.25);
+  });
+});
+
+describe('computeLineOspCover — code review cases (ADR-320)', () => {
+  it('BOM line: child B with no PO keeps the line at 0 even when child A is covered', () => {
+    const c = computeLineOspCover(
+      2,
+      [jc('1', 2, [[line({ qty: 2, approvedQty: 2 })]], 'CHILD-A'), jc('2', 4, [[]], 'CHILD-B')],
+      'EQUIP',
+    );
+    expect(c.poRaised.qty).toBe(0);
+  });
+
+  it('BOM line: both children fully covered → 2 / 2 sets', () => {
+    const c = computeLineOspCover(
+      2,
+      [
+        jc('1', 2, [[line({ qty: 2, approvedQty: 2 })]], 'CHILD-A'),
+        jc('2', 4, [[line({ qty: 4, approvedQty: 4 })]], 'CHILD-B'),
+      ],
+      'EQUIP',
+    );
+    expect(c.poRaised).toEqual({ qty: 2, total: 2, required: true });
+  });
+
+  it('BOM line: child B half covered → 1 / 2 sets', () => {
+    const c = computeLineOspCover(
+      2,
+      [
+        jc('1', 2, [[line({ qty: 2, approvedQty: 2 })]], 'CHILD-A'),
+        jc('2', 4, [[line({ qty: 2, approvedQty: 2 })]], 'CHILD-B'),
+      ],
+      'EQUIP',
+    );
+    expect(c.poRaised.qty).toBe(1);
+  });
+
+  it('a job card with no outsourced op needs no PO: 20 (OSP, covered) + 14 (in-house) → 34 / 34', () => {
+    const c = computeLineOspCover(34, [jc('1', 20, [[line({ qty: 20, approvedQty: 20 })]]), jc('2', 14, [])]);
+    expect(c.poRaised).toEqual({ qty: 34, total: 34, required: true });
+  });
+
+  it('NC replacement PO line adds receipts but no PO cover', () => {
+    const c = computeOpCover(
+      [
+        line({ qty: 30, approvedQty: 30, receivedQty: 30, acceptedQty: 25 }),
+        line({ qty: 5, approvedQty: 5, receivedQty: 5, acceptedQty: 5, isReplacement: true }),
+      ],
+      34,
+    );
+    expect(c.approvedPoQty).toBe(30);
+    expect(c.grnReceivedQty).toBe(30);
+    expect(c.qcAcceptedQty).toBe(30);
   });
 });

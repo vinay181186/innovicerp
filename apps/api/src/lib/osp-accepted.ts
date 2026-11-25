@@ -8,10 +8,12 @@
 //
 // Same rollup rule as v_jc_op_status (0128) widened to the multi-PO link table
 // (jc_op_po_lines): an op's PO lines come from the ONE shared link
-// (ospOpPoLinkSql, lib/so-line-osp-cover.ts — ADR-320): outsource_po_line_id ∪
-// live jc_op_po_lines ∪ purchase_order_lines.source_jc_op_id, UNION so a line
-// reached two ways is summed once. (source_jc_op_id added 24-11-2026; checked
-// on TEST first — no op's accepted figure changed.) Then Σ goods_receipt_note_lines.qc_accepted_qty over
+// (ospOpPoLinkSql, lib/so-line-osp-cover.ts — ADR-320) in its two-way form:
+// outsource_po_line_id ∪ live jc_op_po_lines, UNION so a line reached two ways is
+// summed once — the SAME set v_jc_op_status (0128) uses, so SO Status / SO
+// Overview and the Job Card screens agree on when an op is done. (SO Status PO
+// cover also follows source_jc_op_id; that only widens PO cover, never "done".)
+// Then Σ goods_receipt_note_lines.qc_accepted_qty over
 // live GRN lines on those PO lines.
 
 import { sql } from 'drizzle-orm';
@@ -31,7 +33,7 @@ export async function loadOspAcceptedByOp(
   const rows = await tx.execute(sql`
     SELECT l.jc_op_id AS "jcOpId",
            COALESCE(SUM(grl.qc_accepted_qty), 0)::numeric AS "acceptedQty"
-    FROM (${ospOpPoLinkSql(companyId, jobCardIds)}) l
+    FROM (${ospOpPoLinkSql(companyId, jobCardIds, { includeSourceJcOp: false })}) l
     JOIN public.goods_receipt_note_lines grl
       ON grl.purchase_order_line_id = l.po_line_id
       AND grl.deleted_at IS NULL
