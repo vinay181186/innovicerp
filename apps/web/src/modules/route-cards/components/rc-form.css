@@ -82,11 +82,28 @@
   overflow-wrap: anywhere;
 }
 /* Every header control one size smaller (24px). */
-.rc-form .cl-ident .innovic-input,
-.rc-form .cl-grid .innovic-input,
+.rc-form .cl-ident .innovic-input:not([type='file']),
+.rc-form .cl-grid .innovic-input:not([type='file']),
 .rc-form .cl-grid .innovic-select {
   height: var(--control-h-sm);
   min-height: var(--control-h-sm);
+}
+/* The Drawing file box (drawing-rev-field.tsx) in the same small size: small
+   letters, a small Choose File button, only as wide as its text. Its height
+   follows its button — a forced 24px cut the button off (owner 2026-11-25). */
+.rc-form .cl-ident .innovic-input[type='file'] {
+  width: auto;
+  max-width: 260px;
+  height: auto;
+  min-height: var(--control-h-sm);
+  padding: 1px var(--sp-1);
+  font-size: var(--fs-xs);
+  line-height: 1.2;
+}
+.rc-form .cl-ident .innovic-input[type='file']::file-selector-button {
+  margin-right: var(--sp-1);
+  padding: 1px var(--sp-2);
+  font-size: var(--fs-xs);
 }
 
 /* ── Fact rows holding inputs: the view's one-line fact, a control in place
