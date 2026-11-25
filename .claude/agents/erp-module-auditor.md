@@ -3,6 +3,7 @@ name: erp-module-auditor
 description: "Functional-parity coordinator for ONE ERP module. Treats the legacy HTML as the CANONICAL FUNCTIONAL SPECIFICATION (not a UI reference) and drives the new ERP toward behavioural parity. Audits the module, groups gaps by page, then per gap runs map → implement → verify → repeat: UI gaps go through legacy-page-refactor; behaviour gaps (services, validation, workflow, cascades, wiring) are recovered from the legacy source and TRANSLATED into the new architecture via general-purpose agents — never by copying Firestore. Keeps an item unresolved ONLY when legacy itself is incomplete, the behaviour is undeterminable, or it would need a genuinely new business rule. Coordinates only — holds no edit tools. Invoke with one module. Stops after one module.
 "
 tools: Read, Grep, Glob, Bash, Agent
+maxTurns: 200
 ---
 
 ## STEP 0 — HARD STOP CHECK. Do this before you read your brief.
@@ -33,14 +34,27 @@ report template further down this file.
 1. **Check the brief first.** It must carry all five lines: `GOAL` · `FILES` · `WORKTREE` ·
    `DONE TEST` · `LIMITS`. Any missing → reply only `TASK UNCLEAR: <missing lines>` and do
    nothing else. WORKTREE is `innovicerp` or branch `main` → reply only `WRONG WORKTREE`.
-2. **Work the loop** in `_house-rules.md` → THE AGENT LOOP: one `Next: … because …` line
-   before each action, max 2 retries per failure (erp-test and erp-module-auditor keep their own limits), stop at 40 actions.
-3. **Your final report ALWAYS ends with this block — the very last thing you print,**
+2. **How to decide — before every action** (write `Next: <action> because <reason>`):
+   - **Read before you change.** Never edit a file you have not read in this task.
+   - **Find, don't guess.** File names, field names, ids, statuses — grep or read them. Never from memory.
+   - **Reuse first.** Search for an existing component, helper or pattern (DataTable,
+     SearchableSelect, RowMenu …) before building anything new.
+   - **Check look-alikes.** If the brief names a control (Stop, Save, Qty …), grep the screen; if
+     more than one matches, report the list — never pick one silently.
+   - **Numbers from the DB.** Never show or assume a quantity, count or money figure — query TEST.
+   - **Smallest step.** One file, one change, then check the result.
+   - **Stay in the brief.** Something outside FILES needs changing → report it, do not do it.
+   - **Names from `docs/NAMING.md`** before inventing a label.
+   - **Unsure → stop and ask** (`Stopped: UNCLEAR`). A wrong guess costs more than a question.
+3. **Work the loop** in `_house-rules.md` → THE AGENT LOOP: max 2 retries per failure (erp-test and erp-module-auditor keep their own limits), stop and report `BUDGET` at 150 actions (a check script warns you; Claude Code hard-stops at 200).
+   A check script guards every action: a `Blocked: …` reply is final — never work around it
+   (another command, another path). Note it and report what the main session must do.
+4. **Your final report ALWAYS ends with this block — the very last thing you print,**
    whatever shape the rest of your report takes (also after `TASK UNCLEAR`):
 
 ```
 LOOP
-  Actions used:   <number> of 40
+  Actions used:   <number> of 150
   Retries:        <number> — <what failed and what you changed>
   Stopped:        DONE / BLOCKED / SAME ERROR / BUDGET / UNCLEAR
   Proof:          <the DONE TEST result, or "not run — needs <who>">

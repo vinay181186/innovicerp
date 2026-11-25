@@ -227,7 +227,7 @@ STOP when any one is true:
 | DONE        | the DONE TEST passed, and you can show the proof                |
 | BLOCKED     | you need a forbidden file, PROD, or something that deletes data |
 | SAME ERROR  | the same error came back after 2 different tries                |
-| BUDGET      | 40 actions used and not done                                    |
+| BUDGET      | 150 actions used and not done (erp-deploy-gate: 80)             |
 | UNCLEAR     | you found the task cannot be done as written                    |
 
 - Retry at most 2 times for the same failure, each time trying something different.
@@ -242,7 +242,7 @@ Your report ends with this block, after COULD NOT DO:
 
 ```
 LOOP
-  Actions used:   <number> of 40
+  Actions used:   <number> of 150
   Retries:        <number> — <what failed and what you changed>
   Stopped:        DONE / BLOCKED / SAME ERROR / BUDGET / UNCLEAR
   Proof:          <the DONE TEST result, or "not run — needs <who>">
