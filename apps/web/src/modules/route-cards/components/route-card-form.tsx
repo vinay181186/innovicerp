@@ -74,6 +74,7 @@ import { RouteCardOpsEditor } from './rc-form-ops';
 import { RouteCardRmItemField } from './rc-form-rm-item';
 import { RcFormStrip } from './rc-form-strip';
 import { useRcHeaderCollapsed } from '../lib/rc-form-collapsed';
+import './rc-header.css';
 import './rc-form.css';
 
 export type RouteCardOpType = 'process' | 'qc' | 'outsource';
@@ -772,7 +773,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
           onShowDetails={() => setHeaderCollapsed(false)}
         />
       ) : null}
-      <Panel className={headerCollapsed ? 'rc-hd-folded' : undefined}>
+      <Panel className={headerCollapsed ? 'rc-hdr rc-hd-folded' : 'rc-hdr'}>
         {/* WHICH item this route is for — the one decision on this screen. The
             same place the detail page shows RC No. and the item. */}
         <DocIdent>
