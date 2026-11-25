@@ -75,8 +75,8 @@ export interface DrawingFileCheckLine {
     | undefined;
 }
 
-/** ADR-311 — the drawing file is compulsory on a NEW SO / JWSO line of a make
- *  item, and on a saved line whose Item or Rev changed. A saved line where
+/** ADR-311 — the drawing file is compulsory on a NEW JWSO line of a make
+ *  item (ADR-321: no longer on SO lines — the SO form does not call this), and on a saved line whose Item or Rev changed. A saved line where
  *  only other fields changed is never refused. Make or buy is answered by the
  *  same lookup the drawing control already runs (`revRequired`), read from its
  *  cache when warm. Returns the first refusal sentence (shared with the

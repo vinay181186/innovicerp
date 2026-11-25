@@ -16724,3 +16724,19 @@ possible. File must sync and update to every doc."
    Unverified (Verify & Release now possible). A replace still needs a reason (min 5).
 4. Shared `replaceItemRevisionDrawingInputSchema.reason` defaults to '' — the server enforces the
    min-5 rule only when the Rev already has a file. No migration.
+
+## ADR-321: Drawing file optional on a Sales Order (owner 2026-11-24)
+
+Owner: "during SO creation … user compulsory have to upload drawing file. Change it not compulsory.
+Without that file SO can be saved."
+
+1. **SO only.** New SO line, edited SO line (Item / Rev changed, file cleared) and the Equipment SO
+   line all save without a drawing file. Drawing Rev stays compulsory. ADR-311's rule is withdrawn for
+   SO; **JWSO keeps it** (owner asked about SO only).
+2. **Server:** `item-revisions/line-rev.ts` refuses a missing file only when `kind === 'jw'`
+   (`fileCompulsory`); the Equipment-line check in `sales-orders/service.ts` createSalesOrder is gone.
+   **Web:** `sales-order-form.tsx` no longer calls `useDrawingFileCheck`; the Equipment "Drawing File"
+   field lost its ★. Shared refusal text now names JWSO only.
+3. **Effect:** an SO line saved with no file leaves its Drawing Rev **Draft** (only a Rev with a file
+   goes to Under Review, ADR-311). Design adds the file later with "Upload drawing…" (ADR-319). The
+   release gate before Plan / PRO / Job Card is unchanged. No migration.

@@ -74,11 +74,11 @@ export const REV_AUTO_REVIEW_FROM: readonly RevReleaseStatus[] = [
   'approved',
 ];
 
-/** ADR-311 — the refusal when a new SO / JWSO line (make item) has no drawing
+/** ADR-311 — the refusal when a new JWSO line (make item) has no drawing
  *  file, or its Item / Rev changed and the new Rev has none. One sentence for
  *  the server and the forms. */
 export function drawingFileRequiredMessage(lineNo: number, label: string): string {
-  return `Ln ${lineNo}: upload the drawing file for ${label} — it is compulsory on every Sales Order / JWSO line.`;
+  return `Ln ${lineNo}: upload the drawing file for ${label} — it is compulsory on every JWSO line.`;
 }
 
 /** The sentence every refusal uses, so all create paths say the same thing. */
