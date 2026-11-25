@@ -16785,3 +16785,9 @@ NC replacement PO lines (`source_nc_id`) add receipts, no PO cover. 0262 also ba
 re-approval (`approval_remarks LIKE 'Re-approval needed%'`) with their current qty. JC date checked on
 edit too. DC / JW DC receive says "Receipt date". Timeline PR date also via `purchase_orders.pr_id`.
 Known and accepted: a line REMOVED while a PO waits re-approval stops counting at once.
+
+**Sweep fix (owner 2026-11-25, "go fix it").** The same "cancelled PO counted" mistake fixed in:
+SO Costing list (material + outsource CTEs) and SO Costing detail (material + per-op outsource
+cost) now skip cancelled POs and deleted PO lines; Dashboard Cost Summary skips cancelled POs;
+SC dashboard vendor / SO / PO summaries skip deleted PO lines. Costing still counts drafts
+(committed cost), only cancelled and deleted are left out.

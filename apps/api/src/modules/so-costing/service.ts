@@ -97,6 +97,7 @@ export async function getSoCostingDetail(
             SELECT SUM(pol.qty * pol.rate) FROM purchase_order_lines pol
             JOIN purchase_orders po ON po.id = pol.purchase_order_id
             WHERE pol.source_so_line_id = sol.id AND po.deleted_at IS NULL
+              AND po.status <> 'cancelled' AND pol.deleted_at IS NULL
               AND po.po_type <> 'job_work'
           ), 0) AS material_cost
         FROM sales_order_lines sol
@@ -118,7 +119,9 @@ export async function getSoCostingDetail(
           COALESCE(mo.machines, '[]'::json) AS machines,
           COALESCE((
             SELECT pol.qty * pol.rate FROM purchase_order_lines pol
-            WHERE pol.id = o.outsource_po_line_id
+            JOIN purchase_orders po ON po.id = pol.purchase_order_id
+            WHERE pol.id = o.outsource_po_line_id AND pol.deleted_at IS NULL
+              AND po.deleted_at IS NULL AND po.status <> 'cancelled'
           ), 0) AS outsource_cost,
           -- Same per-machine formula as the list query's machtime CTE, so the
           -- detail total can never drift from the list total.
