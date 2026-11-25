@@ -125,7 +125,8 @@ export async function listSoCosting(
           FROM purchase_order_lines pol
           JOIN purchase_orders po ON po.id = pol.purchase_order_id
           JOIN sales_order_lines sol ON sol.id = pol.source_so_line_id
-          WHERE po.company_id = ${cid} AND po.deleted_at IS NULL AND po.po_type <> 'job_work'
+          WHERE po.company_id = ${cid} AND po.deleted_at IS NULL AND po.status <> 'cancelled'
+            AND pol.deleted_at IS NULL AND po.po_type <> 'job_work'
           GROUP BY sol.sales_order_id
         ),
         outsrc AS (
@@ -134,7 +135,10 @@ export async function listSoCosting(
           JOIN job_cards jc ON jc.id = o.job_card_id
           JOIN sales_order_lines sol ON sol.id = jc.source_so_line_id
           JOIN purchase_order_lines pol ON pol.id = o.outsource_po_line_id
+          JOIN purchase_orders po ON po.id = pol.purchase_order_id
+          -- A cancelled / deleted PO is not a cost (ADR-320 §26).
           WHERE o.company_id = ${cid} AND o.op_type = 'outsource'
+            AND pol.deleted_at IS NULL AND po.deleted_at IS NULL AND po.status <> 'cancelled'
             AND o.deleted_at IS NULL AND jc.deleted_at IS NULL
           GROUP BY sol.sales_order_id
         ),

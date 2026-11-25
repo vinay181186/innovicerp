@@ -195,7 +195,7 @@ async function computeWidget(
           COALESCE(SUM(pol.qty*pol.rate) FILTER (WHERE po.po_type NOT IN ('job_work','service')),0) AS mat,
           COALESCE(SUM(pol.qty*pol.rate) FILTER (WHERE po.po_type = 'job_work'),0) AS osp,
           COALESCE(SUM(pol.qty*pol.rate) FILTER (WHERE po.po_type = 'service'),0) AS svc
-          FROM purchase_order_lines pol JOIN purchase_orders po ON po.id=pol.purchase_order_id AND po.deleted_at IS NULL
+          FROM purchase_order_lines pol JOIN purchase_orders po ON po.id=pol.purchase_order_id AND po.deleted_at IS NULL AND po.status <> 'cancelled'
           WHERE pol.company_id='${cid}'::uuid AND pol.deleted_at IS NULL`,
         )
       )[0];

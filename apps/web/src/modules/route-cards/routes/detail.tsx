@@ -39,6 +39,7 @@ import { useItem } from '../../items/api';
 import { useMyCompany } from '../../settings/api';
 import { useDeleteRouteCard, useRouteCard } from '../api';
 import { PlanTypeFact } from '../components/plan-type-fact';
+import '../components/rc-header.css';
 import {
   RcApprovalActions,
   RcApprovalBanner,
@@ -211,118 +212,121 @@ function RouteCardDetailPage(): React.JSX.Element {
 
         {/* WHICH item this route belongs to — identity, not a fact about the
             route, so it heads the block instead of taking grid cells. */}
-        <DocIdent>
-          <IdentCode>{detail.code}</IdentCode>
-          <IdentSep />
-          {/* Item + Drawing Rev as ABC/1 — links to its drawing page. */}
-          <IdentCode>
-            <ItemRevLink
+        {/* The same header as New / Edit (rc-header.css, owner 2026-11-25):
+            RC No. · Item Code · Drawing Rev · Item Name · Drawing, labelled. */}
+        <div className="rc-hdr">
+          <DocIdent>
+            <span className="rc-id-lb">RC No.</span>
+            <IdentCode>{detail.code}</IdentCode>
+            <IdentSep />
+            <span className="rc-id-lb">Item Code</span>
+            {/* The code links to its Item + Rev drawing page. */}
+            <IdentCode>
+              <ItemRevLink
+                itemRevisionId={detail.itemRevisionId}
+                label={detail.itemCode ?? itemRevLabel(detail.itemCode, detail.drawingRev)}
+                className=""
+              />
+            </IdentCode>
+            <span className="rc-id-lb">Drawing Rev</span>
+            <span className="mono fw-700">{detail.drawingRev ?? '—'}</span>
+            <span className="rc-id-lb">Item Name</span>
+            <span className="rc-id-name">{detail.itemName ?? '— unknown item —'}</span>
+            <span className="rc-id-lb">Drawing</span>
+            <DrawingStatusLink
               itemRevisionId={detail.itemRevisionId}
-              label={itemRevLabel(detail.itemCode, detail.drawingRev)}
-              className=""
+              drawingFilePath={detail.drawingFilePath}
             />
-          </IdentCode>
-          <span>{detail.itemName ?? '— unknown item —'}</span>
-          <IdentSep />
-          <span className="text3">Drawing Rev</span>
-          <span className="mono fw-700">{detail.drawingRev ?? '—'}</span>
-          <IdentSep />
-          <span className="text3">Drawing</span>
-          <DrawingStatusLink
-            itemRevisionId={detail.itemRevisionId}
-            drawingFilePath={detail.drawingFilePath}
-          />
-        </DocIdent>
+          </DocIdent>
 
-        <ClusterGrid stack>
-          {/* How the item is made, and how many steps of each kind. */}
-          <Cluster name="Route">
-            <PlanTypeFact planType={detail.planType} />
-            <ClusterFact
-              label="Operations"
-              // One cell: a narrow screen can cut the split, so hover reads it.
-              title={
-                detail.ops.length > 0
-                  ? `${detail.ops.length} · ${inHouse} in-house · ${osp} OSP · ${qc} QC`
-                  : undefined
-              }
-              value={
-                <>
-                  <span className="mono fw-700">{detail.ops.length}</span>
-                  {detail.ops.length > 0 ? (
-                    <span
-                      className="mono text3"
-                      style={{
-                        fontSize: 'var(--fs-xs)',
-                        fontWeight: 400,
-                        marginLeft: 'var(--sp-2)',
-                      }}
-                    >
-                      {inHouse} in-house · {osp} OSP · {qc} QC
-                    </span>
-                  ) : null}
-                </>
-              }
-            />
-            <ClusterFact
-              label="Last Updated By"
-              empty={!detail.updatedByName}
-              title={detail.updatedByName ?? undefined}
-              value={detail.updatedByName ?? '—'}
-            />
-            <ClusterFact num label="Last Updated" value={fmtDateTime(detail.updatedAt)} />
-          </Cluster>
+          <ClusterGrid>
+            {/* How the item is made, and how many steps of each kind. */}
+            <Cluster name="Route">
+              <PlanTypeFact planType={detail.planType} />
+              <ClusterFact
+                label="Operations"
+                // One cell: a narrow screen can cut the split, so hover reads it.
+                title={
+                  detail.ops.length > 0
+                    ? `${detail.ops.length} · ${inHouse} in-house · ${osp} OSP · ${qc} QC`
+                    : undefined
+                }
+                value={
+                  <>
+                    <span className="mono fw-700">{detail.ops.length}</span>
+                    {detail.ops.length > 0 ? (
+                      <span
+                        className="mono text3"
+                        style={{
+                          fontSize: 'var(--fs-xs)',
+                          fontWeight: 400,
+                          marginLeft: 'var(--sp-2)',
+                        }}
+                      >
+                        {inHouse} in-house · {osp} OSP · {qc} QC
+                      </span>
+                    ) : null}
+                  </>
+                }
+              />
+              <ClusterFact
+                label="Last Updated By"
+                empty={!detail.updatedByName}
+                title={detail.updatedByName ?? undefined}
+                value={detail.updatedByName ?? '—'}
+              />
+              <ClusterFact num label="Last Updated" value={fmtDateTime(detail.updatedAt)} />
+            </Cluster>
 
-          {/* WHAT the part is cut from — the same four cells, in the same
+            {/* WHAT the part is cut from — the same four cells, in the same
               order, as the Production Order's Material row. Blank fields show
               as dashes, because a missing grade is a gap worth seeing. */}
-          <Cluster name="Material">
-            <ClusterFact
-              num
-              label="RM Item"
-              empty={!detail.rawMaterialItemCode}
-              title={detail.rawMaterialItemCode ?? undefined}
-              value={detail.rawMaterialItemCode ?? '—'}
-            />
-            <ClusterFact
-              num
-              label="RM Grade"
-              empty={!detail.rawMaterialGradeText}
-              title={detail.rawMaterialGradeText ?? undefined}
-              value={detail.rawMaterialGradeText ?? '—'}
-            />
-            <ClusterFact
-              num
-              label="RM Size"
-              empty={!detail.rawMaterialSizeText}
-              title={detail.rawMaterialSizeText ?? undefined}
-              value={detail.rawMaterialSizeText ?? '—'}
-            />
-            <ClusterFact
-              num
-              label="RM Qty per piece"
-              empty={detail.rmQtyPerPiece == null}
-              value={detail.rmQtyPerPiece == null ? '—' : String(detail.rmQtyPerPiece)}
-            />
-          </Cluster>
-
-          {/* ADR-253 — who decided this card, and when. */}
-          {detail.approvalStatus === 'approved' || detail.approvalStatus === 'rejected' ? (
-            <Cluster name="Approval">
-              <ClusterFact span={4} wrap label="RC Status" value={rcApprovalLine(detail)} />
+            <Cluster name="Material">
+              <ClusterFact
+                num
+                label="RM Item"
+                empty={!detail.rawMaterialItemCode}
+                title={detail.rawMaterialItemCode ?? undefined}
+                value={detail.rawMaterialItemCode ?? '—'}
+              />
+              <ClusterFact
+                num
+                label="RM Grade"
+                empty={!detail.rawMaterialGradeText}
+                title={detail.rawMaterialGradeText ?? undefined}
+                value={detail.rawMaterialGradeText ?? '—'}
+              />
+              <ClusterFact
+                num
+                label="RM Size"
+                empty={!detail.rawMaterialSizeText}
+                title={detail.rawMaterialSizeText ?? undefined}
+                value={detail.rawMaterialSizeText ?? '—'}
+              />
+              <ClusterFact
+                num
+                label="RM Qty per piece"
+                empty={detail.rmQtyPerPiece == null}
+                value={detail.rmQtyPerPiece == null ? '—' : String(detail.rmQtyPerPiece)}
+              />
             </Cluster>
-          ) : null}
 
-          <Cluster name="Notes">
-            <ClusterFact
-              span={4}
-              wrap
-              label="Route Card Remarks"
-              empty={!detail.notes}
-              value={detail.notes ?? '—'}
-            />
-          </Cluster>
-        </ClusterGrid>
+            {/* ADR-253 — who decided this card, and when. */}
+            {detail.approvalStatus === 'approved' || detail.approvalStatus === 'rejected' ? (
+              <Cluster name="Approval">
+                <ClusterFact span={4} wrap label="RC Status" value={rcApprovalLine(detail)} />
+              </Cluster>
+            ) : null}
+
+            {/* Blank Remarks: no row at all, never a "—" (owner 2026-11-24,
+              the Tally / ERPNext rule). */}
+            {detail.notes ? (
+              <Cluster name="Notes">
+                <ClusterFact span={4} wrap label="Route Card Remarks" value={detail.notes} />
+              </Cluster>
+            ) : null}
+          </ClusterGrid>
+        </div>
 
         {notice ? (
           <div

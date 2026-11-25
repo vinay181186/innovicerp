@@ -89,7 +89,7 @@ export async function listScVendors(user: AuthContext, raw: ScTableQuery): Promi
       ${PEND_VAL} AS pending_val,
       ${PEND_QTY} AS pending_qty
     FROM purchase_orders po
-    JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
+    JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id AND pol.deleted_at IS NULL
     LEFT JOIN vendors v ON v.id = po.vendor_id
     LEFT JOIN vendors vt ON vt.code = po.vendor_code_text AND vt.company_id = po.company_id AND vt.deleted_at IS NULL
     WHERE po.company_id = ${companyId}::uuid AND po.deleted_at IS NULL AND ${OPEN_PO}
@@ -143,7 +143,7 @@ export async function listScSos(user: AuthContext, raw: ScTableQuery): Promise<S
       ${PEND_VAL} AS pending_val,
       ${PEND_QTY} AS pending_qty
     FROM purchase_orders po
-    JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
+    JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id AND pol.deleted_at IS NULL
     LEFT JOIN sales_order_lines sol ON sol.id = pol.source_so_line_id
     LEFT JOIN sales_orders so ON so.id = sol.sales_order_id
     WHERE po.company_id = ${companyId}::uuid AND po.deleted_at IS NULL AND ${OPEN_PO}
@@ -204,7 +204,7 @@ export async function listScPoSummary(
         COALESCE(SUM(pol.qty * pol.rate), 0) AS total_val,
         ${PEND_QTY} AS pending_qty
       FROM purchase_orders po
-      LEFT JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id
+      LEFT JOIN purchase_order_lines pol ON pol.purchase_order_id = po.id AND pol.deleted_at IS NULL
       WHERE po.company_id = ${companyId}::uuid AND po.deleted_at IS NULL AND po.status <> 'cancelled'
       GROUP BY po.id
     ),
