@@ -376,9 +376,7 @@ describe('ADR-291 Engineering Change', () => {
     expect((holdErr as Error).message).toContain(
       `is on hold (ECR ${draft.code}) — release the hold first.`,
     );
-    const holdInfo = await withUserContext(admin, (tx) =>
-      readOpHolds(tx, companyId, [heldOp!.id]),
-    );
+    const holdInfo = await withUserContext(admin, (tx) => readOpHolds(tx, companyId, [heldOp!.id]));
     expect(holdInfo.get(heldOp!.id)?.holdReason).toBe(`ECR ${draft.code}`);
 
     // Self-approval refused.
