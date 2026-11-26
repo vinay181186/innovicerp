@@ -17,10 +17,10 @@ A file-management view scoped to an SO. Two modes:
 
 ## 1. Page chrome (L19489–19495)
 
-| # | Element | Legacy | Tag |
-|---|---|---|---|
-| 1 | Section header | `📁 SO Documents` | needs port |
-| 2 | SO picker | `<select>` with `<soNo> — <customer> (<N> files)` (280px min) | **BLOCKER** |
+| #   | Element        | Legacy                                                        | Tag         |
+| --- | -------------- | ------------------------------------------------------------- | ----------- |
+| 1   | Section header | `📁 SO Documents`                                             | needs port  |
+| 2   | SO picker      | `<select>` with `<soNo> — <customer> (<N> files)` (280px min) | **BLOCKER** |
 
 ---
 
@@ -34,12 +34,12 @@ Table with 7 columns: `SO No · Customer · Status · Files (green count) · Siz
 
 ### 3.1 4-tile stat strip (L19531–19536)
 
-| # | tile | value | colour |
-|---|---|---|---|
-| 1 | TOTAL FILES | `allFiles.length` | green big 24px |
-| 2 | TOTAL SIZE | `(totalSize/1048576).toFixed(1) + ' MB'` | cyan 18px |
-| 3 | ARCHIVED | `archivedFiles.length` | amber 24px |
-| 4 | STATUS | `badge(so.status)` | per-status |
+| #   | tile        | value                                    | colour         |
+| --- | ----------- | ---------------------------------------- | -------------- |
+| 1   | TOTAL FILES | `allFiles.length`                        | green big 24px |
+| 2   | TOTAL SIZE  | `(totalSize/1048576).toFixed(1) + ' MB'` | cyan 18px      |
+| 3   | ARCHIVED    | `archivedFiles.length`                   | amber 24px     |
+| 4   | STATUS      | `badge(so.status)`                       | per-status     |
 
 ### 3.2 Action buttons (L19539–19544)
 
@@ -93,6 +93,7 @@ Plus a Supabase Storage bucket for the actual file blobs.
 ## 5. Summary
 
 ### BLOCKERs
+
 1. **`file_registry` table** + Drizzle schema + RLS.
 2. **Supabase Storage bucket** + signed-URL policy.
 3. **Upload + Download + List API endpoints.**
@@ -100,14 +101,17 @@ Plus a Supabase Storage bucket for the actual file blobs.
 5. **Per-line auto-detection** (`_fsFindSOLine`) — needs SO line aware classification.
 
 ### DELTAs
+
 6. **Archive & Purge** flow — moves files from active storage to a `archived/` prefix; freed-space tracking.
 7. **Download All (ZIP)** — server-side ZIP assembly endpoint.
 
 ### POLISH
+
 - Category icon set matches legacy.
 
 ---
 
 **Sign-off needed:**
+
 - Confirm this is desired now or post-cutover. Estimate: large — ~1500 LOC across schema/service/route/web + Supabase Storage bucket setup.
 - Decide: per-line auto-detection or pure manual classification?

@@ -18,6 +18,7 @@ canonical component — i.e. once components exist, any extra/unlisted prop is a
 ## 1. Raw hex colours, rgb()/rgba(), named colours
 
 **Commands:**
+
 ```
 grep -rnoE '#[0-9a-fA-F]{3,8}\b' apps/web/src --include='*.tsx' --include='*.css' \
   | grep -v 'apps/web/src/styles/tokens.css'
@@ -63,6 +64,7 @@ grep -rnoE '\brgba?\([^)]*\)' apps/web/src --include='*.tsx' --include='*.css' \
 | `modules/pending-so-value/routes/list.tsx` | 4 | — |
 
 **Examples:**
+
 - `apps/web/src/components/shared/related-docs-panel.tsx:275` — `#e5e7eb` (exactly the timeline-dot
   literal the design-ref README flags at line 25: "Timeline dots — `#e5e7eb` / `#9ca3af` literals" →
   canonical is `var(--border)` / `var(--text3)`)
@@ -75,6 +77,7 @@ grep -rnoE '\brgba?\([^)]*\)' apps/web/src --include='*.tsx' --include='*.css' \
 ## 2. Inline pixel widths on controls
 
 **Commands:**
+
 ```
 grep -rnE '([^a-zA-Z]|^)width\s*:\s*[0-9]+[,}]' apps/web/src --include='*.tsx'      # exact `width:`
 grep -rnE '(min|max)Width\s*:\s*[0-9]+' apps/web/src --include='*.tsx'              # minWidth/maxWidth
@@ -108,6 +111,7 @@ grep -rnoE 'w-\[[^\]]*\]' apps/web/src --include='*.tsx'                        
 | `modules/access-control/components/configure-modal.tsx` | 4 |
 
 **Examples:**
+
 - `apps/web/src/modules/access-control/routes/list.tsx:112` — `<th style={{ width: 150 }}>Department</th>`
 - `apps/web/src/modules/access-control/components/configure-modal.tsx:574` —
   `style={{ fontSize: 12, fontWeight: 700, width: 130, padding: '5px 8px' }}`
@@ -119,6 +123,7 @@ grep -rnoE 'w-\[[^\]]*\]' apps/web/src --include='*.tsx'                        
 ## 3. Font sizes off the 5-step scale (11/13/16/22/28)
 
 **Commands:**
+
 ```
 grep -rnE '([^a-zA-Z]|^)fontSize\s*:\s*[0-9]+' apps/web/src --include='*.tsx'
 grep -rnoE 'font-size\s*:\s*[0-9.]+px' apps/web/src --include='*.css' | grep -v 'styles/tokens.css'
@@ -167,13 +172,14 @@ grep -rnoE 'text-\[[^\]]*\]' apps/web/src --include='*.tsx'   # Tailwind arbitra
 | `modules/approval-config/routes/page.tsx` | 15 |
 
 **Examples:**
+
 - `apps/web/src/components/shared/file-preview-modal.tsx:221` —
   `<div style={{ fontSize: 30, marginBottom: 8 }}>📁</div>`
 - `apps/web/src/components/shared/item-badge.tsx:90` —
   `style={{ width: THUMBNAIL_COL_WIDTH, padding: '8px 2px', fontSize: 10, overflow: 'hidden' }}`
 - `apps/web/src/components/shared/machine-split.tsx:66` — `fontSize: 9,`
-- This matches the guideline's own finding verbatim: `consistency.html` row "Font sizes" — *"17
-  sizes in use (9–36px, incl. 12.5)"* → repo confirms **21 distinct pixel values** are actually in
+- This matches the guideline's own finding verbatim: `consistency.html` row "Font sizes" — _"17
+  sizes in use (9–36px, incl. 12.5)"_ → repo confirms **21 distinct pixel values** are actually in
   use today (8/9/10/11/12/13/14/15/16/17/18/19/20/22/24/26/28/30/32/36/48).
 
 ---
@@ -186,6 +192,7 @@ margin*` property value in every `.tsx` file and flagged any declaration contain
 not in `{0,2,4,8,12,16,24,32}`.
 
 **Script logic (reproducible):**
+
 ```python
 prop_re = re.compile(r'\b(gap|rowGap|columnGap|padding|paddingTop|paddingBottom|paddingLeft|'
   r'paddingRight|paddingInline|paddingBlock|margin|marginTop|marginBottom|marginLeft|'
@@ -230,6 +237,7 @@ scale = {0,2,4,8,12,16,24,32}
 | `modules/capa/components/capa-view.tsx` | 14 |
 
 **Examples:**
+
 - `apps/web/src/components/shared/doc-number-input.tsx:105,107,108` — `paddingRight: 30` (×3)
 - `apps/web/src/components/shared/related-docs-panel.tsx:251` — `marginBottom: 18`
 - `apps/web/src/components/shared/qc-report-attach.tsx:73` — `padding: '5px 12px'`
@@ -239,6 +247,7 @@ scale = {0,2,4,8,12,16,24,32}
 ## 5. `window.confirm` / `window.alert` / bare `confirm(`/`alert(`
 
 **Commands:**
+
 ```
 grep -rn 'window\.confirm(' apps/web/src --include='*.tsx'
 grep -rn '\bconfirm(' apps/web/src --include='*.tsx' | grep -v 'window\.confirm('
@@ -257,15 +266,15 @@ grep -rln 'ConfirmDialog' apps/web/src --include='*.tsx'
   using the design-system-correct pattern, 6 use the browser-native one.
 
 **Examples:**
+
 - `apps/web/src/modules/sales-orders/routes/list.tsx:663` —
   `onClick={() => { if (confirm(\`Delete SO ${so.code}?\`)) softDelete.mutate(so.id); }}` — the
-  exact "inline Delete? Confirm" pattern the guideline calls out by name (`consistency.html` row
-  "Delete confirm": *"window.confirm (lists), inline 'Delete? Confirm' (detail)"* → canonical
-  `ConfirmDialog`).
+exact "inline Delete? Confirm" pattern the guideline calls out by name (`consistency.html`row
+"Delete confirm": *"window.confirm (lists), inline 'Delete? Confirm' (detail)"* → canonical`ConfirmDialog`).
 - `apps/web/src/modules/bom-master/routes/detail.tsx:59` —
   `if (!window.confirm(\`Delete BOM "${detail.bomNo}"? This soft-deletes the record.\`)) return;`
 - `apps/web/src/modules/purchase-requests/routes/list.tsx:125` —
-  `if (!window.confirm(\`Approve ${pr.code}?\`)) return;` (confirm() used for an *approve*, not
+  `if (!window.confirm(\`Approve ${pr.code}?\`)) return;` (confirm() used for an _approve_, not
   just delete — the blast radius of migrating this rule is wider than "delete buttons")
 
 ---
@@ -273,6 +282,7 @@ grep -rln 'ConfirmDialog' apps/web/src --include='*.tsx'
 ## 6. Table style split — `.innovic-table` with vs without `tbl-grid`
 
 **Commands:**
+
 ```
 grep -rl 'innovic-table' apps/web/src --include='*.tsx' | sort > has_innovictable.txt   # 131 files
 grep -rl 'tbl-grid'      apps/web/src --include='*.tsx' | sort > has_tblgrid.txt        # 17 files
@@ -284,7 +294,7 @@ comm -12 has_innovictable.txt has_tblgrid.txt   # innovic-table WITH tbl-grid (r
 - **17 files (13%)** use the ref-standard `.innovic-table.tbl-grid` sheet look.
 - **114 files (87%)** use the legacy unruled `.innovic-table` look with `tbl-grid` nowhere in the
   file — this is the single largest structural gap in the whole census (list = original legacy
-  port, per the README's own explanation of *why* they differ).
+  port, per the README's own explanation of _why_ they differ).
 
 **WITH `tbl-grid` (17, the target look) — includes:** `bom-master/routes/list.tsx`,
 `clients/routes/list.tsx`, `cost-centers/routes/list.tsx`, `incoming-qc/routes/index.tsx`,
@@ -310,6 +320,7 @@ files), `store-inventory/*`, `tool-issues/*`, plus 90 more (full list in the raw
 ## 7. Tailwind utility usage vs `innovic-theme.css` vocabulary
 
 **Commands:**
+
 ```
 grep -rlE 'className=(\{[^}]*)?["'"'"'][^"'"'"']*(flex |grid |bg-|text-|p-[0-9]|px-|py-|gap-[0-9]|rounded-|border-|w-full|h-full|items-center|justify-)' apps/web/src --include='*.tsx'
 grep -rlE 'className=(\{[^}]*)?["'"'"'][^"'"'"']*(panel|btn |btn-|badge|innovic-table|tn-|form-grp|form-label|section-hdr)' apps/web/src --include='*.tsx'
@@ -324,6 +335,7 @@ grep -rlE 'className=(\{[^}]*)?["'"'"'][^"'"'"']*(panel|btn |btn-|badge|innovic-
 - Files using **neither** heuristic (usually tiny wrapper/route files with no visible className): 56
 
 **The 12 Tailwind-only files — every one of these is a full rebuild, not a token swap:**
+
 ```
 components/shared/error-boundary.tsx
 components/shared/searchable-select.tsx      ← flagged as a named risk file below
@@ -338,6 +350,7 @@ routes/auth-callback.tsx
 routes/login.tsx
 routes/reset-password.tsx
 ```
+
 Note: `so-planning`, `reports`, and several dashboard files are inside the "mixed" 33 — they
 compose innovic-theme panels/tables around Tailwind flex/grid wrappers, which is the harder
 half-migrated case (can't be codemodded as cleanly as pure-Tailwind or pure-vocab files).
@@ -347,6 +360,7 @@ half-migrated case (can't be codemodded as cleanly as pure-Tailwind or pure-voca
 ## 8. Modals/overlays not on `.overlay`/`.modal`, and the z-index ladder
 
 **Commands:**
+
 ```
 grep -rnE '([^a-zA-Z]|^)zIndex\s*:\s*[0-9]+' apps/web/src --include='*.tsx'
 grep -rnE 'z-index\s*:\s*[0-9]+' apps/web/src --include='*.css'
@@ -355,6 +369,7 @@ find apps/web/src -iname '*modal*'
 ```
 
 **z-index ladder compliance:**
+
 - CSS (`innovic-theme.css`), 9 declarations: **4, 5, 6, 10, 60, 70, 200, 500, 9999 — every single
   one is exactly on the documented ladder.** The canonical CSS is fully compliant.
 - Inline TSX `zIndex:`, 67 declarations across 61 files: values in use are
@@ -365,6 +380,7 @@ find apps/web/src -iname '*modal*'
   arbitrary relative to every other layer).
 
 **Hand-rolled overlays (no shared Modal/overlay component exists yet):**
+
 - `position: 'fixed'` inline style: **32 files**
 - Of those, **23 files (72%) never reference an `overlay` class at all** — they build the
   backdrop+centering from scratch (own `rgba()` tint, own centering flexbox, own z-index).
@@ -376,6 +392,7 @@ find apps/web/src -iname '*modal*'
 - `className="modal"` (the nearest thing to a convention) appears in only 12 of those 26 files.
 
 **Examples:**
+
 - `apps/web/src/modules/access-control/components/configure-modal.tsx:520` —
   `background: rgba(0,0,0,.45)` (own overlay tint, not `.overlay`'s navy-45%+blur)
 - `apps/web/src/components/shared/searchable-select.tsx:344` — `zIndex: 1000,` (dropdown popover,
@@ -388,6 +405,7 @@ find apps/web/src -iname '*modal*'
 ## 9. Required-field markers
 
 **Commands:**
+
 ```
 grep -rn '★' apps/web/src --include='*.tsx'
 grep -rnE "required.*\*|\*</|'\*'|\"\*\"" apps/web/src --include='*.tsx'
@@ -411,6 +429,7 @@ grep -rin '(required)' apps/web/src --include='*.tsx'
 ## 10. Emoji vs Lucide as control icons
 
 **Commands:**
+
 ```
 grep -rl "from 'lucide-react'" apps/web/src --include='*.tsx'
 grep -rnoE '>\s*(✏|🖨|🗑|⬇|📄|🔄|✕|✅|👤|✖|📎|🔔|➕|✚|🔍|👁|⚙)' apps/web/src --include='*.tsx'
@@ -427,10 +446,11 @@ grep -rnoE '>\s*(✏|🖨|🗑|⬇|📄|🔄|✕|✅|👤|✖|📎|🔔|➕|✚|
   since the legacy emoji vocabulary (`nav-sections.ts`) is large and some of it leaks into buttons.
 
 **Examples:**
+
 - `apps/web/src/modules/access-control/routes/list.tsx:231,234` — `>✅` (approve button glyph)
 - `apps/web/src/modules/job-work-orders/components/job-work-order-form.tsx:726` — `>⬇` (download
   action, should be `<Icon name="download">`)
-- `apps/web/src/modules/dashboard/components/home-customize.tsx:67` — `>⚙` (a settings *action*,
+- `apps/web/src/modules/dashboard/components/home-customize.tsx:67` — `>⚙` (a settings _action_,
   not a page-identity emoji — the borderline case the ref's "rule of thumb" is meant to resolve)
 
 ---
@@ -438,6 +458,7 @@ grep -rnoE '>\s*(✏|🖨|🗑|⬇|📄|🔄|✕|✅|👤|✖|📎|🔔|➕|✚|
 ## 11. Hand-rolled `<button>`/`<input>` vs `.btn`/`.innovic-input`
 
 **Commands:**
+
 ```
 # button classification — Python, since className can be a template/expression
 for <button ...> tag: has "btn" token in a literal className attr? count yes/no
@@ -461,6 +482,7 @@ grep -rno '<input\b' apps/web/src --include='*.tsx'
 ## 12. Loading / empty / error state implementations
 
 **Commands:**
+
 ```
 find apps/web/src -iname '*page-state*'          # → no results, component doesn't exist yet
 grep -rn 'className="empty-state"' apps/web/src --include='*.tsx'
@@ -484,6 +506,7 @@ the job the ref's single `PageState` is meant to cover:
    (arguably correct to stay separate from `PageState`, but currently has no single source either)
 
 **Examples:**
+
 - `apps/web/src/modules/job-work-orders/routes/list.tsx:181` —
   `<div className="panel"><div className="empty-state" style={{ padding: 20 }}><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Loading…</div></div>`
   (combines #1 Tailwind spinner classes + innovic `empty-state` + an inline `padding: 20` override
@@ -498,20 +521,20 @@ the job the ref's single `PageState` is meant to cover:
 
 ## SUMMARY TABLE
 
-| # | Rule | Violations | Files affected | Effort | Codemod? |
-|---|---|---:|---:|:---:|---|
-| 1 | Raw hex / rgba colours | 612 (323 hex + 289 rgba) | 120 | **L** | Partial — mechanical token swap works for ~70% (known literals: `#e5e7eb`→`--border`, `#9ca3af`→`--text3`, `#8b5cf6`→`--purple`, `rgba(0,0,0,.6\|.45)`→`.overlay`); the long tail in `print-templates/editor.tsx` (101 hex) and `bom-form.tsx` (69 hex) is a user-facing colour picker, not decoration — cannot be blindly tokenized |
-| 2 | Inline pixel widths | 413 (159 `width` + 254 `min/maxWidth`) | 141 | **M** | Yes for table `<th style={{width:N}}>` → `.fw-*`/`DataTableColumn width`; no for form-field widths, which need a `FormField size` judgment call per field (content-driven, not mechanical) |
-| 3 | Font sizes off-scale | 1,575 of 2,671 inline + 13 of 26 CSS | 243 | **L** | Partial — a lookup table (10,12→11; 14,15→13; 18,20→16; 24,26→22; 30,32,36→28) covers most, but some 9px/48px uses are print-doc pt-scale (out of scope per README) and must be excluded by hand |
-| 4 | Spacing off 4px-scale | 1,758 of 3,565 | 269 | **L** | Partial — same nearest-neighbour codemod as #3, same risk: some "6" and "10" are optically load-bearing (icon gaps) and rounding to 4/8 will visibly shift them |
-| 5 | `window.confirm`/`alert` | 64 (35 confirm + 29 alert) | 42 | **M** | Yes — `confirm(msg)` → `<ConfirmDialog>` is a well-defined 1:1 transform per call site; `alert()` → `Toast`/`Banner` needs a tone decision (error vs info) per call site |
-| 6 | `.innovic-table` w/o `tbl-grid` | 114 files legacy vs 17 on-standard | 114 | **XL** | No — this is the core rebuild, not a class rename; legacy tables have different column/markup assumptions (`.tbl-frozen`, `.tbl-auto`, `.tbl-compact`, `.tbl-edit` modifiers don't exist on them yet) |
-| 7 | Tailwind vs innovic-theme split | 45 Tailwind files, 33 mixed | 45 (12 pure-Tailwind) | **L** (12 files) / **M** (33 mixed) | No for the 12 pure-Tailwind files (full rebuild each); the 33 mixed files are worse — partial codemod risks leaving broken half-Tailwind layouts |
-| 8 | Modals not on `.overlay`, z-index off-ladder | 26 hand-rolled modals, 23 w/o `.overlay`, 50/67 z-index off-ladder | 32 (fixed-position) + 61 (zIndex) | **L** (z-index) / **XL** (modals) | z-index: yes, mechanical remap to the 9-value ladder. Modals: no — there is no shared `Modal` component today, so this is new-component adoption across 26 files, one review each |
-| 9 | Required-marker inconsistency | 17 of 254 total markers (13 `*`, 4 "(required)") | 7 | **S** | Yes — trivial find/replace, small blast radius |
-| 10 | Emoji as control icon | 33 (floor, not ceiling) | ~20 | **S–M** | Partial — needs a human per-glyph judgment (module-identity emoji must NOT be touched); a naive global swap would break the intentional legacy emoji vocabulary |
-| 11 | Hand-rolled button/input | 75 buttons / ~29 legacy-class inputs | ~35 / ~15 | **S** | Yes — this rule is already 90%+ compliant; remaining cases are simple class additions |
-| 12 | No unified loading/empty/error state | ≥6 distinct implementations, 491 `.empty-state` instances | 197 | **XL** | No — `PageState` doesn't exist yet; every one of the 197 call sites needs its `state` prop chosen (loading vs empty vs error vs noaccess) by reading the surrounding logic, which a codemod can't infer reliably |
+| #   | Rule                                         |                                                         Violations |                    Files affected |               Effort                | Codemod?                                                                                                                                                                                                                                                                                                                             |
+| --- | -------------------------------------------- | -----------------------------------------------------------------: | --------------------------------: | :---------------------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Raw hex / rgba colours                       |                                           612 (323 hex + 289 rgba) |                               120 |                **L**                | Partial — mechanical token swap works for ~70% (known literals: `#e5e7eb`→`--border`, `#9ca3af`→`--text3`, `#8b5cf6`→`--purple`, `rgba(0,0,0,.6\|.45)`→`.overlay`); the long tail in `print-templates/editor.tsx` (101 hex) and `bom-form.tsx` (69 hex) is a user-facing colour picker, not decoration — cannot be blindly tokenized |
+| 2   | Inline pixel widths                          |                             413 (159 `width` + 254 `min/maxWidth`) |                               141 |                **M**                | Yes for table `<th style={{width:N}}>` → `.fw-*`/`DataTableColumn width`; no for form-field widths, which need a `FormField size` judgment call per field (content-driven, not mechanical)                                                                                                                                           |
+| 3   | Font sizes off-scale                         |                               1,575 of 2,671 inline + 13 of 26 CSS |                               243 |                **L**                | Partial — a lookup table (10,12→11; 14,15→13; 18,20→16; 24,26→22; 30,32,36→28) covers most, but some 9px/48px uses are print-doc pt-scale (out of scope per README) and must be excluded by hand                                                                                                                                     |
+| 4   | Spacing off 4px-scale                        |                                                     1,758 of 3,565 |                               269 |                **L**                | Partial — same nearest-neighbour codemod as #3, same risk: some "6" and "10" are optically load-bearing (icon gaps) and rounding to 4/8 will visibly shift them                                                                                                                                                                      |
+| 5   | `window.confirm`/`alert`                     |                                         64 (35 confirm + 29 alert) |                                42 |                **M**                | Yes — `confirm(msg)` → `<ConfirmDialog>` is a well-defined 1:1 transform per call site; `alert()` → `Toast`/`Banner` needs a tone decision (error vs info) per call site                                                                                                                                                             |
+| 6   | `.innovic-table` w/o `tbl-grid`              |                                 114 files legacy vs 17 on-standard |                               114 |               **XL**                | No — this is the core rebuild, not a class rename; legacy tables have different column/markup assumptions (`.tbl-frozen`, `.tbl-auto`, `.tbl-compact`, `.tbl-edit` modifiers don't exist on them yet)                                                                                                                                |
+| 7   | Tailwind vs innovic-theme split              |                                        45 Tailwind files, 33 mixed |             45 (12 pure-Tailwind) | **L** (12 files) / **M** (33 mixed) | No for the 12 pure-Tailwind files (full rebuild each); the 33 mixed files are worse — partial codemod risks leaving broken half-Tailwind layouts                                                                                                                                                                                     |
+| 8   | Modals not on `.overlay`, z-index off-ladder | 26 hand-rolled modals, 23 w/o `.overlay`, 50/67 z-index off-ladder | 32 (fixed-position) + 61 (zIndex) |  **L** (z-index) / **XL** (modals)  | z-index: yes, mechanical remap to the 9-value ladder. Modals: no — there is no shared `Modal` component today, so this is new-component adoption across 26 files, one review each                                                                                                                                                    |
+| 9   | Required-marker inconsistency                |                   17 of 254 total markers (13 `*`, 4 "(required)") |                                 7 |                **S**                | Yes — trivial find/replace, small blast radius                                                                                                                                                                                                                                                                                       |
+| 10  | Emoji as control icon                        |                                            33 (floor, not ceiling) |                               ~20 |               **S–M**               | Partial — needs a human per-glyph judgment (module-identity emoji must NOT be touched); a naive global swap would break the intentional legacy emoji vocabulary                                                                                                                                                                      |
+| 11  | Hand-rolled button/input                     |                               75 buttons / ~29 legacy-class inputs |                         ~35 / ~15 |                **S**                | Yes — this rule is already 90%+ compliant; remaining cases are simple class additions                                                                                                                                                                                                                                                |
+| 12  | No unified loading/empty/error state         |          ≥6 distinct implementations, 491 `.empty-state` instances |                               197 |               **XL**                | No — `PageState` doesn't exist yet; every one of the 197 call sites needs its `state` prop chosen (loading vs empty vs error vs noaccess) by reading the surrounding logic, which a codemod can't infer reliably                                                                                                                     |
 
 **Read on effort:** S = <1 day mechanical, M = few days with judgment calls, L = 1–2 weeks with a
 partial codemod + manual review of the long tail, XL = a genuine rebuild (new shared component
@@ -524,7 +547,7 @@ didn't exist before, every call site is a design decision, not a syntax rename).
 **1. `searchable-select.tsx` is 100% outside the design system today — it's Tailwind-only, has no
 `innovic-theme` classes at all, and is imported by 36 other files.**
 Why risky: this is the literal implementation behind `SearchableSelect`/`SearchableOption` in the
-ref — i.e. the ref *assumes* this component already looks right, but it doesn't. It also has the
+ref — i.e. the ref _assumes_ this component already looks right, but it doesn't. It also has the
 single highest inline `zIndex: 1000` in the codebase (line 344) for its popover, off the documented
 ladder, and is one of the 32 files using `position: 'fixed'` without an `.overlay` class. Every
 master/document picker in the app depends on this file rendering identically after migration —
@@ -536,13 +559,13 @@ case for the new ladder (dropdown vs modal vs toast ordering).
 **2. Dependent-field cascade logic is invisible to a grep-based census and lives inside form
 components that are also the worst colour/spacing offenders (`bom-form.tsx`, `sales-order-form.tsx`,
 `job-work-order-form.tsx`, `so-planning/edit-plan-modal.tsx`).**
-Why risky: these files top *every* violation table in this census (69 hex + 25 off-scale spacing in
+Why risky: these files top _every_ violation table in this census (69 hex + 25 off-scale spacing in
 `bom-form.tsx` alone; 26 off-scale spacing + 3 hex + 7 rgba in `sales-order-form.tsx`). That's a
 strong signal they're also the largest, most logic-dense files — restyling them means touching
 `onChange` handlers, `useEffect` cascades (item→revision→UOM→rate refresh chains per
 `CLAUDE.md` Section 17), and layout in the same diff. A pure "swap the JSX, don't touch the logic"
 discipline is hard to hold in an 800+ line file.
-**Mitigation:** for these specific files, refactor style and logic in *separate* commits even if
+**Mitigation:** for these specific files, refactor style and logic in _separate_ commits even if
 that means two passes — restyle first with logic untouched (verified via existing behaviour), then
 a second logic-only pass if needed. Never combine them in one diff.
 
@@ -559,7 +582,7 @@ rendering from the automated font/spacing codemod entirely; audit print call sit
 confirm against the "Innovic Sheet" standard before touching them.
 
 **4. Permission-driven UI gating (`requireFormAccess`) is an API-side/service-layer gate referenced
-only in code *comments* on the frontend (3 hits, all comments) — the actual frontend gating is
+only in code _comments_ on the frontend (3 hits, all comments) — the actual frontend gating is
 scattered across 46 files using ad-hoc `useAccessControl`/`canEdit`/`canApprove` hooks with no
 single pattern.**
 Why risky: `PageState`'s `noaccess` state and the whole "hide vs disable" question depends on
@@ -607,14 +630,14 @@ the z-index chaos (values 1, 2, 5, 8, 11, 20, 100, 1000 in use, none matching th
 its own overlay, a toast getting trapped under a modal) are the most likely category of
 overhaul-introduced regression.
 **Mitigation:** build/adopt `Modal` and `ConfirmDialog` first as standalone components, get their
-z-index locked to the ladder, and smoke-test them against the *most* z-index-crowded existing
+z-index locked to the ladder, and smoke-test them against the _most_ z-index-crowded existing
 screen (`access-control/components/configure-modal.tsx`, which alone has 2 of the 67 inline
 zIndex declarations plus a hand-rolled overlay) before rolling out to the other 25.
 
 **8. The two largest single-file violation counts (`print-templates/routes/editor.tsx`: 101 hex +
 89 off-scale spacing + 28 off-scale fontSize; `bom-master/components/bom-form.tsx`: 69 hex + 25
-off-scale spacing) are both editor/builder UIs where colour and spacing are part of the *content
-being edited*, not the chrome.**
+off-scale spacing) are both editor/builder UIs where colour and spacing are part of the _content
+being edited_, not the chrome.**
 Why risky: `print-templates/editor.tsx` almost certainly lets a user pick colours/sizes for a
 print template block — those hex values may be legitimate user-facing data, not styling debt. A
 codemod that treats every hex literal in this file as "replace with a token" would corrupt actual
@@ -642,7 +665,7 @@ Why risky: a file using both systems side-by-side (e.g. Tailwind flex utilities 
 `innovic-table`) is easy to mistake for "already partially migrated, just finish it" when it may
 instead be a Tailwind wrapper hastily bolted onto old markup, or vice versa. Without git-blame-level
 archaeology per file, a migration pass risks treating Tailwind classes as the target state and
-*removing* the innovic-theme classes instead of the other way around.
+_removing_ the innovic-theme classes instead of the other way around.
 **Mitigation:** before restyling any of the 33 mixed files, grep each one individually for which
 system governs the outermost layout container — that's almost always the "intended" system for
 that file — and do not assume Tailwind-in / innovic-theme-out or vice versa as a blanket rule.

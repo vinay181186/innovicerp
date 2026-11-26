@@ -49,7 +49,11 @@ const so = (id: string, status: string, over: Partial<SoPhaseTimestamps>): SoPha
 
 describe('derivePhaseStuckItems', () => {
   it('flags design assigned-but-unapproved past threshold', () => {
-    const items = derivePhaseStuckItems([so('1', 'open', { designAssigned: '2026-05-01' })], thr, TODAY);
+    const items = derivePhaseStuckItems(
+      [so('1', 'open', { designAssigned: '2026-05-01' })],
+      thr,
+      TODAY,
+    );
     expect(items).toHaveLength(1);
     expect(items[0]!.stage).toBe('Design');
     expect(items[0]!.days).toBe(32);
@@ -57,7 +61,11 @@ describe('derivePhaseStuckItems', () => {
   });
 
   it('does not flag design still within threshold', () => {
-    const items = derivePhaseStuckItems([so('1', 'open', { designAssigned: '2026-05-30' })], thr, TODAY);
+    const items = derivePhaseStuckItems(
+      [so('1', 'open', { designAssigned: '2026-05-30' })],
+      thr,
+      TODAY,
+    );
     expect(items).toHaveLength(0);
   });
 
@@ -70,14 +78,22 @@ describe('derivePhaseStuckItems', () => {
   });
 
   it('flags planning when design ready (or BOM linked) but no plan', () => {
-    const byApproval = derivePhaseStuckItems([so('1', 'open', { designApproved: '2026-05-01' })], thr, TODAY);
+    const byApproval = derivePhaseStuckItems(
+      [so('1', 'open', { designApproved: '2026-05-01' })],
+      thr,
+      TODAY,
+    );
     expect(byApproval.map((i) => i.stage)).toContain('Planning');
     const byBom = derivePhaseStuckItems([so('2', 'open', { bomLinked: '2026-05-01' })], thr, TODAY);
     expect(byBom.map((i) => i.stage)).toContain('Planning');
   });
 
   it('flags dispatch-pending when assembly done but not dispatched', () => {
-    const items = derivePhaseStuckItems([so('1', 'open', { assemblyDone: '2026-05-20' })], thr, TODAY);
+    const items = derivePhaseStuckItems(
+      [so('1', 'open', { assemblyDone: '2026-05-20' })],
+      thr,
+      TODAY,
+    );
     expect(items.map((i) => i.stage)).toContain('Dispatch Pending');
   });
 });

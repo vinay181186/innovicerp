@@ -124,7 +124,10 @@ export interface FieldCascadeOptions<TForm extends FieldValues, TSource> {
   /** Look the source record up. Return null for "no such record" — that resets
    *  the dependents. Sync returns are applied immediately; async ones are
    *  dropped if a newer controller value has arrived meanwhile. */
-  readonly resolve: (value: string, signal: AbortSignal) => TSource | null | Promise<TSource | null>;
+  readonly resolve: (
+    value: string,
+    signal: AbortSignal,
+  ) => TSource | null | Promise<TSource | null>;
   /** The dependents to refill and reset, from `cascadeField`. */
   readonly fields: readonly CascadeField<TForm, TSource>[];
   /** Belt and braces: paths listed here are never written, whatever `fields`

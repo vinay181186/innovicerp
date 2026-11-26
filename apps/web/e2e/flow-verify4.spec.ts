@@ -15,8 +15,14 @@ test('T23+T20/22 blank numbers auto-generate', async ({ page }: { page: Page }) 
   await page.goto('/purchase-requests/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2800);
   await page.locator('#itemCodeText').fill('559918151000');
-  await page.locator('#itemName').fill('SPACER').catch(() => {});
-  await page.getByPlaceholder('Required if no vendor picked').fill('E2E-VEND').catch(() => {});
+  await page
+    .locator('#itemName')
+    .fill('SPACER')
+    .catch(() => {});
+  await page
+    .getByPlaceholder('Required if no vendor picked')
+    .fill('E2E-VEND')
+    .catch(() => {});
   await page.locator('input[type="number"]').first().fill('5'); // qty
   await page.screenshot({ path: `${SHOT}/v4-pr-filled.png`, fullPage: true });
   await page.getByRole('button', { name: /Save PR/i }).click();
@@ -24,25 +30,40 @@ test('T23+T20/22 blank numbers auto-generate', async ({ page }: { page: Page }) 
   await page.screenshot({ path: `${SHOT}/v4-pr-saved.png`, fullPage: true });
   const prBody = await page.locator('body').innerText();
   const pr = prBody.match(/IN-PR-\d+/);
-  log(Boolean(pr), 'T23 PR auto-generated IN-PR- on blank', pr ? pr[0] : `url=${page.url()} :: ${prBody.slice(0, 160).replace(/\n/g, ' ')}`);
+  log(
+    Boolean(pr),
+    'T23 PR auto-generated IN-PR- on blank',
+    pr ? pr[0] : `url=${page.url()} :: ${prBody.slice(0, 160).replace(/\n/g, ' ')}`,
+  );
   if (!pr) return;
 
   // Chain: create a PO from this PR with a blank number → IN-PO-.
   await page.goto(`/purchase-requests?search=${pr[0]}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await clickRowMenuItem(page, page.locator('table tbody tr', { hasText: pr[0] }).first(), /^Create PO/).catch(() => {});
+  await clickRowMenuItem(
+    page,
+    page.locator('table tbody tr', { hasText: pr[0] }).first(),
+    /^Create PO/,
+  ).catch(() => {});
   await page.waitForTimeout(3000);
   // Clear the PO number so the blank→auto path is exercised.
   const poNoInput = page.locator('input[value^="IN-PO-"]').first();
   await poNoInput.fill('').catch(() => {});
   await page.waitForTimeout(600);
-  await page.getByRole('button', { name: /Save PO/i }).click().catch(() => {});
+  await page
+    .getByRole('button', { name: /Save PO/i })
+    .click()
+    .catch(() => {});
   await page.waitForTimeout(4000);
   await page.screenshot({ path: `${SHOT}/v4-po-saved.png`, fullPage: true });
   const poBody = await page.locator('body').innerText();
   const po = poBody.match(/IN-PO-\d+/);
   const err = /validation failed/i.test(poBody);
-  log(Boolean(po) && !err, 'T20/22 PO auto-generated IN-PO- on blank (no validation error)', po ? po[0] : `err=${err} url=${page.url()}`);
+  log(
+    Boolean(po) && !err,
+    'T20/22 PO auto-generated IN-PO- on blank (no validation error)',
+    po ? po[0] : `err=${err} url=${page.url()}`,
+  );
 });
 
 // T10 + T12 — surface confirm: PO form vendor shows code+name; DC form auto-numbers
@@ -52,10 +73,18 @@ test('T10/T12 form surfaces', async ({ page }: { page: Page }) => {
   await page.waitForTimeout(2500);
   // T12: open a DC create needs a poId; just confirm the doc-number field type exists
   // via the list "New DC" affordance is out of scope — assert the module loads.
-  log(true, 'T12 DC auto-number wired (DocNumberInput type=delivery_challan)', 'code-confirmed + list loads');
+  log(
+    true,
+    'T12 DC auto-number wired (DocNumberInput type=delivery_challan)',
+    'code-confirmed + list loads',
+  );
   await page.goto('/qc-call-register', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2000);
-  log(true, 'T10 PO vendor code+name', 'code-confirmed at from-pr.tsx:180 / purchase-order-form.tsx:252');
+  log(
+    true,
+    'T10 PO vendor code+name',
+    'code-confirmed at from-pr.tsx:180 / purchase-order-form.tsx:252',
+  );
 });
 
 // T13 — DC create form: date is now required (guarded)
@@ -70,10 +99,18 @@ test('T13 DC date required', async ({ page }: { page: Page }) => {
     await clickRowMenuItem(page, dcRow, /^Create DC/);
     await page.waitForTimeout(3000);
     await page.screenshot({ path: `${SHOT}/v4-dc-create.png`, fullPage: true });
-    const dateReq = await page.getByText(/DC Date/i).first().innerText().catch(() => '');
+    const dateReq = await page
+      .getByText(/DC Date/i)
+      .first()
+      .innerText()
+      .catch(() => '');
     const hasReqMark = /★/.test(dateReq);
     log(hasReqMark, 'T13 DC create — date marked required', `label="${dateReq}"`);
   } else {
-    log(true, 'T13 DC create — date guard deployed (no JW PO with Create-DC visible now)', 'behavioral DC save proven earlier (IN-DC-00031)');
+    log(
+      true,
+      'T13 DC create — date guard deployed (no JW PO with Create-DC visible now)',
+      'behavioral DC save proven earlier (IN-DC-00031)',
+    );
   }
 });

@@ -16,10 +16,22 @@ test('T15 planning header item', async ({ page }: { page: Page }) => {
   await page.waitForTimeout(2500);
   await page.getByPlaceholder(/Search SO/i).fill('IN-SO-00551');
   await page.waitForTimeout(1500);
-  await page.getByText('IN-SO-00551', { exact: true }).first().click().catch(() => {});
+  await page
+    .getByText('IN-SO-00551', { exact: true })
+    .first()
+    .click()
+    .catch(() => {});
   await page.waitForTimeout(2500);
-  const hdr = await page.locator('.section-hdr').first().innerText().catch(() => '');
-  log(/SPACER|559918151000/i.test(hdr), 'T15 planning header shows item', `hdr="${hdr.replace(/\n/g, ' ')}"`);
+  const hdr = await page
+    .locator('.section-hdr')
+    .first()
+    .innerText()
+    .catch(() => '');
+  log(
+    /SPACER|559918151000/i.test(hdr),
+    'T15 planning header shows item',
+    `hdr="${hdr.replace(/\n/g, ' ')}"`,
+  );
 });
 
 // T33 — Job Queue shows "Start" for a not-started op (not "Log Op")
@@ -31,7 +43,9 @@ test('T33 job queue Start', async ({ page }: { page: Page }) => {
   // count its "Start Operation" / "Complete" item, then close it again.
   let starts = 0;
   let logs = 0;
-  const rows = page.locator('table tbody tr').filter({ has: page.getByRole('button', { name: 'Actions' }) });
+  const rows = page
+    .locator('table tbody tr')
+    .filter({ has: page.getByRole('button', { name: 'Actions' }) });
   const n = Math.min(await rows.count(), 30);
   for (let i = 0; i < n; i += 1) {
     await openRowMenu(page, rows.nth(i));
@@ -39,7 +53,11 @@ test('T33 job queue Start', async ({ page }: { page: Page }) => {
     logs += await page.getByRole('menuitem', { name: /^Complete/ }).count();
     await closeRowMenu(page);
   }
-  log(starts > 0, 'T33 job queue offers Start for not-started ops', `starts=${starts} logs=${logs}`);
+  log(
+    starts > 0,
+    'T33 job queue offers Start for not-started ops',
+    `starts=${starts} logs=${logs}`,
+  );
 });
 
 // T31 — QC Call Register loads with a pending list (default timestamp sort)
@@ -48,7 +66,11 @@ test('T31 QC register', async ({ page }: { page: Page }) => {
   await page.goto('/qc-call-register', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4000);
   const pendingHdr = await page.getByText(/QC Pending Calls/i).count();
-  log(pendingHdr > 0, 'T31 QC register pending pane renders', `(default sort now qc_call_date DESC — server-verified)`);
+  log(
+    pendingHdr > 0,
+    'T31 QC register pending pane renders',
+    `(default sort now qc_call_date DESC — server-verified)`,
+  );
 });
 
 // T32a/b — Edit Job Card: machine SearchableSelect works + OSP op shows badge
@@ -57,12 +79,24 @@ test('T32a/b edit JC machine + OSP badge', async ({ page }: { page: Page }) => {
   // Reach the JC edit page via the JC list.
   await page.goto('/job-cards', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await page.getByText('IN-JC-26-00059', { exact: true }).first().click().catch(() => {});
+  await page
+    .getByText('IN-JC-26-00059', { exact: true })
+    .first()
+    .click()
+    .catch(() => {});
   await page.waitForTimeout(2500);
   // On the JC status/detail, click Edit.
-  await page.getByRole('link', { name: /edit/i }).first().click().catch(async () => {
-    await page.getByRole('button', { name: /edit/i }).first().click().catch(() => {});
-  });
+  await page
+    .getByRole('link', { name: /edit/i })
+    .first()
+    .click()
+    .catch(async () => {
+      await page
+        .getByRole('button', { name: /edit/i })
+        .first()
+        .click()
+        .catch(() => {});
+    });
   await page.waitForTimeout(3000);
   await page.screenshot({
     path: 'C:/Users/Asus/AppData/Local/Temp/claude/C--Innovic-projects-innovic-erp-innovicerp/30277fb2-021d-4e86-a944-eccf9a952b2d/scratchpad/verify-jc-edit.png',
@@ -75,7 +109,11 @@ test('T32a/b edit JC machine + OSP badge', async ({ page }: { page: Page }) => {
   // not a bare datalist input — click a process-op machine cell and type.
   const machInput = page.getByPlaceholder(/🔍 Machine/i).first();
   const hasSearchable = await machInput.count();
-  log(hasSearchable > 0, 'T32a machine picker is SearchableSelect', `inputs=${hasSearchable} (url=${page.url()})`);
+  log(
+    hasSearchable > 0,
+    'T32a machine picker is SearchableSelect',
+    `inputs=${hasSearchable} (url=${page.url()})`,
+  );
 });
 
 // T23 — create a PR with a BLANK number → auto-generates IN-PR-#####
@@ -91,5 +129,13 @@ test('T23 PR auto-number', async ({ page }: { page: Page }) => {
   const hint = await page.getByText(/Leave blank to auto-generate/i).count();
   log(hint > 0, 'T23 PR form shows auto-generate hint (fix deployed)', `route=${page.url()}`);
   // eslint-disable-next-line no-console
-  console.log('T23 form labels:', JSON.stringify(await page.locator('label').allInnerTexts().catch(() => [])));
+  console.log(
+    'T23 form labels:',
+    JSON.stringify(
+      await page
+        .locator('label')
+        .allInnerTexts()
+        .catch(() => []),
+    ),
+  );
 });

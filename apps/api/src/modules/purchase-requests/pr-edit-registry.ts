@@ -94,7 +94,12 @@ export const prEditRegistryEntry: DocEditRegistryEntry = {
     if (i.operation !== undefined) out['operation'] = i.operation ?? null;
     if (i.remarks !== undefined) out['remarks'] = i.remarks ?? null;
     if (i.vendorId !== undefined || i.vendorCodeText !== undefined) {
-      out['vendor'] = await vendorCodeOf(tx, companyId, i.vendorId ?? null, i.vendorCodeText ?? null);
+      out['vendor'] = await vendorCodeOf(
+        tx,
+        companyId,
+        i.vendorId ?? null,
+        i.vendorCodeText ?? null,
+      );
     }
     // Money field only when the actor may see prices — a price-blind payload
     // carries a zod default that would otherwise read as an Est. Rate change.

@@ -55,8 +55,26 @@ export function inrFormat(num: number): string {
 
 // ── Amount in words, Indian system (legacy numWords L25950, verbatim) ──
 const ONES = [
-  '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven',
-  'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen',
+  '',
+  'One',
+  'Two',
+  'Three',
+  'Four',
+  'Five',
+  'Six',
+  'Seven',
+  'Eight',
+  'Nine',
+  'Ten',
+  'Eleven',
+  'Twelve',
+  'Thirteen',
+  'Fourteen',
+  'Fifteen',
+  'Sixteen',
+  'Seventeen',
+  'Eighteen',
+  'Nineteen',
 ];
 const TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
 
@@ -81,7 +99,8 @@ function numWords(num: number): string {
   }
   if (num > 0) {
     if (num < 20) s += ONES[num] ?? '';
-    else s += (TENS[Math.floor(num / 10)] ?? '') + (num % 10 > 0 ? ' ' + (ONES[num % 10] ?? '') : '');
+    else
+      s += (TENS[Math.floor(num / 10)] ?? '') + (num % 10 > 0 ? ' ' + (ONES[num % 10] ?? '') : '');
   }
   return s.trim();
 }
@@ -223,8 +242,8 @@ export function buildDocHtml(model: DocPrintModel): string {
     .join('');
 
   const itemHead = priced
-      ? '<th style="width:44px;text-align:center">Sr No.</th><th style="width:130px">Item Code</th><th>Item Name</th><th style="text-align:center">Qty</th><th style="text-align:center">UOM</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th>'
-      : '<th style="width:44px;text-align:center">Sr No.</th><th style="width:130px">Item Code</th><th>Item Name</th><th style="text-align:center">Qty</th><th style="text-align:center">UOM</th>';
+    ? '<th style="width:44px;text-align:center">Sr No.</th><th style="width:130px">Item Code</th><th>Item Name</th><th style="text-align:center">Qty</th><th style="text-align:center">UOM</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th>'
+    : '<th style="width:44px;text-align:center">Sr No.</th><th style="width:130px">Item Code</th><th>Item Name</th><th style="text-align:center">Qty</th><th style="text-align:center">UOM</th>';
 
   const legacyRows = lines
     .map((l, i) => {
@@ -314,7 +333,6 @@ export function buildDocHtml(model: DocPrintModel): string {
     </div>
     ${letterheadFooterHtml({ addressLines: company.addressLines, email: company.email, phone: company.phone })}
   </div>`;
-
 
   return `
   ${opts?.testBanner ? '<div class="no-print test-banner">ⓘ TEST PRINT — Sample data shown. Real data is substituted on actual prints.</div>' : ''}

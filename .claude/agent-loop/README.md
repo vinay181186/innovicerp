@@ -3,14 +3,14 @@
 This folder is the **git copy** of the agent-loop locks. The PC runs its own copy in
 `C:\Users\Asus\.claude\`. Git is the master: change it here first.
 
-| File here | Live copy on the PC |
-|---|---|
-| `hooks/erp-agent-guard.mjs` | `~/.claude/hooks/erp-agent-guard.mjs` |
-| `hooks/check-loop-block.mjs` | `~/.claude/hooks/check-loop-block.mjs` |
-| `settings-hooks.json` | the `"hooks"` part of `~/.claude/settings.json` |
-| `CLAUDE-owner-rule.md` | the task-card / LOOP part of `~/.claude/CLAUDE.md` |
-| `tests/guardtest.mjs` | — (56 checks) |
-| `docs/*.pdf` | reading guides (`make_flow_pdf.py` builds the full-flow PDF) |
+| File here                    | Live copy on the PC                                          |
+| ---------------------------- | ------------------------------------------------------------ |
+| `hooks/erp-agent-guard.mjs`  | `~/.claude/hooks/erp-agent-guard.mjs`                        |
+| `hooks/check-loop-block.mjs` | `~/.claude/hooks/check-loop-block.mjs`                       |
+| `settings-hooks.json`        | the `"hooks"` part of `~/.claude/settings.json`              |
+| `CLAUDE-owner-rule.md`       | the task-card / LOOP part of `~/.claude/CLAUDE.md`           |
+| `tests/guardtest.mjs`        | — (56 checks)                                                |
+| `docs/*.pdf`                 | reading guides (`make_flow_pdf.py` builds the full-flow PDF) |
 
 The agent rules themselves are in `.claude/agents/` (STEP 0b, `_house-rules.md`).
 
@@ -29,6 +29,7 @@ The agent rules themselves are in `.claude/agents/` (STEP 0b, `_house-rules.md`)
 diff .claude/agent-loop/hooks/erp-agent-guard.mjs ~/.claude/hooks/erp-agent-guard.mjs
 diff .claude/agent-loop/hooks/check-loop-block.mjs ~/.claude/hooks/check-loop-block.mjs
 ```
+
 No output = same.
 
 ## New PC

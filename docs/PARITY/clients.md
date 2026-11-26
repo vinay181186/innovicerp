@@ -16,12 +16,12 @@
 
 ## 1. Section header + toolbar
 
-| # | Element | Legacy (L12984–12988) | React | Match? | Tag |
-|---|---|---|---|---|---|
-| 1 | Header label | `Client Master` | (verify) | ✅ | — |
-| 2 | Search input | `🔍 Search client, code…` 200px | ✅ React has search | ✅ | — |
-| 3 | + New Client button | `addClient()` modal | ✅ React → `/clients/new` route | ✅ | — |
-| 4 | Status filter (active/inactive) | not in legacy | ⚠️ EXTRA IN REACT | **DELTA** (workable; legacy soft-deletes via Trash) |
+| #   | Element                         | Legacy (L12984–12988)           | React                           | Match?                                              | Tag |
+| --- | ------------------------------- | ------------------------------- | ------------------------------- | --------------------------------------------------- | --- |
+| 1   | Header label                    | `Client Master`                 | (verify)                        | ✅                                                  | —   |
+| 2   | Search input                    | `🔍 Search client, code…` 200px | ✅ React has search             | ✅                                                  | —   |
+| 3   | + New Client button             | `addClient()` modal             | ✅ React → `/clients/new` route | ✅                                                  | —   |
+| 4   | Status filter (active/inactive) | not in legacy                   | ⚠️ EXTRA IN REACT               | **DELTA** (workable; legacy soft-deletes via Trash) |
 
 ---
 
@@ -29,14 +29,14 @@
 
 Legacy: **6 columns** in order:
 
-| # | header | data | React | Match? | Tag |
-|---|---|---|---|---|---|
-| 1 | Code | `cl.code` cyan code | ✅ | ✅ | — |
-| 2 | Client Name | `cl.name` bold | ✅ | ✅ | — |
-| 3 | Address | `cl.address` text2 11px | ✅ | ✅ | — |
-| 4 | Contact | `cl.contact` text2 11px | ✅ | ✅ | — |
-| 5 | Email | `cl.email` text2 11px | ✅ | ✅ | — |
-| 6 | (Actions) | Edit + Del buttons | ✅ (verify per-row links) | ✅ | — |
+| #   | header      | data                    | React                     | Match? | Tag |
+| --- | ----------- | ----------------------- | ------------------------- | ------ | --- |
+| 1   | Code        | `cl.code` cyan code     | ✅                        | ✅     | —   |
+| 2   | Client Name | `cl.name` bold          | ✅                        | ✅     | —   |
+| 3   | Address     | `cl.address` text2 11px | ✅                        | ✅     | —   |
+| 4   | Contact     | `cl.contact` text2 11px | ✅                        | ✅     | —   |
+| 5   | Email       | `cl.email` text2 11px   | ✅                        | ✅     | —   |
+| 6   | (Actions)   | Edit + Del buttons      | ✅ (verify per-row links) | ✅     | —   |
 
 This file is a known good port — minimal gaps.
 
@@ -45,6 +45,7 @@ This file is a known good port — minimal gaps.
 ## 3. Form fields (clientForm L12996–13005)
 
 Legacy form has 5 fields:
+
 - Client Code ★ (e.g. CLI-001)
 - Client Name ★ (full company name) — full-width
 - Address — full-width
@@ -70,17 +71,21 @@ Matching outright (claimed): ~6 cols + 5 fields
 Missing: 1 quick-add helper
 
 ### BLOCKERs
-*(none — this page is largely at parity.)*
+
+_(none — this page is largely at parity.)_
 
 ### DELTAs
+
 1. **Quick-add Client from SO form** — would speed up first-time SO creation; defer.
 2. **Active/Inactive status filter** (React extra) — keep; useful for managing dormant clients.
 
 ### POLISH
-*(none — this page is largely visually faithful.)*
+
+_(none — this page is largely visually faithful.)_
 
 ---
 
 **Sign-off needed:**
+
 - Verify visually that the React form has the same 5 fields with the same labels (Code, Name, Address, Contact Person, Email) and same star-marked requireds.
 - Decide if the Quick-add path is worth porting now or later (recommend: defer to SO-1b).

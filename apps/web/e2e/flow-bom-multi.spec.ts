@@ -1,5 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
-import { clickRowMenuItem, findRowWithMenuItem, planningLineRows, EDIT_PLAN_ITEM, EXECUTE_PLAN_ITEM, clickPlanMenuItem, expandPlanningRows, hasPlanMenuItem } from './row-menu';
+import {
+  clickRowMenuItem,
+  findRowWithMenuItem,
+  planningLineRows,
+  EDIT_PLAN_ITEM,
+  EXECUTE_PLAN_ITEM,
+  clickPlanMenuItem,
+  expandPlanningRows,
+  hasPlanMenuItem,
+} from './row-menu';
 import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 import { bomParentItemName, bomPartItemName, bomPartQty, bomPartType } from './bom-form';
 
@@ -146,8 +155,19 @@ async function bannerText(page: Page): Promise<string> {
   ]) {
     const n = Math.min(await loc.count(), 12);
     for (let i = 0; i < n; i++) {
-      if (!(await loc.nth(i).isVisible().catch(() => false))) continue;
-      const t = (await loc.nth(i).innerText().catch(() => '')).trim();
+      if (
+        !(await loc
+          .nth(i)
+          .isVisible()
+          .catch(() => false))
+      )
+        continue;
+      const t = (
+        await loc
+          .nth(i)
+          .innerText()
+          .catch(() => '')
+      ).trim();
       if (t.length > 8 && !/^Cancel$/i.test(t)) return t.replace(/\s+/g, ' ');
     }
   }
@@ -178,8 +198,9 @@ async function readPlanCards(page: Page): Promise<PlanCard[]> {
     const code = ((await spans.nth(i).textContent()) ?? '').trim();
     const text = ((await spans.nth(i).locator('xpath=..').innerText()) ?? '').replace(/\s+/g, ' ');
     const kind = /\bBuy\b/.test(text) ? 'Buy' : /\bOSP\b/.test(text) ? 'OSP' : 'Mfg';
-    const status = (text.match(/In Planning|Planned|JC Created|PR Created|In Production|Complete/) ??
-      ['?'])[0];
+    const status = (text.match(
+      /In Planning|Planned|JC Created|PR Created|In Production|Complete/,
+    ) ?? ['?'])[0];
     out.push({ code, kind, status, text });
   }
   return out;
@@ -206,7 +227,10 @@ async function openSoInPlanning(page: Page): Promise<void> {
   }
   await page.goto('/planning', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await page.getByPlaceholder(/Search/i).first().fill(state.soCode);
+  await page
+    .getByPlaceholder(/Search/i)
+    .first()
+    .fill(state.soCode);
   await page.waitForTimeout(2500);
   const link = page.getByText(state.soCode).first();
   if ((await link.count()) === 0) {
@@ -224,12 +248,23 @@ async function openSoInPlanning(page: Page): Promise<void> {
 
 test('@bommulti 01 — BOM with four children across three types', async ({ page }) => {
   if (state.bomNo) {
-    record({ step: '01', doc: 'BOM', code: state.bomNo, qty: '—', status: 'reused', note: 'E2E_M_BOM' });
+    record({
+      step: '01',
+      doc: 'BOM',
+      code: state.bomNo,
+      qty: '—',
+      status: 'reused',
+      note: 'E2E_M_BOM',
+    });
     return;
   }
   await page.goto('/bom-masters/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  state.bomNo = await page.locator('input[value^="BOM-"]').first().inputValue().catch(() => '');
+  state.bomNo = await page
+    .locator('input[value^="BOM-"]')
+    .first()
+    .inputValue()
+    .catch(() => '');
   await page.getByPlaceholder(/Hydraulic Press Assembly/i).fill(`${TAG} multi`);
 
   await pickInto(page, 'bom-parent-item', PARENT);
@@ -248,7 +283,9 @@ test('@bommulti 01 — BOM with four children across three types', async ({ page
     await bomPartType(page, idx).selectOption(c.type);
     await expect(bomPartType(page, idx)).toHaveValue(c.type);
   }
-  await expect(page.getByText(`${CHILDREN.length} of ${CHILDREN.length} lines filled`)).toBeVisible();
+  await expect(
+    page.getByText(`${CHILDREN.length} of ${CHILDREN.length} lines filled`),
+  ).toBeVisible();
 
   await page.getByRole('button', { name: /Save BOM/i }).click();
   await page.waitForTimeout(5000);
@@ -268,7 +305,14 @@ test('@bommulti 01 — BOM with four children across three types', async ({ page
 
 test('@bommulti 02 — equipment SO, BOM attaches itself', async ({ page }) => {
   if (state.soCode) {
-    record({ step: '02', doc: 'SO', code: state.soCode, qty: `${SO_QTY}`, status: 'reused', note: 'E2E_M_SO' });
+    record({
+      step: '02',
+      doc: 'SO',
+      code: state.soCode,
+      qty: `${SO_QTY}`,
+      status: 'reused',
+      note: 'E2E_M_SO',
+    });
     return;
   }
   await page.goto('/sales-orders/new', { waitUntil: 'domcontentloaded' });
@@ -292,7 +336,10 @@ test('@bommulti 02 — equipment SO, BOM attaches itself', async ({ page }) => {
 
   const nums = page.locator('input[type="number"]:visible');
   await nums.nth(0).fill(String(SO_QTY));
-  await nums.nth(1).fill(String(RATE)).catch(() => {});
+  await nums
+    .nth(1)
+    .fill(String(RATE))
+    .catch(() => {});
   await fillInternalSoNo(page);
   await page.getByRole('button', { name: /Save SO/i }).click();
   await page.waitForTimeout(6000);
@@ -315,7 +362,14 @@ test('@bommulti 03 — explode into one plan per child', async ({ page }) => {
   // BOM Planning is an item in the SO line's ⋯ menu ("BOM Planning (n)").
   const bomRow = await findRowWithMenuItem(page, planningLineRows(page), /^BOM Planning/);
   if (!bomRow) {
-    record({ step: '03', doc: 'Plans', code: '—', qty: '—', status: 'BLOCKED', note: 'no BOM Planning button' });
+    record({
+      step: '03',
+      doc: 'Plans',
+      code: '—',
+      qty: '—',
+      status: 'BLOCKED',
+      note: 'no BOM Planning button',
+    });
     return;
   }
   await clickRowMenuItem(page, bomRow, /^BOM Planning/);
@@ -345,7 +399,10 @@ test('@bommulti 03 — explode into one plan per child', async ({ page }) => {
     await page.waitForTimeout(500);
   }
 
-  await page.getByRole('button', { name: /Create|Plan/i }).last().click();
+  await page
+    .getByRole('button', { name: /Create|Plan/i })
+    .last()
+    .click();
   await page.waitForTimeout(6000);
   const err = await bannerText(page);
   if (err) log(`planning said: "${err}"`);
@@ -386,7 +443,14 @@ test('@bommulti 04 — route + execute the manufacture plans into job cards', as
         await clickPlanMenuItem(page, p.code, EXECUTE_PLAN_ITEM);
         await page.waitForTimeout(7000);
       } else {
-        record({ step: '04', doc: 'Job Card', code: p.code, qty: '—', status: 'BLOCKED', note: `${p.code} offers neither Edit nor Execute (status ${p.status})` });
+        record({
+          step: '04',
+          doc: 'Job Card',
+          code: p.code,
+          qty: '—',
+          status: 'BLOCKED',
+          note: `${p.code} offers neither Edit nor Execute (status ${p.status})`,
+        });
       }
       continue;
     }
@@ -409,7 +473,14 @@ test('@bommulti 04 — route + execute the manufacture plans into job cards', as
     if (saveErr) log(`Save Plan on ${p.code} said: "${saveErr}"`);
 
     if (!(await planCanDo(page, p.code, EXECUTE_PLAN_ITEM))) {
-      record({ step: '04', doc: 'Job Card', code: p.code, qty: '—', status: 'BLOCKED', note: `no Execute after Save Plan: ${await bannerText(page)}` });
+      record({
+        step: '04',
+        doc: 'Job Card',
+        code: p.code,
+        qty: '—',
+        status: 'BLOCKED',
+        note: `no Execute after Save Plan: ${await bannerText(page)}`,
+      });
       continue;
     }
     await clickPlanMenuItem(page, p.code, EXECUTE_PLAN_ITEM);
@@ -438,7 +509,14 @@ test('@bommulti 05 — JOB CARD EDIT: qty, add op, remove op', async ({ page }) 
   await page.waitForTimeout(3000);
   const editLink = page.getByRole('link', { name: /Edit/i }).first();
   if ((await editLink.count()) === 0) {
-    record({ step: '05', doc: 'JC edit', code: jc, qty: '—', status: 'BLOCKED', note: 'no Edit link on the job card' });
+    record({
+      step: '05',
+      doc: 'JC edit',
+      code: jc,
+      qty: '—',
+      status: 'BLOCKED',
+      note: 'no Edit link on the job card',
+    });
     return;
   }
   await editLink.click();
@@ -488,8 +566,12 @@ test('@bommulti 05 — JOB CARD EDIT: qty, add op, remove op', async ({ page }) 
   await page.locator('input[type="number"]').first().fill(over);
   const overErr = await save();
   const overRefused = /BOM requirement|SO Line balance/i.test(overErr);
-  notes.push(`qty ${before}→${over}: ${overRefused ? `refused — "${overErr.slice(0, 80)}"` : 'ALLOWED (should not be)'}`);
-  log(`JC edit — over-qty ${over}: ${overRefused ? 'refused as it should be' : 'WRONGLY ALLOWED'} — ${overErr}`);
+  notes.push(
+    `qty ${before}→${over}: ${overRefused ? `refused — "${overErr.slice(0, 80)}"` : 'ALLOWED (should not be)'}`,
+  );
+  log(
+    `JC edit — over-qty ${over}: ${overRefused ? 'refused as it should be' : 'WRONGLY ALLOWED'} — ${overErr}`,
+  );
 
   // Put the qty back so the rest of the chain is unaffected.
   await openEdit();
@@ -501,7 +583,10 @@ test('@bommulti 05 — JOB CARD EDIT: qty, add op, remove op', async ({ page }) 
   const opsBefore = await opNames();
   await page.getByRole('button', { name: /\+ Add Op$/ }).click();
   await page.waitForTimeout(1200);
-  await page.getByPlaceholder(/Operation name/i).last().fill(EXTRA);
+  await page
+    .getByPlaceholder(/Operation name/i)
+    .last()
+    .fill(EXTRA);
   const mach = page.locator('input[role="combobox"]').last();
   await mach.click();
   await mach.fill('CNC');
@@ -516,7 +601,9 @@ test('@bommulti 05 — JOB CARD EDIT: qty, add op, remove op', async ({ page }) 
   notes.push(
     `add op: ${addOk ? 'saved' : `NOT saved (${opsBefore.length}→${opsAfterAdd.length} ops${addErr ? `; ${addErr}` : ''})`}`,
   );
-  log(`JC edit — add op: ${opsBefore.length} → ${opsAfterAdd.length} ops [${opsAfterAdd.join(' | ')}] → ${addOk ? 'OK' : 'FAILED'}`);
+  log(
+    `JC edit — add op: ${opsBefore.length} → ${opsAfterAdd.length} ops [${opsAfterAdd.join(' | ')}] → ${addOk ? 'OK' : 'FAILED'}`,
+  );
 
   // (c) Removing that operation persists — only meaningful if (b) worked.
   if (addOk) {
@@ -565,8 +652,14 @@ test('@bommulti 06 — produce and QC both manufacture children', async ({ page 
     if ((await processOp.count()) > 0) {
       await processOp.click();
       await page.waitForTimeout(1500);
-      await page.getByRole('spinbutton').first().fill(String(qty || 1));
-      await page.getByPlaceholder(/Operator name/i).fill('E2E Auto').catch(() => {});
+      await page
+        .getByRole('spinbutton')
+        .first()
+        .fill(String(qty || 1));
+      await page
+        .getByPlaceholder(/Operator name/i)
+        .fill('E2E Auto')
+        .catch(() => {});
       await page.getByRole('button', { name: /^✓\s*Complete$/ }).click();
       await page.waitForTimeout(4000);
     }
@@ -574,7 +667,10 @@ test('@bommulti 06 — produce and QC both manufacture children', async ({ page 
     if ((await qcOp.count()) > 0) {
       await qcOp.click();
       await page.waitForTimeout(1800);
-      await page.getByRole('spinbutton').first().fill(String(qty || 1));
+      await page
+        .getByRole('spinbutton')
+        .first()
+        .fill(String(qty || 1));
       await page.getByRole('button', { name: /Submit Inspection/i }).click();
       await page.waitForTimeout(4500);
     }
@@ -657,7 +753,9 @@ test('@bommulti 08 — PR → PO', async ({ page }) => {
     const mkLink = page.getByRole('link', { name: /Create PO|Convert to PO|Make PO/i }).first();
     const target = (await mk.count()) > 0 ? mk : (await mkLink.count()) > 0 ? mkLink : null;
     if (!target) {
-      log(`no "create PO" control on ${pr}: ${(await page.locator('body').innerText()).replace(/\s+/g, ' ').slice(0, 260)}`);
+      log(
+        `no "create PO" control on ${pr}: ${(await page.locator('body').innerText()).replace(/\s+/g, ' ').slice(0, 260)}`,
+      );
       continue;
     }
     await target.click();
@@ -697,7 +795,14 @@ test('@bommulti 09 — dispatch what the assembly can actually ship', async ({ p
     }
   }
   if (!picked) {
-    record({ step: '09', doc: 'Dispatch', code: '—', qty: '—', status: 'BLOCKED', note: `${state.soCode} not offered` });
+    record({
+      step: '09',
+      doc: 'Dispatch',
+      code: '—',
+      qty: '—',
+      status: 'BLOCKED',
+      note: `${state.soCode} not offered`,
+    });
     return;
   }
   await page.waitForTimeout(2500);
@@ -762,7 +867,13 @@ test('@bommulti 10 — invoice', async ({ page }) => {
   await page.waitForTimeout(1500);
   const nums = page.locator('input[type="number"]');
   for (let k = 0; k < (await nums.count()); k++) {
-    if (!(await nums.nth(k).isEditable().catch(() => false))) continue;
+    if (
+      !(await nums
+        .nth(k)
+        .isEditable()
+        .catch(() => false))
+    )
+      continue;
     if ((await nums.nth(k).inputValue()) === '') {
       await nums.nth(k).fill(String(SO_QTY));
       break;

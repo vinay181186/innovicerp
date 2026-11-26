@@ -104,7 +104,11 @@ async function pickActual(page: Page, code: string): Promise<void> {
   const input = page.locator('#opf-actual-machine');
   await input.click();
   await input.fill(code);
-  const opt = page.locator('[role="option"]').filter({ hasText: code }).filter({ hasNotText: /Loading/i }).first();
+  const opt = page
+    .locator('[role="option"]')
+    .filter({ hasText: code })
+    .filter({ hasNotText: /Loading/i })
+    .first();
   await opt.waitFor({ state: 'visible', timeout: 45_000 });
   await opt.click();
   await page.waitForTimeout(400);
@@ -113,32 +117,49 @@ async function pickActual(page: Page, code: string): Promise<void> {
 test('planned vs actual machine part 2: log, stop, verify', async ({ page }) => {
   test.setTimeout(900_000);
   void PART2;
-  if (!process.env.AM_WRITE) { /* verification-only rerun: the Log/Stop writes already landed */ }
-  else {
-  // ── 5. Log 4 on the running session ────────────────────────────────────
+  if (!process.env.AM_WRITE) {
+    /* verification-only rerun: the Log/Stop writes already landed */
+  } else {
+    // ── 5. Log 4 on the running session ────────────────────────────────────
     await loadJc(page, JC);
     await clickRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Complete/);
     await page.locator('#opf-machine').waitFor({ timeout: 30_000 });
-    await step(page, 'Log popup', `${JC} → ✚ Log`, `Machine box reads ${ACTUAL} with "planned ${PLANNED}"`, async () => {
-      const m = await page.locator('#opf-machine').inputValue();
-      const dlg = await page.locator('[role="dialog"]').first().innerText();
-      if (m !== ACTUAL) throw new Error(`machine box reads "${m}"`);
-      if (!new RegExp(`Planned Machine\\s*${PLANNED}`).test(dlg)) throw new Error('planned note missing');
-      return `Machine ${m} · planned ${PLANNED} shown`;
-    });
+    await step(
+      page,
+      'Log popup',
+      `${JC} → ✚ Log`,
+      `Machine box reads ${ACTUAL} with "planned ${PLANNED}"`,
+      async () => {
+        const m = await page.locator('#opf-machine').inputValue();
+        const dlg = await page.locator('[role="dialog"]').first().innerText();
+        if (m !== ACTUAL) throw new Error(`machine box reads "${m}"`);
+        if (!new RegExp(`Planned Machine\\s*${PLANNED}`).test(dlg))
+          throw new Error('planned note missing');
+        return `Machine ${m} · planned ${PLANNED} shown`;
+      },
+    );
     await fillEntryHeader(page, 'E2E Operator');
     await page.locator('#opf-qty').fill(String(LOG_QTY));
     await page.locator('#opf-rej').fill('0');
-    await page.getByRole('dialog').getByRole('button', { name: /^✓\s*Complete$/ }).click();
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: /^✓\s*Complete$/ })
+      .click();
     await popupGone(page);
-    await step(page, 'Log 4', `Qty ${LOG_QTY} → ✓ Submit completion`, `${LOG_QTY} pcs booked on ${ACTUAL}; session still running`, async () => {
-      await loadJc(page, JC);
-      if (!(await hasRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Complete/))) {
-        throw new Error('session ended unexpectedly');
-      }
-      return 'Entry accepted; row still offers Log (session open)';
-    });
-  
+    await step(
+      page,
+      'Log 4',
+      `Qty ${LOG_QTY} → ✓ Submit completion`,
+      `${LOG_QTY} pcs booked on ${ACTUAL}; session still running`,
+      async () => {
+        await loadJc(page, JC);
+        if (!(await hasRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Complete/))) {
+          throw new Error('session ended unexpectedly');
+        }
+        return 'Entry accepted; row still offers Log (session open)';
+      },
+    );
+
     // ── 6. Stop with 3 ───────────────────────────────────────────────────────
     await clickRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Complete/);
     await page.locator('#opf-qty').waitFor({ timeout: 30_000 });
@@ -147,41 +168,61 @@ test('planned vs actual machine part 2: log, stop, verify', async ({ page }) => 
     await page.locator('#opf-rej').fill('0');
     await page.getByRole('button', { name: /^Stop/ }).click();
     await popupGone(page);
-    await step(page, 'Stop 3', `Qty ${STOP_QTY} → ■ Stop`, `${STOP_QTY} pcs booked on ${ACTUAL}; ${ACTUAL} freed; row offers Start again`, async () => {
-      await loadJc(page, JC);
-      if (!(await hasRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Start Operation/))) {
-        throw new Error('row does not offer Start after stop');
-      }
-      return 'Stopped; row ⋯ offers Start Operation (3 pcs still available)';
-    });
-  
-  
+    await step(
+      page,
+      'Stop 3',
+      `Qty ${STOP_QTY} → ■ Stop`,
+      `${STOP_QTY} pcs booked on ${ACTUAL}; ${ACTUAL} freed; row offers Start again`,
+      async () => {
+        await loadJc(page, JC);
+        if (!(await hasRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Start Operation/))) {
+          throw new Error('row does not offer Start after stop');
+        }
+        return 'Stopped; row ⋯ offers Start Operation (3 pcs still available)';
+      },
+    );
   }
   // ── 7. Op Log shows the ACTUAL machine on every row ─────────────────────
   await page.goto(`/op-log?jcNo=${JC}`, { waitUntil: 'domcontentloaded' });
   // The test API can take 20 s+; wait for a REAL row (one that names the JC),
   // not the "Loading…" placeholder row.
-  await page.locator('table tbody tr').filter({ hasText: JC }).first().waitFor({ timeout: 120_000 });
+  await page
+    .locator('table tbody tr')
+    .filter({ hasText: JC })
+    .first()
+    .waitFor({ timeout: 120_000 });
   await page.waitForTimeout(800);
-  await step(page, 'Op Log', `Op Log → JC ${JC}`, `start / 4 / 3 rows all on ${ACTUAL}`, async () => {
-    const rows = await page.locator('table tbody tr').allInnerTexts();
-    // The machine tag is upper-cased by CSS; compare case-blind.
-    const mine = rows.filter((r) => r.toLowerCase().includes(ACTUAL));
-    if (mine.length < 3) throw new Error(`only ${mine.length} rows show ${ACTUAL}`);
-    return `${mine.length} rows carry ${ACTUAL}`;
-  });
+  await step(
+    page,
+    'Op Log',
+    `Op Log → JC ${JC}`,
+    `start / 4 / 3 rows all on ${ACTUAL}`,
+    async () => {
+      const rows = await page.locator('table tbody tr').allInnerTexts();
+      // The machine tag is upper-cased by CSS; compare case-blind.
+      const mine = rows.filter((r) => r.toLowerCase().includes(ACTUAL));
+      if (mine.length < 3) throw new Error(`only ${mine.length} rows show ${ACTUAL}`);
+      return `${mine.length} rows carry ${ACTUAL}`;
+    },
+  );
 
   // ── 8. Job Card page: planned machine + "made on" split ─────────────────
   await page.goto('/job-cards', { waitUntil: 'domcontentloaded' });
   await page.getByRole('link', { name: JC }).first().click();
   await page.locator('body').filter({ hasText: ACTUAL }).waitFor({ timeout: 120_000 });
   await page.waitForTimeout(1500);
-  await step(page, 'Job Card page', `Job Cards → ${JC}`, `Op 1 still shows planned ${PLANNED}; machine split lists ${ACTUAL} ${LOG_QTY + STOP_QTY}`, async () => {
-    const body = await page.locator('body').innerText();
-    const lc = body.toLowerCase();
-    if (!lc.includes(PLANNED)) throw new Error(`planned ${PLANNED} not shown`);
-    if (!lc.includes(ACTUAL)) throw new Error(`actual ${ACTUAL} not shown`);
-    const made = new RegExp(`${ACTUAL}[^\\n]{0,12}${LOG_QTY + STOP_QTY}`).test(lc);
-    return `Planned ${PLANNED} present; ${ACTUAL} present; "${ACTUAL} ${LOG_QTY + STOP_QTY}" ${made ? 'found' : 'not matched verbatim (see screenshot)'}`;
-  });
+  await step(
+    page,
+    'Job Card page',
+    `Job Cards → ${JC}`,
+    `Op 1 still shows planned ${PLANNED}; machine split lists ${ACTUAL} ${LOG_QTY + STOP_QTY}`,
+    async () => {
+      const body = await page.locator('body').innerText();
+      const lc = body.toLowerCase();
+      if (!lc.includes(PLANNED)) throw new Error(`planned ${PLANNED} not shown`);
+      if (!lc.includes(ACTUAL)) throw new Error(`actual ${ACTUAL} not shown`);
+      const made = new RegExp(`${ACTUAL}[^\\n]{0,12}${LOG_QTY + STOP_QTY}`).test(lc);
+      return `Planned ${PLANNED} present; ${ACTUAL} present; "${ACTUAL} ${LOG_QTY + STOP_QTY}" ${made ? 'found' : 'not matched verbatim (see screenshot)'}`;
+    },
+  );
 });

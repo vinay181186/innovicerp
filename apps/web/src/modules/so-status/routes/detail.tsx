@@ -17,7 +17,12 @@ function SoStatusPage(): React.JSX.Element {
   const { id } = soStatusDetailRoute.useParams();
   return (
     <div>
-      <Link to="/sales-orders/$id" params={{ id }} className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
+      <Link
+        to="/sales-orders/$id"
+        params={{ id }}
+        className="btn btn-ghost btn-sm"
+        style={{ marginBottom: 10 }}
+      >
         <ArrowLeft size={14} /> Back to SO detail
       </Link>
       <SoStatusDetailView soId={id} />

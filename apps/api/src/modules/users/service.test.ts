@@ -103,25 +103,25 @@ describe('users service', () => {
   });
 
   it('listUsers filters by search', async () => {
-    const result = await service.listUsers(
-      { search: 'viewer', limit: 50, offset: 0 },
-      admin,
-    );
+    const result = await service.listUsers({ search: 'viewer', limit: 50, offset: 0 }, admin);
     expect(result.items.some((u) => u.email === VIEWER_EMAIL)).toBe(true);
   });
 
   it('listUsers filters by role', async () => {
-    const result = await service.listUsers(
-      { role: 'admin', limit: 50, offset: 0 },
-      admin,
-    );
+    const result = await service.listUsers({ role: 'admin', limit: 50, offset: 0 }, admin);
     expect(result.items.every((u) => u.role === 'admin')).toBe(true);
   });
 
   it('createUser is admin-only', async () => {
     await expect(
       service.createUser(
-        { email: ADD_TEST_EMAIL, password: 'password123', fullName: 'X', role: 'viewer', isActive: true },
+        {
+          email: ADD_TEST_EMAIL,
+          password: 'password123',
+          fullName: 'X',
+          role: 'viewer',
+          isActive: true,
+        },
         viewer,
       ),
     ).rejects.toBeInstanceOf(AuthorizationError);
@@ -130,7 +130,13 @@ describe('users service', () => {
   it('createUser rejects a duplicate email with ConflictError', async () => {
     await expect(
       service.createUser(
-        { email: ADMIN_EMAIL, password: 'password123', fullName: 'Dup', role: 'viewer', isActive: true },
+        {
+          email: ADMIN_EMAIL,
+          password: 'password123',
+          fullName: 'Dup',
+          role: 'viewer',
+          isActive: true,
+        },
         admin,
       ),
     ).rejects.toBeInstanceOf(ConflictError);
@@ -208,21 +214,21 @@ describe('users service', () => {
   });
 
   it('updateUser rejects self-demotion', async () => {
-    await expect(
-      service.updateUser(admin.id, { role: 'manager' }, admin),
-    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(service.updateUser(admin.id, { role: 'manager' }, admin)).rejects.toBeInstanceOf(
+      ValidationError,
+    );
   });
 
   it('updateUser rejects self-deactivation', async () => {
-    await expect(
-      service.updateUser(admin.id, { isActive: false }, admin),
-    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(service.updateUser(admin.id, { isActive: false }, admin)).rejects.toBeInstanceOf(
+      ValidationError,
+    );
   });
 
   it('updateUser blocked for non-admin caller', async () => {
-    await expect(
-      service.updateUser(viewer.id, { fullName: 'Hi' }, viewer),
-    ).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.updateUser(viewer.id, { fullName: 'Hi' }, viewer)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('setUserPassword blocked for non-admin caller', async () => {
@@ -233,7 +239,11 @@ describe('users service', () => {
 
   it('setUserPassword throws NotFoundError for unknown id (no Auth call)', async () => {
     await expect(
-      service.setUserPassword('00000000-0000-0000-0000-000000000000', { password: 'longenough123' }, admin),
+      service.setUserPassword(
+        '00000000-0000-0000-0000-000000000000',
+        { password: 'longenough123' },
+        admin,
+      ),
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 

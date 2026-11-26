@@ -1,7 +1,13 @@
 import type { RelatedItem } from '@innovic/shared';
 import { describe, expect, it } from 'vitest';
 import { distinctItems } from './related-items';
-import { buildTimeline, itemSection, masterSection, section, type RelatedRow } from './traceability';
+import {
+  buildTimeline,
+  itemSection,
+  masterSection,
+  section,
+  type RelatedRow,
+} from './traceability';
 
 const ID_A = '00000000-0000-4000-8000-00000000000a';
 const ID_B = '00000000-0000-4000-8000-00000000000b';

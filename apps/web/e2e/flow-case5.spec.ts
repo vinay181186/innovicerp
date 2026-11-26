@@ -10,8 +10,10 @@ import { clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './
 
 const docs: Record<string, string> = {};
 const guards: Record<string, string> = {};
-const log = makeLog(docs); const guard = makeGuard(guards);
-const RESULT = 'C:/Users/Asus/AppData/Local/Temp/claude/C--Innovic-projects-innovic-erp/e90daca8-13d8-4c6a-9ffb-775ec274682c/scratchpad/case5-result.json';
+const log = makeLog(docs);
+const guard = makeGuard(guards);
+const RESULT =
+  'C:/Users/Asus/AppData/Local/Temp/claude/C--Innovic-projects-innovic-erp/e90daca8-13d8-4c6a-9ffb-775ec274682c/scratchpad/case5-result.json';
 const QTY = 10;
 
 test('CASE 5 — QC op in-house + TPI', async ({ page }) => {
@@ -36,15 +38,21 @@ test('CASE 5 — QC op in-house + TPI', async ({ page }) => {
   await page.waitForTimeout(2500);
   const rows = page.locator('table.ops-routing tbody tr');
   const del = page.locator('table.ops-routing tbody tr button.btn-danger');
-  for (let i = (await del.count()) - 1; i >= 0; i--) { await del.nth(i).click(); await page.waitForTimeout(250); }
+  for (let i = (await del.count()) - 1; i >= 0; i--) {
+    await del.nth(i).click();
+    await page.waitForTimeout(250);
+  }
   // process op Turning + machine
   await page.getByRole('button', { name: /\+ Add Op$/ }).click();
   await page.waitForTimeout(500);
   await rows.nth(0).getByPlaceholder('Operation name').fill('Turning');
   await page.waitForTimeout(200);
   const m = rows.nth(0).getByPlaceholder(/Machine/i);
-  await m.click(); await m.fill('a'); await page.waitForTimeout(1300);
-  await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter');
+  await m.click();
+  await m.fill('a');
+  await page.waitForTimeout(1300);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
   await rows.nth(0).getByPlaceholder('Operation name').click();
   await page.waitForTimeout(400);
   // QC op → select TPI process
@@ -73,7 +81,10 @@ test('CASE 5 — QC op in-house + TPI', async ({ page }) => {
   await page.getByText('Turning', { exact: true }).first().click();
   await page.waitForTimeout(1200);
   await page.getByRole('spinbutton').first().fill(String(QTY));
-  await page.getByPlaceholder(/Operator name/i).fill('C5 Auto').catch(() => {});
+  await page
+    .getByPlaceholder(/Operator name/i)
+    .fill('C5 Auto')
+    .catch(() => {});
   await page.getByRole('button', { name: /^✓\s*Complete$/ }).click();
   await page.waitForTimeout(3000);
   log('op-log Turning', `${QTY}`);
@@ -87,11 +98,27 @@ test('CASE 5 — QC op in-house + TPI', async ({ page }) => {
   const accMax = await acc.getAttribute('max').catch(() => null);
   if (accMax) guard('TPI accept UI-cap', `max=${accMax} (≤ qc_pending)`);
   await acc.fill(String(QTY)).catch(() => {});
-  await page.getByPlaceholder(/Inspector/i).first().fill('SGS Inspector').catch(() => {});
-  await page.getByPlaceholder(/Organization|Organisation|Org/i).first().fill('SGS India').catch(() => {});
-  await page.getByPlaceholder(/Cert/i).first().fill('CERT-TPI-001').catch(() => {});
+  await page
+    .getByPlaceholder(/Inspector/i)
+    .first()
+    .fill('SGS Inspector')
+    .catch(() => {});
+  await page
+    .getByPlaceholder(/Organization|Organisation|Org/i)
+    .first()
+    .fill('SGS India')
+    .catch(() => {});
+  await page
+    .getByPlaceholder(/Cert/i)
+    .first()
+    .fill('CERT-TPI-001')
+    .catch(() => {});
   await snap(page, 'c5', '03-tpi-filled');
-  await page.getByRole('button', { name: /Submit Inspection|Submit TPI|Record|Save/i }).first().click().catch(() => {});
+  await page
+    .getByRole('button', { name: /Submit Inspection|Submit TPI|Record|Save/i })
+    .first()
+    .click()
+    .catch(() => {});
   await page.waitForTimeout(3500);
   log('TPI QC', `accepted ${QTY} on /tpi (SGS India / CERT-TPI-001)`);
   await snap(page, 'c5', '04-tpi-submitted');

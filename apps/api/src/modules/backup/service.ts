@@ -82,7 +82,10 @@ export async function getBackupStats(user: AuthContext): Promise<BackupStatsResp
     for (const t of TABLES) {
       try {
         // Companies row is filtered by id; everything else by company_id.
-        const where = t.table === 'companies' ? `id = '${companyId}'::uuid` : `company_id = '${companyId}'::uuid`;
+        const where =
+          t.table === 'companies'
+            ? `id = '${companyId}'::uuid`
+            : `company_id = '${companyId}'::uuid`;
         const r = await tx.execute(
           sql.raw(`SELECT COUNT(*)::int AS c FROM "${t.table}" WHERE ${where}`),
         );
@@ -109,9 +112,14 @@ export async function downloadBackup(user: AuthContext): Promise<BackupDownload>
     const collections: Record<string, unknown[]> = {};
     for (const t of TABLES) {
       try {
-        const where = t.table === 'companies' ? `id = '${companyId}'::uuid` : `company_id = '${companyId}'::uuid`;
+        const where =
+          t.table === 'companies'
+            ? `id = '${companyId}'::uuid`
+            : `company_id = '${companyId}'::uuid`;
         const r = await tx.execute(
-          sql.raw(`SELECT * FROM "${t.table}" WHERE ${where} ORDER BY created_at DESC LIMIT ${MAX_ROWS_PER_TABLE}`),
+          sql.raw(
+            `SELECT * FROM "${t.table}" WHERE ${where} ORDER BY created_at DESC LIMIT ${MAX_ROWS_PER_TABLE}`,
+          ),
         );
         collections[t.table] = r as unknown as unknown[];
       } catch {

@@ -85,8 +85,8 @@ describe('companies service', () => {
   });
 
   it('updateMyCompany rejects non-admin', async () => {
-    await expect(
-      service.updateMyCompany({ name: 'Hi' }, viewer),
-    ).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.updateMyCompany({ name: 'Hi' }, viewer)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 });

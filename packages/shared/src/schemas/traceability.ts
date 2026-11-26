@@ -90,10 +90,7 @@ export type RelatedTimelineEvent = z.infer<typeof relatedTimelineEventSchema>;
  *  (empty => that part hides in the UI). `self` identifies the anchor document
  *  for the panel header. */
 export const documentTraceabilitySchema = z.object({
-  self: z
-    .object({ module: z.string(), code: z.string() })
-    .nullable()
-    .default(null),
+  self: z.object({ module: z.string(), code: z.string() }).nullable().default(null),
   upstream: z.array(relatedSectionSchema).default([]),
   downstream: z.array(relatedSectionSchema).default([]),
   related: z.array(relatedSectionSchema).default([]),

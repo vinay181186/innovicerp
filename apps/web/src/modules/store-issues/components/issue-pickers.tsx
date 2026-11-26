@@ -129,10 +129,7 @@ export function ProductionUserPicker({
   valueLabel,
 }: PickerProps): React.JSX.Element {
   const { data, isFetching } = useProductionUserOptions();
-  const options = useMemo(
-    () => toProductionSearchOptions(data?.options ?? []),
-    [data],
-  );
+  const options = useMemo(() => toProductionSearchOptions(data?.options ?? []), [data]);
   return (
     <SearchableSelect
       id={id}

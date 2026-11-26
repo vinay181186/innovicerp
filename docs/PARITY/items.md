@@ -15,12 +15,12 @@
 
 ## 1. Toolbar (L11502–11509)
 
-| # | Element | Legacy | React | Match? | Tag |
-|---|---|---|---|---|---|
-| 1 | Search input | "Search code, name, material…" 220px | ✅ React has search | ✅ | — |
-| 2 | ⬇ Template button | `itemImportTemplate()` | ❌ missing | **DELTA** (Excel gap) |
-| 3 | 📄 Import Excel button | `itemImportExcel()` | ❌ missing | **DELTA** (Excel gap) |
-| 4 | + Add Item button | `addItem()` modal | ✅ React → `/items/new` | ✅ | — |
+| #   | Element                | Legacy                               | React                   | Match?                | Tag |
+| --- | ---------------------- | ------------------------------------ | ----------------------- | --------------------- | --- |
+| 1   | Search input           | "Search code, name, material…" 220px | ✅ React has search     | ✅                    | —   |
+| 2   | ⬇ Template button      | `itemImportTemplate()`               | ❌ missing              | **DELTA** (Excel gap) |
+| 3   | 📄 Import Excel button | `itemImportExcel()`                  | ❌ missing              | **DELTA** (Excel gap) |
+| 4   | + Add Item button      | `addItem()` modal                    | ✅ React → `/items/new` | ✅                    | —   |
 
 ---
 
@@ -28,17 +28,17 @@
 
 Legacy: **9 columns** `Code · Name · Description · Drawing No · Rev · Material · UOM · Drw (drawing print btn) · Actions`.
 
-| # | header | data | React match? | tag |
-|---|---|---|---|---|
-| 1 | Item Code | purple code | ✅ | — |
-| 2 | Name | bold | ✅ | — |
-| 3 | Description | text2 11px | ✅ | — |
-| 4 | Drawing No. | mono 11px | ✅ | — |
-| 5 | Rev | centered | ✅ | — |
-| 6 | Material | default | ✅ | — |
-| 7 | UOM | tag | ✅ | — |
-| 8 | Drw (drawing print) | print btn when `drawingData` exists | ✅ "Drw" column | ✅ structurally |
-| 9 | Actions | View / Edit / Del | ✅ React has Actions column | ✅ |
+| #   | header              | data                                | React match?                | tag             |
+| --- | ------------------- | ----------------------------------- | --------------------------- | --------------- |
+| 1   | Item Code           | purple code                         | ✅                          | —               |
+| 2   | Name                | bold                                | ✅                          | —               |
+| 3   | Description         | text2 11px                          | ✅                          | —               |
+| 4   | Drawing No.         | mono 11px                           | ✅                          | —               |
+| 5   | Rev                 | centered                            | ✅                          | —               |
+| 6   | Material            | default                             | ✅                          | —               |
+| 7   | UOM                 | tag                                 | ✅                          | —               |
+| 8   | Drw (drawing print) | print btn when `drawingData` exists | ✅ "Drw" column             | ✅ structurally |
+| 9   | Actions             | View / Edit / Del                   | ✅ React has Actions column | ✅              |
 
 Row click: legacy `viewItemDetail(id)`. React: per-row link. ✅
 
@@ -47,6 +47,7 @@ Row click: legacy `viewItemDetail(id)`. React: per-row link. ✅
 ## 3. itemForm modal (L11523–11558)
 
 7 fields:
+
 - Item Code ★ (readonly when editing)
 - Item Name ★
 - Description (full-width)
@@ -71,17 +72,21 @@ React: `apps/web/src/modules/items/components/item-form.tsx` — verify all 7 fi
 ## 5. Summary
 
 ### BLOCKERs
-*(none — page is largely at parity)*
+
+_(none — page is largely at parity)_
 
 ### DELTAs
+
 1. Excel template + import — project-wide Excel gap.
 
 ### POLISH
+
 2. Footer hint about Item Master vs Stock/Inventory split.
 
 ---
 
 **Sign-off needed:**
+
 - Verify items detail/edit/new routes have the 7-field form with same labels.
 - Verify Drw column shows a print button when an item has a drawing attached.
 - Confirm drawing-file attach uses the project's Supabase Storage helper.

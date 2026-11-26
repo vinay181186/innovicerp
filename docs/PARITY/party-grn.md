@@ -10,6 +10,7 @@
 Records **client-supplied raw material received** against a JW order. Inverse of the regular GRN (which is supplier→us). Multi-line per receipt (one DC from a client may bring multiple materials).
 
 Schema (`db.partyGrn[*]`):
+
 - `grnNo` (`PGRN-NNNNN`), `grnDate`, `dcNo`, `remarks`
 - `jwNo` (FK→jobWorkOrders.code), `jwLineNo`, `clientCode`, `clientPoNo`
 - Per line: `materialCode` (FK→partyMaterials.code), `materialName`, `receivedQty`
@@ -19,11 +20,11 @@ Schema (`db.partyGrn[*]`):
 
 ## 1. KPI strip (L24282–24286) — 3 tiles
 
-| # | tile | colour | value |
-|---|---|---|---|
-| 1 | TOTAL GRNs | cyan | `grns.length` |
-| 2 | TOTAL RECEIVED | green | `Σ receivedQty` |
-| 3 | TODAY | amber | grns with `grnDate === today` |
+| #   | tile           | colour | value                         |
+| --- | -------------- | ------ | ----------------------------- |
+| 1   | TOTAL GRNs     | cyan   | `grns.length`                 |
+| 2   | TOTAL RECEIVED | green  | `Σ receivedQty`               |
+| 3   | TODAY          | amber  | grns with `grnDate === today` |
 
 ---
 
@@ -31,7 +32,7 @@ Schema (`db.partyGrn[*]`):
 
 - Header `📥 Party Material GRN`
 - Search input (search JW, client, material)
-- + New Party GRN primary button
+- - New Party GRN primary button
 
 Footer hint: `💡 Party Material GRN records raw material received from clients for Job Work. Received qty is added to Party Material stock. Linked to JW No. / Line No. / Client PO.`
 
@@ -39,25 +40,26 @@ Footer hint: `💡 Party Material GRN records raw material received from clients
 
 ## 3. List table (L24288) — 11 columns
 
-| col | header | colour |
-|---|---|---|
-| 1 | GRN No. | cyan code |
-| 2 | Date | text2 11px |
-| 3 | Client | bold |
-| 4 | JW No. | purple mono bold |
-| 5 | JW Line | purple mono |
-| 6 | Client PO | text2 mono |
-| 7 | Material Code | purple code |
-| 8 | Material Name | default |
-| 9 | **Received Qty** | green mono bold 14px |
-| 10 | Remarks | text3 ellipsis |
-| 11 | Received By | text3 |
+| col | header           | colour               |
+| --- | ---------------- | -------------------- |
+| 1   | GRN No.          | cyan code            |
+| 2   | Date             | text2 11px           |
+| 3   | Client           | bold                 |
+| 4   | JW No.           | purple mono bold     |
+| 5   | JW Line          | purple mono          |
+| 6   | Client PO        | text2 mono           |
+| 7   | Material Code    | purple code          |
+| 8   | Material Name    | default              |
+| 9   | **Received Qty** | green mono bold 14px |
+| 10  | Remarks          | text3 ellipsis       |
+| 11  | Received By      | text3                |
 
 ---
 
 ## 4. addPartyGRN modal (L24298–24367) — header + multi-line
 
 **Header** (auto-fills client + PO from JW selection):
+
 - GRN No. (readonly auto)
 - Date (default today)
 - **JW No. ★** (datalist of open jobWorkOrders, triggers `_pgrnFillJW`)
@@ -78,11 +80,12 @@ Footer hint: `💡 Party Material GRN records raw material received from clients
 | Remarks | line-specific | — |
 | 🗑 | remove line button | — |
 
-+ Add Line button at top.
+- Add Line button at top.
 
 Validation: every line must have materialCode (must exist in Party Master) + qty ≥ 1.
 
 **Side effects on save:**
+
 - For each line: `pm.stockQty += qty`, `pm.receivedQty += qty`
 - Push a `party_grn` row per line
 - `logActivity('CREATE','Party GRN',grnNo+' — N items, Y pcs from '+jwNo)`
@@ -123,6 +126,7 @@ Cascade on save: increment `party_materials.stock_qty` and `received_qty` for ea
 ## 6. Summary — building from scratch
 
 ### BLOCKERs (pair with party-material.md slice)
+
 1. Two new tables (party_grn + party_grn_lines) + migration + RLS.
 2. POST /party-grn endpoint (validates JW + Party Materials, multi-line, atomic stock update).
 3. GET /party-grn list endpoint.
@@ -131,13 +135,16 @@ Cascade on save: increment `party_materials.stock_qty` and `received_qty` for ea
 6. Sidebar entry "📥 Party Material GRN" under Store → Entry.
 
 ### DELTAs
+
 7. Receive-against-JW-line dependency (when JW DC outward → JW DC inward flow lands).
 
 ### POLISH
+
 - Auto-fill client/PO on JW select.
 
 ---
 
 **Sign-off needed:**
+
 - Confirm scope. Estimate ~700 LOC. Pair with party-material.md slice + jw-dc.md slice (all 3 share the JW workflow).
 - Confirm `PGRN-NNNNN` 5-digit prefix.

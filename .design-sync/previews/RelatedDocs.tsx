@@ -54,7 +54,12 @@ export const WithTimeline = () => (
       title="Document Timeline"
       events={[
         { date: '2026-11-03', label: 'SO created', code: 'IN-SO-00123', color: 'var(--blue)' },
-        { date: '2026-11-03', label: 'Job Card raised', code: 'IN-JC-00456', color: 'var(--amber)' },
+        {
+          date: '2026-11-03',
+          label: 'Job Card raised',
+          code: 'IN-JC-00456',
+          color: 'var(--amber)',
+        },
         { date: '2026-11-05', label: 'Dispatched', code: 'IN-DC-00089', color: 'var(--green)' },
       ]}
     />

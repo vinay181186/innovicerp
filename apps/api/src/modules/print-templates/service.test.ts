@@ -94,12 +94,12 @@ describe('print-templates service', () => {
   it('requires the Print Templates Edit tick to write (ADR-232, owner D4)', async () => {
     // L5 in another department, no Print Templates tick — refused.
     const untick = asAccess(admin, { departments: { sales: 'L5' } }, 'manager');
-    await expect(
-      service.savePrintTemplate('po_terms', 'nope', untick),
-    ).rejects.toBeInstanceOf(AuthorizationError);
-    await expect(
-      service.restorePrintTemplateDefault('po_terms', untick),
-    ).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.savePrintTemplate('po_terms', 'nope', untick)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
+    await expect(service.restorePrintTemplateDefault('po_terms', untick)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('the Edit tick alone passes the gate, whatever the role (ADR-232)', async () => {
@@ -115,9 +115,9 @@ describe('print-templates service', () => {
 
   it('an L7 Auditor is refused even with the Edit tick stored', async () => {
     const auditor = asAccess(admin, { ...AUDITOR, forms: { printtpl_edit: EDIT_TICK } }, 'viewer');
-    await expect(
-      service.savePrintTemplate('po_terms', 'nope', auditor),
-    ).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.savePrintTemplate('po_terms', 'nope', auditor)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('restorePrintTemplateDefault reverts to factory default + archives current', async () => {

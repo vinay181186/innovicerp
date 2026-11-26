@@ -26,7 +26,12 @@ export const Placeholder = () => (
 
 export const WithError = () => (
   <FormGrid>
-    <FormField label="GST Treatment" required size="full" error="Pick how GST applies to this customer.">
+    <FormField
+      label="GST Treatment"
+      required
+      size="full"
+      error="Pick how GST applies to this customer."
+    >
       <Select placeholder="Select…" defaultValue="" options={['CGST + SGST', 'IGST']} />
     </FormField>
   </FormGrid>
@@ -41,5 +46,10 @@ export const Disabled = () => (
 );
 
 export const OffGrid = () => (
-  <Select fieldWidth="sm" options={['All', 'Open', 'Closed']} defaultValue="Open" aria-label="SO Status" />
+  <Select
+    fieldWidth="sm"
+    options={['All', 'Open', 'Closed']}
+    defaultValue="Open"
+    aria-label="SO Status"
+  />
 );

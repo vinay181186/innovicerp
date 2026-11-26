@@ -36,8 +36,7 @@ function buildQs(q: ListDesignWorkLogQuery): string {
 export function useDesignWorkLogList(query: ListDesignWorkLogQuery) {
   return useQuery<ListDesignWorkLogResponse>({
     queryKey: designWorkLogKeys.list(query),
-    queryFn: () =>
-      apiFetch<ListDesignWorkLogResponse>(`/design-work-log?${buildQs(query)}`),
+    queryFn: () => apiFetch<ListDesignWorkLogResponse>(`/design-work-log?${buildQs(query)}`),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
@@ -58,8 +57,7 @@ export function useCreateDesignWorkLog() {
 export function useDeleteDesignWorkLog() {
   const qc = useQueryClient();
   return useMutation<void, Error, string>({
-    mutationFn: (id) =>
-      apiFetch<void>(`/design-work-log/${id}`, { method: 'DELETE' }),
+    mutationFn: (id) => apiFetch<void>(`/design-work-log/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: designWorkLogKeys.all });
     },

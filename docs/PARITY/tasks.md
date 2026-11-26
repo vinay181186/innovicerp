@@ -10,9 +10,9 @@
 
 ## 1. Screens & legacy functions
 
-| Legacy nav | Fn | Our route | Our module |
-| ---------- | -- | --------- | ---------- |
-| `taskboard` | `renderTaskBoard` L14255 | `/task-board` | `tasks` |
+| Legacy nav     | Fn                          | Our route             | Our module           |
+| -------------- | --------------------------- | --------------------- | -------------------- |
+| `taskboard`    | `renderTaskBoard` L14255    | `/task-board`         | `tasks`              |
 | `dailyreports` | `renderDailyReports` L14141 | `/daily-task-reports` | `daily-task-reports` |
 
 Supporting legacy fns: `_addTask` L14329, `_assignTaskFromContext` L14360,
@@ -31,63 +31,67 @@ CLAUDE.md anti-pattern #1 forbids JSON-array columns → each child becomes its
 own row. Migration **0051**.
 
 ### `tasks` (header) ← `taskAllocations`
-| col | type | legacy field | notes |
-| --- | ---- | ------------ | ----- |
-| id | uuid pk | id | |
-| company_id | uuid | — | tenancy |
-| code | text | taskNo | `TSK-0001`, per-company sequence |
-| title | text not null | title | |
-| description | text | description | |
-| assigned_to | uuid→users | assignedTo | |
-| assigned_by | uuid→users | assignedBy | |
-| priority | `task_priority` enum | priority | high/medium/low (legacy High/Medium/Low) |
-| due_date | date not null | dueDate | |
-| status | `task_status` enum | status | todo/in_progress/completed/cancelled |
-| started_date | date | startedDate | set when → in_progress |
-| completed_date | date | completedDate | set when → completed |
-| linked_ref_type | text | linkedRef.type | PR/PO/SO/NC/CAPA/JC/GRN/DESIGN |
-| linked_ref_id | text | linkedRef.id | source record id (legacy uid; stored as text) |
-| linked_ref_display | text | linkedRef.display | e.g. `PR-00214` |
-| linked_ref_nav_page | text | linkedRef.navPage | legacy nav page key |
-| viewed_at | timestamptz | viewedAt | null = unread by assignee |
-| + standard audit cols | | createdDate→created_at | |
+
+| col                   | type                 | legacy field           | notes                                         |
+| --------------------- | -------------------- | ---------------------- | --------------------------------------------- |
+| id                    | uuid pk              | id                     |                                               |
+| company_id            | uuid                 | —                      | tenancy                                       |
+| code                  | text                 | taskNo                 | `TSK-0001`, per-company sequence              |
+| title                 | text not null        | title                  |                                               |
+| description           | text                 | description            |                                               |
+| assigned_to           | uuid→users           | assignedTo             |                                               |
+| assigned_by           | uuid→users           | assignedBy             |                                               |
+| priority              | `task_priority` enum | priority               | high/medium/low (legacy High/Medium/Low)      |
+| due_date              | date not null        | dueDate                |                                               |
+| status                | `task_status` enum   | status                 | todo/in_progress/completed/cancelled          |
+| started_date          | date                 | startedDate            | set when → in_progress                        |
+| completed_date        | date                 | completedDate          | set when → completed                          |
+| linked_ref_type       | text                 | linkedRef.type         | PR/PO/SO/NC/CAPA/JC/GRN/DESIGN                |
+| linked_ref_id         | text                 | linkedRef.id           | source record id (legacy uid; stored as text) |
+| linked_ref_display    | text                 | linkedRef.display      | e.g. `PR-00214`                               |
+| linked_ref_nav_page   | text                 | linkedRef.navPage      | legacy nav page key                           |
+| viewed_at             | timestamptz          | viewedAt               | null = unread by assignee                     |
+| + standard audit cols |                      | createdDate→created_at |                                               |
 
 **Overdue is derived, never stored**: `status != completed && due_date < today`.
 
 ### `task_comments` (rows) ← `task.comments[]`
-| col | type | legacy | |
-| --- | ---- | ------ | - |
-| id | uuid pk | | |
-| company_id | uuid | | |
-| task_id | uuid→tasks cascade | | |
-| comment_date | date | c.date | |
-| text | text not null | c.text | |
-| created_by | uuid→users | c.by (name) | display "by" = created_by user's name |
-| + audit | | | |
+
+| col          | type               | legacy      |                                       |
+| ------------ | ------------------ | ----------- | ------------------------------------- |
+| id           | uuid pk            |             |                                       |
+| company_id   | uuid               |             |                                       |
+| task_id      | uuid→tasks cascade |             |                                       |
+| comment_date | date               | c.date      |                                       |
+| text         | text not null      | c.text      |                                       |
+| created_by   | uuid→users         | c.by (name) | display "by" = created_by user's name |
+| + audit      |                    |             |                                       |
 
 ### `daily_reports` (header) ← `dailyReports`
-| col | type | legacy | |
-| --- | ---- | ------ | - |
-| id | uuid pk | id | |
-| company_id | uuid | | |
-| user_id | uuid→users | userId | report owner |
-| report_date | date not null | date | |
-| shift | `shift` enum | shift | reuse existing day/night/general |
-| + audit | | createdDate→created_at | |
+
+| col         | type          | legacy                 |                                  |
+| ----------- | ------------- | ---------------------- | -------------------------------- |
+| id          | uuid pk       | id                     |                                  |
+| company_id  | uuid          |                        |                                  |
+| user_id     | uuid→users    | userId                 | report owner                     |
+| report_date | date not null | date                   |                                  |
+| shift       | `shift` enum  | shift                  | reuse existing day/night/general |
+| + audit     |               | createdDate→created_at |                                  |
 
 ### `daily_report_lines` (rows) ← `report.tasks[]`
-| col | type | legacy | |
-| --- | ---- | ------ | - |
-| id | uuid pk | | |
-| company_id | uuid | | |
-| daily_report_id | uuid→daily_reports cascade | | |
-| line_no | int | (index+1) | |
-| description | text not null | t.desc | |
-| ref | text | t.ref | free-text SO/JC ref |
-| hours | numeric(6,2) | t.hours | |
-| status | `daily_report_line_status` enum | t.status | completed/in_progress/pending/blocked |
-| remarks | text | t.remarks | |
-| + audit | | | |
+
+| col             | type                            | legacy    |                                       |
+| --------------- | ------------------------------- | --------- | ------------------------------------- |
+| id              | uuid pk                         |           |                                       |
+| company_id      | uuid                            |           |                                       |
+| daily_report_id | uuid→daily_reports cascade      |           |                                       |
+| line_no         | int                             | (index+1) |                                       |
+| description     | text not null                   | t.desc    |                                       |
+| ref             | text                            | t.ref     | free-text SO/JC ref                   |
+| hours           | numeric(6,2)                    | t.hours   |                                       |
+| status          | `daily_report_line_status` enum | t.status  | completed/in_progress/pending/blocked |
+| remarks         | text                            | t.remarks |                                       |
+| + audit         |                                 |           |                                       |
 
 ---
 
@@ -122,10 +126,10 @@ own row. Migration **0051**.
 - **Unread tracking**: a task assigned to me with `viewed_at = null` and not
   completed shows a red unread dot. `_markTasksViewed` stamps `viewed_at` when
   the assignee opens their work view. We stamp on **View task** by the assignee
-  + expose a `POST /tasks/mark-viewed` the board calls once on mount for the
-  current user (mirrors legacy home-render behavior). Login toast
-  (`_maybeShowTaskLoginToast`) = a one-per-session count; deferred (no global
-  toast bus on web yet — board header shows an unread count badge instead).
+  - expose a `POST /tasks/mark-viewed` the board calls once on mount for the
+    current user (mirrors legacy home-render behavior). Login toast
+    (`_maybeShowTaskLoginToast`) = a one-per-session count; deferred (no global
+    toast bus on web yet — board header shows an unread count badge instead).
 
 ## 4. Logic — Daily Task Reports
 
@@ -143,14 +147,15 @@ own row. Migration **0051**.
 
 ## 5. Authorization summary
 
-| Action | Who | Enforcement |
-| ------ | --- | ----------- |
-| read tasks / reports | any company member | RLS company read |
-| assign task | admin/manager | service `requireWriteRole` + RLS self-or-manager |
-| update task status / comment | assignee OR admin/manager | service check + RLS |
-| create/edit own daily report | owner OR admin/manager | service check + RLS self-or-manager |
+| Action                       | Who                       | Enforcement                                      |
+| ---------------------------- | ------------------------- | ------------------------------------------------ |
+| read tasks / reports         | any company member        | RLS company read                                 |
+| assign task                  | admin/manager             | service `requireWriteRole` + RLS self-or-manager |
+| update task status / comment | assignee OR admin/manager | service check + RLS                              |
+| create/edit own daily report | owner OR admin/manager    | service check + RLS self-or-manager              |
 
 RLS write policies use `current_user_id()` (migration 0016 helper):
+
 - `tasks`: write if `assigned_to = current_user_id() OR role in (admin,manager)`
   — note assign/reassign is further gated to admin/manager in the service
   (an assignee self-updating keeps assigned_to unchanged so RLS still passes).

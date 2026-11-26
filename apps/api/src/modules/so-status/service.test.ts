@@ -260,9 +260,9 @@ describe('so-status service', () => {
     expect(line.chips.produced.qty).toBe(0); // doneQty = qcAccepted on last op, still 0
 
     // Cleanup the extra log
-    await db.delete(opLog).where(
-      and(eq(opLog.jcOpId, opId2), like(opLog.logNo, `${TEST_PREFIX}LOG-2`)),
-    );
+    await db
+      .delete(opLog)
+      .where(and(eq(opLog.jcOpId, opId2), like(opLog.logNo, `${TEST_PREFIX}LOG-2`)));
   });
 
   it('returns empty lines array on an SO with zero lines (no JC fetch issued)', async () => {

@@ -381,11 +381,7 @@ function deriveOpStatus(s: StatusInput): OpStatus {
 
   if (s.qcRequired) {
     if (s.qcPending > 0) return 'qc_pending';
-    if (
-      s.inputAvail > 0 &&
-      s.completed >= s.inputAvail &&
-      s.qcAccepted >= s.completed
-    ) {
+    if (s.inputAvail > 0 && s.completed >= s.inputAvail && s.qcAccepted >= s.completed) {
       // Same open-rework hold as the QC op above (view 0124 gates every
       // `complete` branch on it): the pieces are out on a child, so this op
       // is still in progress.
@@ -479,8 +475,7 @@ export function derivePerLineStage(
   if (anyAtVendor) return 'outsourced';
 
   const anyInProgress = allOps.some(
-    (op) =>
-      op.status === 'running' || op.status === 'in_progress' || op.completed > 0,
+    (op) => op.status === 'running' || op.status === 'in_progress' || op.completed > 0,
   );
   if (anyInProgress) return 'in_production';
 
@@ -561,8 +556,7 @@ export function rollupSoLine(
   const totalJcQty = jcRollups.reduce((s, j) => s + (j.ops[0]?.inputAvail ?? 0), 0);
   const doneQty = jcRollups.reduce((s, j) => s + j.doneQty, 0);
   const remainingQty = Math.max(0, orderQty - doneQty);
-  const completionPct =
-    orderQty > 0 ? Math.min(100, Math.round((doneQty / orderQty) * 100)) : 0;
+  const completionPct = orderQty > 0 ? Math.min(100, Math.round((doneQty / orderQty) * 100)) : 0;
 
   const allComplete = jcRollups.every((j) => j.status === 'complete');
   const anyQcPending = jcRollups.some((j) => j.status === 'qc_pending');

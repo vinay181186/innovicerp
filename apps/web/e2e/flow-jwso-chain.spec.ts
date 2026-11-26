@@ -134,8 +134,19 @@ async function bannerText(page: Page): Promise<string> {
   for (const loc of sources) {
     const n = Math.min(await loc.count(), 12);
     for (let i = 0; i < n; i++) {
-      if (!(await loc.nth(i).isVisible().catch(() => false))) continue;
-      const t = (await loc.nth(i).innerText().catch(() => '')).trim();
+      if (
+        !(await loc
+          .nth(i)
+          .isVisible()
+          .catch(() => false))
+      )
+        continue;
+      const t = (
+        await loc
+          .nth(i)
+          .innerText()
+          .catch(() => '')
+      ).trim();
       // Skip the row's inline mismatch marker wherever it sits in the string —
       // it renders as `COVER (5541…) ⚠ not L1 — that line is …`, so the ⚠ is
       // mid-text and a startsWith() test let it through and shadowed the real
@@ -167,7 +178,11 @@ test('@chain 01 — create the JWSO', async ({ page }) => {
   await page.goto('/job-work-orders/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
 
-  state.jwCode = await page.locator('input[value^="IN-JW-"]').first().inputValue().catch(() => '');
+  state.jwCode = await page
+    .locator('input[value^="IN-JW-"]')
+    .first()
+    .inputValue()
+    .catch(() => '');
   await pick(page, /Type customer code or name/i, CLIENT_CODE, new RegExp(CLIENT_NAME, 'i'));
   await page.getByPlaceholder(/Client PO reference/i).fill(TAG);
 
@@ -176,7 +191,10 @@ test('@chain 01 — create the JWSO', async ({ page }) => {
   // required" and blocked the save — add a row only when there is none.
   const lineCodeBoxes = page.locator('input[id^="jwln-ic-"]');
   if ((await lineCodeBoxes.count()) === 0) {
-    await page.getByRole('button', { name: /Add Line/i }).first().click();
+    await page
+      .getByRole('button', { name: /Add Line/i })
+      .first()
+      .click();
     await page.waitForTimeout(800);
   }
   expect(await lineCodeBoxes.count(), 'exactly one line row to fill').toBe(1);
@@ -266,10 +284,17 @@ test('@chain 02 — create the party material for this JWSO line', async ({ page
   // Route is /party-material (singular).
   await page.goto('/party-material', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
-  await page.getByRole('button', { name: /Add Material/i }).first().click();
+  await page
+    .getByRole('button', { name: /Add Material/i })
+    .first()
+    .click();
   await page.waitForTimeout(1500);
 
-  state.pmCode = await page.locator('input[value^="PM-"]').first().inputValue().catch(() => '');
+  state.pmCode = await page
+    .locator('input[value^="PM-"]')
+    .first()
+    .inputValue()
+    .catch(() => '');
 
   // The master's cascade: Client → SO/JWSO → Item. Each picker only enables
   // once its parent is chosen, which is what pins the material to one item.
@@ -323,9 +348,9 @@ async function jwsoOfferedBy(page: Page, ph: RegExp): Promise<boolean> {
  *  material; the caller then reports the sub-check as NOT TESTED instead of
  *  failing on a fixture that does not exist in this database. */
 async function findWrongPart(page: Page, matBox: Locator): Promise<string> {
-  const codes = await page.locator(`#${'dlPGrnMaterial'} option`).evaluateAll((els) =>
-    els.map((e) => (e as HTMLOptionElement).value).filter(Boolean),
-  );
+  const codes = await page
+    .locator(`#${'dlPGrnMaterial'} option`)
+    .evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value).filter(Boolean));
   // eslint-disable-next-line no-console
   console.log(`>> materials offered for this client: ${codes.join(', ') || '(none)'}`);
   for (const code of codes) {
@@ -428,10 +453,9 @@ test('@chain 03 — Party GRN guards behave at the element level', async ({ page
       page.getByRole('button', { name: /Save GRN/i }),
       'modal must stay open — the wrong-part save must NOT go through',
     ).toHaveCount(1);
-    expect(
-      wrongPartErr,
-      'receiving the wrong part must be refused, naming both parts',
-    ).toMatch(/but .*line 1 is|Pick the material for this part/i);
+    expect(wrongPartErr, 'receiving the wrong part must be refused, naming both parts').toMatch(
+      /but .*line 1 is|Pick the material for this part/i,
+    );
     record({
       step: '03a',
       doc: 'Party GRN (attempt)',
@@ -494,15 +518,19 @@ test('@chain 03 — Party GRN guards behave at the element level', async ({ page
     const capErr = await bannerText(page);
     const remaining = Number((capErr.match(/only (\d+) more can be received/i) ?? [])[1] ?? 0);
     // eslint-disable-next-line no-console
-    console.log(`>> line already part-received; balance the API allows: ${remaining} ("${capErr}")`);
+    console.log(
+      `>> line already part-received; balance the API allows: ${remaining} ("${capErr}")`,
+    );
     expect(remaining, `line has no balance left to receive — ${capErr}`).toBeGreaterThan(0);
     toReceive = remaining;
     await qtyBox.fill(String(toReceive));
     await page.getByRole('button', { name: /Save GRN/i }).click();
     await page.waitForTimeout(5000);
   }
-  await expect(page.getByRole('button', { name: /Save GRN/i }), 'modal closed on success')
-    .toHaveCount(0, { timeout: 15_000 });
+  await expect(
+    page.getByRole('button', { name: /Save GRN/i }),
+    'modal closed on success',
+  ).toHaveCount(0, { timeout: 15_000 });
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3500);
@@ -571,14 +599,20 @@ test('@chain 05 — plan and execute a Job Card for the JWSO line', async ({ pag
   }
   await page.goto('/planning', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await page.getByPlaceholder(/Search/i).first().fill(state.jwCode);
+  await page
+    .getByPlaceholder(/Search/i)
+    .first()
+    .fill(state.jwCode);
   await page.waitForTimeout(2500);
   await page.getByText(state.jwCode).first().click();
   await page.waitForTimeout(2500);
 
   await clickFirstRowMenuItem(page, planningLineRows(page), /^Plan \d/);
   await page.waitForTimeout(2000);
-  await page.getByRole('button', { name: /^Save Plan$/ }).first().click();
+  await page
+    .getByRole('button', { name: /^Save Plan$/ })
+    .first()
+    .click();
   await page.waitForTimeout(3000);
   state.planCode = await codeOnPage(page, /PLN-\d+/);
 
@@ -691,7 +725,10 @@ test('@chain 06 — issue the client material to the Job Card', async ({ page })
 test('@chain 06b — RM AVAIL tile shows the issued material', async ({ page }) => {
   await page.goto('/job-cards', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
-  await page.getByPlaceholder(/Search/i).first().fill(state.jcCode);
+  await page
+    .getByPlaceholder(/Search/i)
+    .first()
+    .fill(state.jcCode);
   await page.waitForTimeout(3000);
   await page.getByText(state.jcCode).first().click();
   await page.waitForTimeout(4000);
@@ -752,8 +789,14 @@ test('@chain 07 — log the operation and pass QC', async ({ page }) => {
     await page.waitForTimeout(4000);
   }
   await page.getByRole('spinbutton').first().fill(String(ORDER_QTY));
-  await page.getByPlaceholder(/Operator name/i).fill('E2E Auto').catch(() => {});
-  await page.getByRole('dialog').getByRole('button', { name: /^✓\s*Complete$/ }).click();
+  await page
+    .getByPlaceholder(/Operator name/i)
+    .fill('E2E Auto')
+    .catch(() => {});
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: /^✓\s*Complete$/ })
+    .click();
   await page.waitForTimeout(4000);
   const opErr = await bannerText(page);
   if (opErr) {
@@ -869,7 +912,10 @@ test('@chain 09 — invoice the processing charge', async ({ page }) => {
   const nums = page.locator('input[type="number"]');
   await nums.nth(0).fill(String(ORDER_QTY));
   await page.waitForTimeout(300);
-  await nums.nth(1).fill(String(RATE)).catch(() => {});
+  await nums
+    .nth(1)
+    .fill(String(RATE))
+    .catch(() => {});
   await page.waitForTimeout(500);
   await page.getByRole('button', { name: 'Save Invoice' }).click();
   await page.waitForTimeout(5000);

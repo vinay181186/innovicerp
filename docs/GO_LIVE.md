@@ -99,6 +99,7 @@ pnpm dlx wrangler@latest pages deploy apps/web/dist \
 
 Domain `innovicerp.com` is registered at **GoDaddy** (not Cloudflare). Trial runs
 on `innovic-erp.pages.dev` first to de-risk launch. When ready to attach the domain:
+
 - **Recommended:** move DNS to Cloudflare (change the 2 nameservers at GoDaddy →
   Cloudflare). Free, auto-SSL, apex works, and DNS becomes token-manageable.
   ⚠️ Before the NS switch propagates, confirm Cloudflare imported any existing

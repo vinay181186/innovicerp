@@ -10,11 +10,25 @@ const drawing =
 const noop = () => {};
 
 export const ImageDrawing = () => (
-  <FilePreview inline kind="image" fileName="BRKT-101-A Rev B.png" src={drawing} onDownload={noop} onClose={noop} />
+  <FilePreview
+    inline
+    kind="image"
+    fileName="BRKT-101-A Rev B.png"
+    src={drawing}
+    onDownload={noop}
+    onClose={noop}
+  />
 );
 
 export const ViewOnlyDrawing = () => (
-  <FilePreview inline kind="image" fileName="BRKT-101-A Rev B.png" src={drawing} canDownload={false} onClose={noop} />
+  <FilePreview
+    inline
+    kind="image"
+    fileName="BRKT-101-A Rev B.png"
+    src={drawing}
+    canDownload={false}
+    onClose={noop}
+  />
 );
 
 export const Loading = () => (
@@ -22,7 +36,13 @@ export const Loading = () => (
 );
 
 export const CannotPreview = () => (
-  <FilePreview inline kind="none" fileName="Inspection plan.xlsx" onDownload={noop} onClose={noop} />
+  <FilePreview
+    inline
+    kind="none"
+    fileName="Inspection plan.xlsx"
+    onDownload={noop}
+    onClose={noop}
+  />
 );
 
 export const LinkExpired = () => (

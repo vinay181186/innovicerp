@@ -85,7 +85,10 @@ const ANON_KEY = ENV.TEST_SUPABASE_ANON_KEY ?? '';
 const SERVICE_ROLE_KEY = ENV.TEST_SUPABASE_SERVICE_ROLE_KEY ?? '';
 const ADMIN_EMAIL = (ENV.TEST_ADMIN_EMAIL ?? '').trim().toLowerCase();
 const ADMIN_PASSWORD = ENV.TEST_ADMIN_PASSWORD ?? '';
-const API_URL = (ENV.TEST_API_URL ?? 'https://api-test-production-19ca.up.railway.app').replace(/\/$/, '');
+const API_URL = (ENV.TEST_API_URL ?? 'https://api-test-production-19ca.up.railway.app').replace(
+  /\/$/,
+  '',
+);
 
 if (!SUPABASE_URL.includes(TEST_PROJECT_REF)) {
   throw new Error(
@@ -170,7 +173,9 @@ function log(msg: string): void {
 function addRow(row: Row): void {
   rows.push(row);
   persist();
-  log(`${row.result === 'PASS' ? '✓' : row.result === 'FAIL' ? '✗' : '⏭'} step ${row.step} — ${row.action} — ${row.overallStatus}`);
+  log(
+    `${row.result === 'PASS' ? '✓' : row.result === 'FAIL' ? '✗' : '⏭'} step ${row.step} — ${row.action} — ${row.overallStatus}`,
+  );
 }
 
 /** Run a step body; record PASS/FAIL row with the error text on failure, then rethrow. */
@@ -255,7 +260,8 @@ async function ensureUserId(): Promise<string> {
 }
 
 async function ensureOriginalPassword(): Promise<void> {
-  if (state.passwordChanged) await restoreAdminPassword('guard before a step that signs in with the original password');
+  if (state.passwordChanged)
+    await restoreAdminPassword('guard before a step that signs in with the original password');
 }
 
 /** Read-only SELECT on activity_log for the admin user (service role bypasses RLS). */
@@ -268,7 +274,15 @@ async function auditRows(sinceIso: string) {
     .gte('ts', sinceIso)
     .order('ts', { ascending: false });
   if (error) throw new Error('activity_log select failed: ' + error.message);
-  return (data ?? []) as { id: string; ts: string; action: string; entity: string; detail: string; user_id: string; ref_id: string | null }[];
+  return (data ?? []) as {
+    id: string;
+    ts: string;
+    action: string;
+    entity: string;
+    detail: string;
+    user_id: string;
+    ref_id: string | null;
+  }[];
 }
 
 test.afterAll(async () => {
@@ -285,11 +299,15 @@ test.afterAll(async () => {
 // ---------------------------------------------------------------------------
 // 1. /login — the link itself
 // ---------------------------------------------------------------------------
-test('1 - login page: Forgot password? is blue + underlined, no magic-link text, opens reset form', async ({ page }) => {
+test('1 - login page: Forgot password? is blue + underlined, no magic-link text, opens reset form', async ({
+  page,
+}) => {
   resetPersisted();
   await step('1', 'Check Forgot password? link', '—', async () => {
     await page.goto('/login', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Sign in to Innovic ERP' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { name: 'Sign in to Innovic ERP' })).toBeVisible({
+      timeout: 30_000,
+    });
 
     const link = page.getByRole('button', { name: 'Forgot password?' });
     await expect(link).toBeVisible();
@@ -302,9 +320,16 @@ test('1 - login page: Forgot password? is blue + underlined, no magic-link text,
       document.body.appendChild(probe);
       const tokenRgb = getComputedStyle(probe).color;
       probe.remove();
-      return { color: cs.color, token, tokenRgb, decoration: cs.textDecorationLine || cs.textDecoration };
+      return {
+        color: cs.color,
+        token,
+        tokenRgb,
+        decoration: cs.textDecorationLine || cs.textDecoration,
+      };
     });
-    log(`Forgot password? color=${style.color} token(--blue)=${style.token} -> ${style.tokenRgb} decoration=${style.decoration}`);
+    log(
+      `Forgot password? color=${style.color} token(--blue)=${style.token} -> ${style.tokenRgb} decoration=${style.decoration}`,
+    );
     expect(style.token, '--blue token must be defined').not.toBe('');
     expect(style.color, 'link colour must equal the --blue token').toBe(style.tokenRgb);
     expect(style.decoration, 'link must be underlined').toContain('underline');
@@ -317,7 +342,9 @@ test('1 - login page: Forgot password? is blue + underlined, no magic-link text,
     await shot(page, '01-login-blue-link');
 
     await link.click();
-    await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible({
+      timeout: 5_000,
+    });
     await expect(page.getByRole('button', { name: 'Back to sign in' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Send reset link' })).toBeVisible();
     await shot(page, '01b-reset-request-form');
@@ -333,7 +360,9 @@ test('1 - login page: Forgot password? is blue + underlined, no magic-link text,
 // ---------------------------------------------------------------------------
 // 2. Request a reset — real address and made-up address answer identically
 // ---------------------------------------------------------------------------
-test('2 - request reset: 200 { ok, mailer } identical for real and made-up address; 10-minute wording', async ({ page }) => {
+test('2 - request reset: 200 { ok, mailer } identical for real and made-up address; 10-minute wording', async ({
+  page,
+}) => {
   const submitReset = async (email: string) => {
     await page.goto('/login', { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Forgot password?' }).click({ timeout: 30_000 });
@@ -348,7 +377,9 @@ test('2 - request reset: 200 { ok, mailer } identical for real and made-up addre
     ]);
     const status = res.status();
     const body = (await res.json()) as { ok?: unknown; mailer?: unknown };
-    await expect(page.getByRole('heading', { name: 'Check your inbox' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: 'Check your inbox' })).toBeVisible({
+      timeout: 10_000,
+    });
     await expect(page.getByText('has an account, a reset link is on its way')).toBeVisible();
     await expect(page.getByText(email, { exact: true })).toBeVisible();
     await expect(page.getByText(`(valid ${RESET_MINUTES} min)`)).toBeVisible();
@@ -372,24 +403,31 @@ test('2 - request reset: 200 { ok, mailer } identical for real and made-up addre
     };
   });
 
-  await step('2b', 'Request reset for made-up address', 'e2e-nobody-…@example.invalid', async () => {
-    const fake = `e2e-nobody-${Date.now()}@example.invalid`;
-    const r = await submitReset(fake);
-    log(`POST (made-up) -> ${r.status} ${JSON.stringify(r.body)}`);
-    expect(r.status).toBe(200);
-    expect(r.body).toEqual({ ok: true, mailer: state.mailer });
-    return {
-      qty: '1',
-      headerStatus: 'Check your inbox',
-      overallStatus: `Identical: 200 { ok:true, mailer:"${String(r.body.mailer)}" }, same card, no error text`,
-    };
-  });
+  await step(
+    '2b',
+    'Request reset for made-up address',
+    'e2e-nobody-…@example.invalid',
+    async () => {
+      const fake = `e2e-nobody-${Date.now()}@example.invalid`;
+      const r = await submitReset(fake);
+      log(`POST (made-up) -> ${r.status} ${JSON.stringify(r.body)}`);
+      expect(r.status).toBe(200);
+      expect(r.body).toEqual({ ok: true, mailer: state.mailer });
+      return {
+        qty: '1',
+        headerStatus: 'Check your inbox',
+        overallStatus: `Identical: 200 { ok:true, mailer:"${String(r.body.mailer)}" }, same card, no error text`,
+      };
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
 // 3–6. Own-domain link -> new password -> /login panel -> sign-ins -> restore
 // ---------------------------------------------------------------------------
-test('3-6 - token_hash link, password change lands on /login signed out, new/old password, restore', async ({ page }) => {
+test('3-6 - token_hash link, password change lands on /login signed out, new/old password, restore', async ({
+  page,
+}) => {
   const browser = page.context().browser()!;
 
   await step('3', 'Open own-domain token_hash link', MASKED_EMAIL, async () => {
@@ -413,7 +451,9 @@ test('3-6 - token_hash link, password change lands on /login signed out, new/old
     const t0 = Date.now();
     await page.goto(state.tokenHashLink, { waitUntil: 'domcontentloaded' });
     const landed = Date.now();
-    log(`landed after ${landed - t0} ms on ${page.url().replace(/token_hash=[^&]+/, 'token_hash=…')}`);
+    log(
+      `landed after ${landed - t0} ms on ${page.url().replace(/token_hash=[^&]+/, 'token_hash=…')}`,
+    );
 
     const heading = page.getByRole('heading', { name: 'Choose a new password' });
     await expect(heading).toBeVisible({ timeout: 3_000 });
@@ -478,17 +518,23 @@ test('3-6 - token_hash link, password change lands on /login signed out, new/old
     const seen = visited.find((u) => /\/login\?reset=(done|done-nomail)\b/.test(u)) ?? '';
     state.resetParam = /reset=(done-nomail|done)/.exec(seen)?.[1] ?? '';
     log(`navigations: ${visited.map((u) => u.replace(WEB_ORIGIN, '')).join(' -> ')}`);
-    expect(state.resetParam, 'must pass through /login?reset=done|done-nomail').toMatch(/^done(-nomail)?$/);
+    expect(state.resetParam, 'must pass through /login?reset=done|done-nomail').toMatch(
+      /^done(-nomail)?$/,
+    );
     expect(changedBody.emailed).toBe(state.resetParam === 'done');
     expect(withEmailSentence).toBe(state.resetParam === 'done');
 
-    await expect.poll(() => page.url(), { timeout: 5_000, message: 'reset param must be removed' }).toBe(`${WEB_ORIGIN}/login`);
+    await expect
+      .poll(() => page.url(), { timeout: 5_000, message: 'reset param must be removed' })
+      .toBe(`${WEB_ORIGIN}/login`);
     await shot(page, '04-login-green-panel');
 
     // Signed out: no auth cookie in this context, no Sign out button, and / bounces to /login.
     const cookies = await authCookies(page.context());
     expect(cookies, 'no sb-*-auth-token cookie may remain').toHaveLength(0);
-    const ls = await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('sb-')));
+    const ls = await page.evaluate(() =>
+      Object.keys(localStorage).filter((k) => k.startsWith('sb-')),
+    );
     expect(ls, 'no sb-* localStorage session may remain').toHaveLength(0);
     await expect(page.getByRole('button', { name: 'Sign out' })).toHaveCount(0);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -502,33 +548,40 @@ test('3-6 - token_hash link, password change lands on /login signed out, new/old
     };
   });
 
-  await step('5a', 'Sign in with NEW password; auth cookie is a Session cookie', MASKED_EMAIL, async () => {
-    const ctx = await freshContext(browser);
-    try {
-      const p = await ctx.newPage();
-      await signIn(p, ADMIN_EMAIL, state.newPassword);
-      await p.waitForURL((u) => u.pathname === '/', { timeout: 30_000 });
-      await expect(p.getByRole('button', { name: 'Sign out' })).toBeVisible({ timeout: 30_000 });
-      await shot(p, '05-dashboard-new-password');
-      const before = await authCookies(ctx);
-      log(`auth cookies after sign-in: ${before.map((c) => `${c.name} expires=${c.expires} httpOnly=${c.httpOnly} secure=${c.secure} sameSite=${c.sameSite} len=${c.value.length}`).join(' | ')}`);
-      const chunk0 = before.find((c) => c.name === `${AUTH_COOKIE_PREFIX}.0`);
-      expect(chunk0, `${AUTH_COOKIE_PREFIX}.0 cookie must exist`).toBeTruthy();
-      expect(chunk0!.expires, 'must be a Session cookie (no Expires/Max-Age => -1)').toBe(-1);
-      expect(chunk0!.secure).toBe(true);
-      await p.getByRole('button', { name: 'Sign out' }).click();
-      await p.waitForURL(/\/login/, { timeout: 20_000 });
-      const after = await authCookies(ctx);
-      expect(after, 'sign-out must remove the auth cookie').toHaveLength(0);
-      return {
-        qty: '1',
-        headerStatus: 'Signed in',
-        overallStatus: `NEW password accepted -> /; ${AUTH_COOKIE_PREFIX}.0 is a Session cookie (expires=-1, ${before.length} chunk(s)); removed on Sign out`,
-      };
-    } finally {
-      await ctx.close();
-    }
-  });
+  await step(
+    '5a',
+    'Sign in with NEW password; auth cookie is a Session cookie',
+    MASKED_EMAIL,
+    async () => {
+      const ctx = await freshContext(browser);
+      try {
+        const p = await ctx.newPage();
+        await signIn(p, ADMIN_EMAIL, state.newPassword);
+        await p.waitForURL((u) => u.pathname === '/', { timeout: 30_000 });
+        await expect(p.getByRole('button', { name: 'Sign out' })).toBeVisible({ timeout: 30_000 });
+        await shot(p, '05-dashboard-new-password');
+        const before = await authCookies(ctx);
+        log(
+          `auth cookies after sign-in: ${before.map((c) => `${c.name} expires=${c.expires} httpOnly=${c.httpOnly} secure=${c.secure} sameSite=${c.sameSite} len=${c.value.length}`).join(' | ')}`,
+        );
+        const chunk0 = before.find((c) => c.name === `${AUTH_COOKIE_PREFIX}.0`);
+        expect(chunk0, `${AUTH_COOKIE_PREFIX}.0 cookie must exist`).toBeTruthy();
+        expect(chunk0!.expires, 'must be a Session cookie (no Expires/Max-Age => -1)').toBe(-1);
+        expect(chunk0!.secure).toBe(true);
+        await p.getByRole('button', { name: 'Sign out' }).click();
+        await p.waitForURL(/\/login/, { timeout: 20_000 });
+        const after = await authCookies(ctx);
+        expect(after, 'sign-out must remove the auth cookie').toHaveLength(0);
+        return {
+          qty: '1',
+          headerStatus: 'Signed in',
+          overallStatus: `NEW password accepted -> /; ${AUTH_COOKIE_PREFIX}.0 is a Session cookie (expires=-1, ${before.length} chunk(s)); removed on Sign out`,
+        };
+      } finally {
+        await ctx.close();
+      }
+    },
+  );
 
   await step('5b', 'Sign in with OLD password (fresh context)', MASKED_EMAIL, async () => {
     const ctx = await freshContext(browser);
@@ -542,7 +595,11 @@ test('3-6 - token_hash link, password change lands on /login signed out, new/old
       expect(text).toMatch(LOGIN_FAIL_RE);
       expect(p.url()).toMatch(/\/login/);
       await shot(p, '05b-old-password-refused');
-      return { qty: '1', headerStatus: 'Sign in refused', overallStatus: `"${text.slice(0, 60)}…"` };
+      return {
+        qty: '1',
+        headerStatus: 'Sign in refused',
+        overallStatus: `"${text.slice(0, 60)}…"`,
+      };
     } finally {
       await ctx.close();
     }
@@ -561,7 +618,11 @@ test('3-6 - token_hash link, password change lands on /login signed out, new/old
       await shot(p, '06-original-password-restored');
       await p.getByRole('button', { name: 'Sign out' }).click();
       await p.waitForURL(/\/login/, { timeout: 20_000 });
-      return { qty: '1', headerStatus: 'Signed in', overallStatus: 'ORIGINAL password restored via admin API and sign-in proven' };
+      return {
+        qty: '1',
+        headerStatus: 'Signed in',
+        overallStatus: 'ORIGINAL password restored via admin API and sign-in proven',
+      };
     } finally {
       await ctx.close();
     }
@@ -571,11 +632,15 @@ test('3-6 - token_hash link, password change lands on /login signed out, new/old
 // ---------------------------------------------------------------------------
 // 7. Same token_hash link a second time
 // ---------------------------------------------------------------------------
-test('7 - reused token_hash link: Reset link problem, 10-minute wording, Request a new link', async ({ page }) => {
+test('7 - reused token_hash link: Reset link problem, 10-minute wording, Request a new link', async ({
+  page,
+}) => {
   test.skip(!state.step3ok, 'step 3 did not produce a link');
   await step('7', 'Re-open the same token_hash link', MASKED_EMAIL, async () => {
     await page.goto(state.tokenHashLink, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: 'Reset link problem' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: 'Reset link problem' })).toBeVisible({
+      timeout: 10_000,
+    });
     const msg = (await page.locator('main p').first().innerText()).trim();
     log(`message: "${msg}"`);
     expect(msg).toMatch(/expired or was already used/i);
@@ -587,10 +652,16 @@ test('7 - reused token_hash link: Reset link problem, 10-minute wording, Request
     await expect(btn).toBeVisible();
     await btn.click();
     await page.waitForURL(/\/login\?mode=reset/, { timeout: 10_000 });
-    await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible({
+      timeout: 5_000,
+    });
     await expect(page.getByRole('button', { name: 'Send reset link' })).toBeVisible();
     await shot(page, '07b-request-new-link-form');
-    return { qty: '1', headerStatus: 'Reset link problem', overallStatus: `"${msg.slice(0, 70)}…"; Request a new link -> /login?mode=reset reset form` };
+    return {
+      qty: '1',
+      headerStatus: 'Reset link problem',
+      overallStatus: `"${msg.slice(0, 70)}…"; Request a new link -> /login?mode=reset reset form`,
+    };
   });
 });
 
@@ -613,65 +684,88 @@ test('3b - old action_link shape (#access_token) still opens the form', async ({
     await page.goto(link, { waitUntil: 'domcontentloaded' });
     const landed = Date.now();
     const landedUrl = page.url();
-    log(`landed on ${landedUrl.replace(/#.*$/, '#…')} (hash ${/#access_token/.test(landedUrl) ? 'has' : 'has NO'} access_token)`);
+    log(
+      `landed on ${landedUrl.replace(/#.*$/, '#…')} (hash ${/#access_token/.test(landedUrl) ? 'has' : 'has NO'} access_token)`,
+    );
     expect(new URL(landedUrl).origin).toBe(WEB_ORIGIN);
     expect(new URL(landedUrl).pathname).toBe('/auth/reset-password');
-    await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible({
+      timeout: 3_000,
+    });
     const shown = Date.now() - landed;
     await expect.poll(() => page.url(), { timeout: 3_000 }).not.toMatch(/access_token/);
     expect(page.url()).toBe(`${WEB_ORIGIN}/auth/reset-password`);
     await shot(page, '03b-old-shape-link-form');
     // Do NOT save a password here — the form is only opened. The context is discarded.
-    return { qty: '1', headerStatus: 'Choose a new password', overallStatus: `Old #access_token link still works; form ${shown} ms after landing; hash cleaned (no password saved)` };
+    return {
+      qty: '1',
+      headerStatus: 'Choose a new password',
+      overallStatus: `Old #access_token link still works; form ${shown} ms after landing; hash cleaned (no password saved)`,
+    };
   });
 });
 
 // ---------------------------------------------------------------------------
 // 8. No params at all
 // ---------------------------------------------------------------------------
-test('8 - /auth/reset-password with no params shows "invalid or has expired" after the wait', async ({ page }) => {
+test('8 - /auth/reset-password with no params shows "invalid or has expired" after the wait', async ({
+  page,
+}) => {
   await step('8', 'Open /auth/reset-password with no params', '—', async () => {
     const t0 = Date.now();
     await page.goto('/auth/reset-password', { waitUntil: 'domcontentloaded' });
     await expect(page.getByText('Verifying your reset link')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByRole('heading', { name: 'Reset link problem' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Reset link problem' })).toBeVisible({
+      timeout: 15_000,
+    });
     const waited = Date.now() - t0;
     const msg = (await page.locator('main p').first().innerText()).trim();
     log(`no-params message after ${waited} ms: "${msg}"`);
     expect(msg).toMatch(/invalid or has expired/i);
     await shot(page, '08-no-params');
-    return { qty: '—', headerStatus: 'Reset link problem', overallStatus: `"${msg.slice(0, 80)}" after ${waited} ms` };
+    return {
+      qty: '—',
+      headerStatus: 'Reset link problem',
+      overallStatus: `"${msg.slice(0, 80)}" after ${waited} ms`,
+    };
   });
 });
 
 // ---------------------------------------------------------------------------
 // 9. Rate limit — API only
 // ---------------------------------------------------------------------------
-test('9 - 4 quick POSTs with a made-up address all answer 200 with the same body', async ({ page }) => {
-  await step('9', '4 quick POST /auth/forgot-password', 'e2e-ratelimit-…@example.invalid', async () => {
-    const email = `e2e-ratelimit-${Date.now()}@example.invalid`;
-    const url = `${API_URL}/auth/forgot-password`;
-    const results = await Promise.all(
-      [1, 2, 3, 4].map(async () => {
-        const res = await page.request.post(url, {
-          data: { email },
-          headers: { 'content-type': 'application/json', origin: WEB_ORIGIN },
-        });
-        return { status: res.status(), text: await res.text() };
-      }),
-    );
-    results.forEach((r, i) => log(`POST #${i + 1} -> ${r.status} ${r.text}`));
-    expect(results.map((r) => r.status)).toEqual([200, 200, 200, 200]);
-    const bodies = results.map((r) => JSON.parse(r.text) as { ok: unknown; mailer: unknown });
-    for (const b of bodies) expect(b).toEqual({ ok: true, mailer: bodies[0]!.mailer });
-    if (state.mailer) expect(bodies[0]!.mailer).toBe(state.mailer);
-    else state.mailer = String(bodies[0]!.mailer);
-    return {
-      qty: '4',
-      headerStatus: '200 ×4',
-      overallStatus: `All 200 { ok:true, mailer:"${String(bodies[0]!.mailer)}" }; no 429, no differing body`,
-    };
-  });
+test('9 - 4 quick POSTs with a made-up address all answer 200 with the same body', async ({
+  page,
+}) => {
+  await step(
+    '9',
+    '4 quick POST /auth/forgot-password',
+    'e2e-ratelimit-…@example.invalid',
+    async () => {
+      const email = `e2e-ratelimit-${Date.now()}@example.invalid`;
+      const url = `${API_URL}/auth/forgot-password`;
+      const results = await Promise.all(
+        [1, 2, 3, 4].map(async () => {
+          const res = await page.request.post(url, {
+            data: { email },
+            headers: { 'content-type': 'application/json', origin: WEB_ORIGIN },
+          });
+          return { status: res.status(), text: await res.text() };
+        }),
+      );
+      results.forEach((r, i) => log(`POST #${i + 1} -> ${r.status} ${r.text}`));
+      expect(results.map((r) => r.status)).toEqual([200, 200, 200, 200]);
+      const bodies = results.map((r) => JSON.parse(r.text) as { ok: unknown; mailer: unknown });
+      for (const b of bodies) expect(b).toEqual({ ok: true, mailer: bodies[0]!.mailer });
+      if (state.mailer) expect(bodies[0]!.mailer).toBe(state.mailer);
+      else state.mailer = String(bodies[0]!.mailer);
+      return {
+        qty: '4',
+        headerStatus: '200 ×4',
+        overallStatus: `All 200 { ok:true, mailer:"${String(bodies[0]!.mailer)}" }; no 429, no differing body`,
+      };
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -683,10 +777,16 @@ test('10 - activity_log: password_reset_completed row; password_reset_requested 
     await ensureUserId();
     const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const all = await auditRows(since);
-    for (const r of all) log(`activity_log ${r.ts} ${r.action} entity=${r.entity} ref=${r.ref_id} detail="${r.detail}"`);
+    for (const r of all)
+      log(
+        `activity_log ${r.ts} ${r.action} entity=${r.entity} ref=${r.ref_id} detail="${r.detail}"`,
+      );
     const completed = all.filter((r) => r.action === 'password_reset_completed');
     const requested = all.filter((r) => r.action === 'password_reset_requested');
-    expect(completed.length, 'one password_reset_completed row in the last 10 min').toBeGreaterThanOrEqual(1);
+    expect(
+      completed.length,
+      'one password_reset_completed row in the last 10 min',
+    ).toBeGreaterThanOrEqual(1);
     const row = completed[0]!;
     expect(row.detail.startsWith('Password changed from IP')).toBe(true);
     expect(row.entity).toBe('users');
@@ -699,7 +799,11 @@ test('10 - activity_log: password_reset_completed row; password_reset_requested 
     log(`email outcome in audit row: "${outcome}"`);
     const appMailer = state.mailer === 'resend' || state.mailer === 'smtp';
     if (appMailer) expect(requested.length).toBeGreaterThanOrEqual(1);
-    else expect(requested.length, `mailer=${state.mailer}: no password_reset_requested row expected`).toBe(0);
+    else
+      expect(
+        requested.length,
+        `mailer=${state.mailer}: no password_reset_requested row expected`,
+      ).toBe(0);
     return {
       qty: String(all.length),
       headerStatus: 'password_reset_completed',
@@ -712,55 +816,77 @@ test('10 - activity_log: password_reset_completed row; password_reset_requested 
 // 11. Browser session: shared across tabs, gone with the cookies
 // ---------------------------------------------------------------------------
 test('11 - session is shared by a second tab and gone after clearCookies', async ({ browser }) => {
-  await step('11', 'Second tab shares the login; clearCookies -> /login', MASKED_EMAIL, async () => {
-    await ensureOriginalPassword();
-    const ctx = await freshContext(browser);
-    try {
-      const p1 = await ctx.newPage();
-      await signIn(p1, ADMIN_EMAIL, ADMIN_PASSWORD);
-      await p1.waitForURL((u) => u.pathname === '/', { timeout: 30_000 });
-      await expect(p1.getByRole('button', { name: 'Sign out' })).toBeVisible({ timeout: 30_000 });
+  await step(
+    '11',
+    'Second tab shares the login; clearCookies -> /login',
+    MASKED_EMAIL,
+    async () => {
+      await ensureOriginalPassword();
+      const ctx = await freshContext(browser);
+      try {
+        const p1 = await ctx.newPage();
+        await signIn(p1, ADMIN_EMAIL, ADMIN_PASSWORD);
+        await p1.waitForURL((u) => u.pathname === '/', { timeout: 30_000 });
+        await expect(p1.getByRole('button', { name: 'Sign out' })).toBeVisible({ timeout: 30_000 });
 
-      const p2 = await ctx.newPage();
-      await p2.goto('/', { waitUntil: 'domcontentloaded' });
-      await expect(p2.getByRole('button', { name: 'Sign out' })).toBeVisible({ timeout: 30_000 });
-      expect(new URL(p2.url()).pathname).toBe('/');
-      log('second tab: signed in without a login redirect');
-      await shot(p2, '11-second-tab-signed-in');
+        const p2 = await ctx.newPage();
+        await p2.goto('/', { waitUntil: 'domcontentloaded' });
+        await expect(p2.getByRole('button', { name: 'Sign out' })).toBeVisible({ timeout: 30_000 });
+        expect(new URL(p2.url()).pathname).toBe('/');
+        log('second tab: signed in without a login redirect');
+        await shot(p2, '11-second-tab-signed-in');
 
-      await ctx.clearCookies();
-      await p2.reload({ waitUntil: 'domcontentloaded' });
-      await p2.waitForURL(/\/login/, { timeout: 20_000 });
-      await expect(p2.getByRole('heading', { name: 'Sign in to Innovic ERP' })).toBeVisible({ timeout: 10_000 });
-      log('after clearCookies + reload: /login');
-      await shot(p2, '11b-after-clear-cookies');
-      return { qty: '2', headerStatus: 'Signed in -> /login', overallStatus: 'Second tab already signed in; clearCookies + reload -> /login' };
-    } finally {
-      await ctx.close();
-    }
-  });
+        await ctx.clearCookies();
+        await p2.reload({ waitUntil: 'domcontentloaded' });
+        await p2.waitForURL(/\/login/, { timeout: 20_000 });
+        await expect(p2.getByRole('heading', { name: 'Sign in to Innovic ERP' })).toBeVisible({
+          timeout: 10_000,
+        });
+        log('after clearCookies + reload: /login');
+        await shot(p2, '11b-after-clear-cookies');
+        return {
+          qty: '2',
+          headerStatus: 'Signed in -> /login',
+          overallStatus: 'Second tab already signed in; clearCookies + reload -> /login',
+        };
+      } finally {
+        await ctx.close();
+      }
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
 // 12. API guard: password-changed from an ordinary session
 // ---------------------------------------------------------------------------
-test('12 - POST /auth/password-changed from a normal session: emailed:false and no audit row', async ({ request }) => {
+test('12 - POST /auth/password-changed from a normal session: emailed:false and no audit row', async ({
+  request,
+}) => {
   await step('12', 'POST /auth/password-changed from ordinary session', MASKED_EMAIL, async () => {
     await ensureOriginalPassword();
     await ensureUserId();
     const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    const before = (await auditRows(since)).filter((r) => r.action === 'password_reset_completed').length;
+    const before = (await auditRows(since)).filter(
+      (r) => r.action === 'password_reset_completed',
+    ).length;
 
     const client = createClient(SUPABASE_URL, ANON_KEY, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
-    const { data, error } = await client.auth.signInWithPassword({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+    const { data, error } = await client.auth.signInWithPassword({
+      email: ADMIN_EMAIL,
+      password: ADMIN_PASSWORD,
+    });
     if (error) throw new Error('ordinary sign-in failed: ' + error.message);
     const token = data.session?.access_token ?? '';
     expect(token).not.toBe('');
     try {
       const res = await request.post(`${API_URL}/auth/password-changed`, {
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', origin: WEB_ORIGIN },
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          origin: WEB_ORIGIN,
+        },
         data: {},
       });
       const text = await res.text();
@@ -770,10 +896,18 @@ test('12 - POST /auth/password-changed from a normal session: emailed:false and 
     } finally {
       await client.auth.signOut();
     }
-    const after = (await auditRows(since)).filter((r) => r.action === 'password_reset_completed').length;
+    const after = (await auditRows(since)).filter(
+      (r) => r.action === 'password_reset_completed',
+    ).length;
     log(`password_reset_completed rows before=${before} after=${after}`);
-    expect(after, 'an ordinary session must not create a password_reset_completed row').toBe(before);
-    return { qty: '1', headerStatus: '200', overallStatus: `{ ok:true, emailed:false }; completed audit rows unchanged (${before} -> ${after})` };
+    expect(after, 'an ordinary session must not create a password_reset_completed row').toBe(
+      before,
+    );
+    return {
+      qty: '1',
+      headerStatus: '200',
+      overallStatus: `{ ok:true, emailed:false }; completed audit rows unchanged (${before} -> ${after})`,
+    };
   });
 });
 
@@ -781,7 +915,11 @@ test('12 - POST /auth/password-changed from a normal session: emailed:false and 
 // Z. Report
 // ---------------------------------------------------------------------------
 function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 test('Z - render six-column PDF + JSON report', async ({ page }) => {
@@ -804,10 +942,21 @@ test('Z - render six-column PDF + JSON report', async ({ page }) => {
   ];
   for (const [id, action, document] of expected) {
     if (!rows.some((r) => r.step === id)) {
-      rows.push({ step: id, action, document, qty: '—', headerStatus: '—', overallStatus: 'Not run (earlier step failed)', result: 'SKIP' });
+      rows.push({
+        step: id,
+        action,
+        document,
+        qty: '—',
+        headerStatus: '—',
+        overallStatus: 'Not run (earlier step failed)',
+        result: 'SKIP',
+      });
     }
   }
-  rows.sort((a, b) => expected.findIndex((e) => e[0] === a.step) - expected.findIndex((e) => e[0] === b.step));
+  rows.sort(
+    (a, b) =>
+      expected.findIndex((e) => e[0] === a.step) - expected.findIndex((e) => e[0] === b.step),
+  );
 
   const mailer = state.mailer || 'unknown';
   const appMailer = mailer === 'resend' || mailer === 'smtp';
@@ -816,8 +965,12 @@ test('Z - render six-column PDF + JSON report', async ({ page }) => {
       ? `mailer=${mailer}: the API sends the reset link and the confirmation email through its own mailer.`
       : 'mailer=supabase: Railway (TEST API) has no SMTP/Resend variables, so the reset link falls back to Supabase\'s built-in mailer (delivers only to Supabase-org members, a few mails an hour) and the "password changed" confirmation email is NOT sent — the reset page lands on /login?reset=done-nomail and the panel shows no email sentence. Staff delivery stays blocked until a mailer is configured.',
   );
-  if (state.resetParam) findings.push(`Observed after the change: /login?reset=${state.resetParam}; POST /auth/password-changed answered emailed:${state.resetParam === 'done'}.`);
-  if (state.auditCompletedDetail) findings.push(`Audit row written on the change: "${state.auditCompletedDetail}".`);
+  if (state.resetParam)
+    findings.push(
+      `Observed after the change: /login?reset=${state.resetParam}; POST /auth/password-changed answered emailed:${state.resetParam === 'done'}.`,
+    );
+  if (state.auditCompletedDetail)
+    findings.push(`Audit row written on the change: "${state.auditCompletedDetail}".`);
   if (state.auditCompletedDetail && !appMailer) {
     findings.push(
       state.auditRequestedDetails.length === 0
@@ -843,7 +996,10 @@ test('Z - render six-column PDF + JSON report', async ({ page }) => {
     'Note for the API heuristic: /auth/password-changed only counts a change made at least 1 s after the link was opened; the spec waits 2 s before saving, as a person would.',
   );
   const fails = rows.filter((r) => r.result === 'FAIL');
-  if (fails.length) findings.push(`${fails.length} step(s) FAILED — see the Result column and the note in the JSON.`);
+  if (fails.length)
+    findings.push(
+      `${fails.length} step(s) FAILED — see the Result column and the note in the JSON.`,
+    );
 
   const pass = rows.filter((r) => r.result === 'PASS').length;
   const skip = rows.filter((r) => r.result === 'SKIP').length;
@@ -902,8 +1058,7 @@ test('Z - render six-column PDF + JSON report', async ({ page }) => {
     printBackground: true,
     displayHeaderFooter: true,
     headerTemplate: '<div></div>',
-    footerTemplate:
-      `<div style="width:100%;font-size:8px;color:#6b7280;padding:0 10mm;display:flex;justify-content:space-between;"><span>Innovic ERP — forgot-password verification v2 · test stack · ${REPORT_DATE}</span><span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span></div>`,
+    footerTemplate: `<div style="width:100%;font-size:8px;color:#6b7280;padding:0 10mm;display:flex;justify-content:space-between;"><span>Innovic ERP — forgot-password verification v2 · test stack · ${REPORT_DATE}</span><span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span></div>`,
     margin: { top: '12mm', bottom: '14mm', left: '10mm', right: '10mm' },
   });
   writeFileSync(
@@ -936,6 +1091,8 @@ test('Z - render six-column PDF + JSON report', async ({ page }) => {
   if (existsSync(STATE_FILE)) rmSync(STATE_FILE);
   log(`PDF: ${PDF_OUT}`);
   log(`JSON: ${JSON_OUT}`);
-  log(`SUMMARY: ${summary}; mailer=${mailer}; reset=${state.resetParam}; restored=${state.restoredAt || 'NO'}; proven=${state.restoreProven}`);
+  log(
+    `SUMMARY: ${summary}; mailer=${mailer}; reset=${state.resetParam}; restored=${state.restoredAt || 'NO'}; proven=${state.restoreProven}`,
+  );
   expect(existsSync(PDF_OUT)).toBe(true);
 });

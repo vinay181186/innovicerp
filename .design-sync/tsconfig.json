@@ -5,7 +5,10 @@
     "paths": {
       "@/*": ["src/*.ts", "src/*.tsx", "src/*/index.ts", "src/*/index.tsx", "src/*"],
       "@innovic/shared": ["../../packages/shared/src/index.ts"],
-      "@innovic/shared/*": ["../../packages/shared/src/*.ts", "../../packages/shared/src/*/index.ts"]
+      "@innovic/shared/*": [
+        "../../packages/shared/src/*.ts",
+        "../../packages/shared/src/*/index.ts"
+      ]
     }
   }
 }

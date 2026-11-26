@@ -8,11 +8,19 @@ export const AttachAttached = () => (
   <FileField fileName="QC Report IN-JC-00456.pdf" onPick={noop} onRemove={noop} />
 );
 
-export const AttachError = () => <FileField onPick={noop} error="This file is over the 50 MB limit." />;
+export const AttachError = () => (
+  <FileField onPick={noop} error="This file is over the 50 MB limit." />
+);
 
 export const Drawing = () => (
   <FormGrid>
-    <FileField variant="drawing" fileName="BRKT-101-A Rev B.pdf" onPick={noop} onRemove={noop} onView={noop} />
+    <FileField
+      variant="drawing"
+      fileName="BRKT-101-A Rev B.pdf"
+      onPick={noop}
+      onRemove={noop}
+      onView={noop}
+    />
   </FormGrid>
 );
 

@@ -12,6 +12,7 @@ Timeline used: op qty 10 → DC out 10 → GRN 10 → QC 7/3 → NC-A(3) → RTV
 NC-B(2) → RTV B → GRN-B → QC 0/2 → NC-C(2) → RTV C → GRN-C → QC 2/0. Op 2 = in-house QC op.
 
 Structural facts everything below follows from (paths under `apps/api/src/`):
+
 - The RTV challan line carries `purchase_order_line_id` = the op's `outsource_po_line_id`
   (`modules/nc-register/service.ts:1513-1516,1561`); header has `purchase_order_id = null`, `nc_id` set.
 - So DC-receive treats an RTV challan like an ordinary one: auto-GRN line gets the PO line
@@ -30,6 +31,7 @@ Structural facts everything below follows from (paths under `apps/api/src/`):
 ## Gaps
 
 ### G1 (critical) — replacement pieces never reach the next QC op; JC stuck at qc_pending
+
 `incoming-qc/service.ts:543` skips the mirror for `ncId` lines; `recovery.ts:711-760` does not
 reinject for a PO-linked origin. At S13: op2 `input_avail` 10, `qc_accepted` 7 → `qc_pending` 3
 (0125:178-188) → op2 `qc_pending`, JC `qc_pending` (0019:286), tiles "7 done / 3 pending".
@@ -39,12 +41,14 @@ Fix: mirror accepted replacement qty onto the next QC op like first-cycle pieces
 `ncId` skip when the origin op is outsource and op_seq+1 is a QC op); keep `onRecoveryJobCardQc`.
 
 ### G2 (critical) — no JC-completion cascade from Incoming QC
+
 Last-op OSP: the op reaches `complete` at S13 (0125:209-216) but `tryCascadeJcComplete` only ran
 at DC receive while the JC was incomplete → `job_cards.closed_at` and the SO/JW line never close.
 Fix: call `tryCascadeJcComplete(tx, jobCardId, user)` at the end of `submitIncomingQc` when the
 line traces to a JC op.
 
 ### G3 (critical) — stock never credited for mirrored pieces when the QC op is last
+
 `creditGrnQcStock` skips mid-route lines (`goods-receipt-notes/cascades.ts:289`); the mirror row
 is a raw `op_log` insert (`incoming-qc/service.ts:183-201`) so `tryApplyQcStockCascade`
 (`op-entry/service.ts:1485-1498`, only from `submitQcLog`) never runs → the 7 first-cycle pieces
@@ -53,6 +57,7 @@ Fix: after the mirror insert, if the mirrored op is the JC's last op, run the QC
 for that op_log row.
 
 ### G4 (high) — at-vendor and in-QC double count while a replacement awaits QC
+
 0125:114-128 `rtv = SUM(rejected_qty)` for open RTV NCs (status `disposed` included);
 0125:251-256 `at_vendor = GREATEST(0, sent − osp_received) + rtv`, `in_qc = received − acc − rej`
 with `osp_received` including replacement GRNs (17 vs sent 10 at S13). S6: at_vendor 3 AND
@@ -64,6 +69,7 @@ rtv at-vendor term = Σ(rtv_sent − rtv_received) over non-closed RTV NCs; `ava
 open qty (rejected − cleared − failed), not rejected qty; `in_qc` unchanged.
 
 ### G5 (high) — outsource_status frozen at `received`; replacement receipts flip it early
+
 `delivery-challans/receipt-cascades.ts:113-131` sums ALL receipt lines on the op's PO lines (RTV
 included) vs `outsource_sent_qty` (ordinary only): PO 10, DC received 8, RTV 2 back → 8+2 ≥ 10 →
 `received` with 2 ordinary pieces still out. `received` is never demoted when an RTV challan
@@ -75,12 +81,14 @@ Fix: exclude `dc.nc_id IS NOT NULL` challans from the cumulative; in `createNcDc
 again when rtv_received ≥ rtv_sent and no other open RTV NC on the op.
 
 ### G6 (medium) — RTV challans inflate the PO-line "already sent" guard
+
 `delivery-challans/service.ts:893-922` sums every DC line on the PO line, RTV lines included.
 PO 10, DC 6, RTV 2 → sentOnDcs 8, poBalance 2 while the op-level sendable is 4
 (`cascades.ts:192`) → preview (:684-685) and create guard (:1053-1063) under-allow by the RTV qty.
 Fix: `AND dc.nc_id IS NULL` in `sumSentQtyByPoLine`.
 
 ### G7 (medium) — v_nc_op_breakup counts a failed piece once per NC generation; no `disposed` bucket
+
 0122:352 `nc_closed_qty` adds the closed NC's full `rejected_qty` although the failed pieces are
 alive as the next NC: S7 raised 2 + closed 3 = 5 for 3 pieces; S13 "NC closed 7" for 3 rejects.
 Status `disposed` has no bucket (0122:342-352) → the strip renders nothing
@@ -89,10 +97,12 @@ Fix: closed = `cleared_qty` (plus scrap); add `awaiting_return_challan_qty` for
 disposition return_to_vendor AND status disposed.
 
 ### G8 (low) — follow-on NC has no link to the NC whose pieces it carries
+
 Fix: `parent_nc_id` on nc_register, set by `autoCreateNcFromQcReject` when the GRN header has
 `nc_id`; show "Continues NC …" on the NC page and in related docs.
 
 ### G9 (low) — housekeeping
+
 - PO reject (`purchase-orders/service.ts:2342`) leaves the op `po_created` with
   `outsource_po_line_id` on a cancelled PO line; Gen DC still gated on it. Fix: release like
   `releaseSourceJcOps` (`purchase-requests/service.ts:1382-1400`).
@@ -104,6 +114,7 @@ Fix: `parent_nc_id` on nc_register, set by `autoCreateNcFromQcReject` when the G
   `outsource_status = NULL` and no PR until the next edit.
 
 ## Verified correct (no change needed)
+
 - `outsource_sent_qty` (RTV challans do not add to it), `outsource_returned_qty` (ends 10 = 7+1+0+2).
 - `ready_to_send_qty` at every step.
 - PO line received qty and header at every step (ADR-165).
@@ -112,6 +123,7 @@ Fix: `parent_nc_id` on nc_register, set by `autoCreateNcFromQcReject` when the G
 - No double count between OPEN NC rows in v_nc_op_breakup (NC-A closes before NC-B exists).
 
 ## Suggested order
+
 Batch 1 (correctness): G1, G2, G3, G5, G6 (code) + G4 (one migration re-emitting v_jc_op_status
 and v_osp_wip). Batch 2: G7, G8 (migrations). Batch 3: G9.
 Re-prove each batch with `apps/web/e2e/flow-erp-chain-report.spec.ts` (R1 section) plus a
@@ -139,7 +151,7 @@ other terminal has open; **they are OPEN and owned by whoever next edits that fi
    flagged QC-required with all GRN pieces accepted and no shop QC reads `complete` in the view
    while `lib/calc-engine.ts` (fixed 2026-09-16) reads `qc_pending`. Pre-existing (0125). Fix:
    re-emit the view with `AND (NOT o.qc_required OR COALESCE(r.qc_accepted_qty,0) >=
-   COALESCE(r.completed_qty,0) + COALESCE(orr.osp_accepted_qty,0))` on that branch.
+COALESCE(r.completed_qty,0) + COALESCE(orr.osp_accepted_qty,0))` on that branch.
 7. (other terminal — addressed in 9bd25e54, verify) `route-cards/service.ts` ~L545/~L585
    now emits "30. DIR" / "10. turn" in the change note; `route-cards/service.test.ts:119-120` still
    asserts "3. DIR" / "1. turn" — pure unit test, will fail in CI. Update the expectations.

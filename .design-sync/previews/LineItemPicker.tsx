@@ -21,7 +21,13 @@ export const OffMaster = () => (
 
 export const NameMissing = () => (
   <FormGrid>
-    <LineItemPicker code="GSKT-900" name="" items={items} nameError="Enter the Item Name." onChange={noop} />
+    <LineItemPicker
+      code="GSKT-900"
+      name=""
+      items={items}
+      nameError="Enter the Item Name."
+      onChange={noop}
+    />
   </FormGrid>
 );
 

@@ -114,9 +114,7 @@ export async function parseMlBomWorkbook(buf: ArrayBuffer): Promise<MlBomSheetPa
       rawMaterialSize: text('rawMaterialSize') || null,
       remarks: text('remarks') || null,
       // Only when the sheet has the column: an old sheet sends no field at all.
-      ...(colOf.has('childDrawingRev')
-        ? { childDrawingRev: text('childDrawingRev') || null }
-        : {}),
+      ...(colOf.has('childDrawingRev') ? { childDrawingRev: text('childDrawingRev') || null } : {}),
     };
     const blank =
       !row.bomItemCode &&

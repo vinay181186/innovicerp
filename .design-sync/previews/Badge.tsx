@@ -16,16 +16,26 @@ export const Tones = () => (
 
 export const PrTypeMarkers = () => (
   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-    <Badge tone="blue" title="Raw material purchase">RM</Badge>
-    <Badge tone="teal" title="Consumable purchase">Consumable</Badge>
-    <Badge tone="purple" title="Service request">SVC</Badge>
+    <Badge tone="blue" title="Raw material purchase">
+      RM
+    </Badge>
+    <Badge tone="teal" title="Consumable purchase">
+      Consumable
+    </Badge>
+    <Badge tone="purple" title="Service request">
+      SVC
+    </Badge>
   </div>
 );
 
 export const OperationTypes = () => (
   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
     <Badge tone="cyan">In-house</Badge>
-    <Badge tone="orange" title="Outside Processing">OSP</Badge>
-    <Badge tone="purple" title="Job Work order">JW</Badge>
+    <Badge tone="orange" title="Outside Processing">
+      OSP
+    </Badge>
+    <Badge tone="purple" title="Job Work order">
+      JW
+    </Badge>
   </div>
 );

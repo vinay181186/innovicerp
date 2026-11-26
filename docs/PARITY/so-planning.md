@@ -248,6 +248,7 @@ DELTAs (CPO chip, activity-log audit, vendor-cross-check) and POLISH (empty stat
 ---
 
 **Sign-off needed before code:**
+
 - Confirm the **BLOCKER** list above is the right scope for the first pass.
 - Approve the one schema change (`plan.requiredDocs` column).
 - Tell me which legacy items you want **moved** from BLOCKER → DELTA (i.e. you'd ship without them).

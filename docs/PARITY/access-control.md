@@ -1,6 +1,7 @@
 # PARITY — Access Control (`renderAccessControl`)
 
 > **Legacy source:** `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html`
+>
 > - List + role-change + Configure button: `renderAccessControl` L13861–13905
 > - Per-user editor modal: `_editAccess` L13917–14005
 > - Helper gates (used 173× across the legacy file): `isAdmin` L13776, `isManager` L13777, `canEdit(formKey)` L13778, `canEntry(formKey)` L13785, `canView(formKey)` L13792, `_hasDeptAccess(dept)` L13799, `_getUserAccess(userId)` L13805
@@ -49,6 +50,7 @@ Single Firebase collection `userAccess`. One record per user:
 ```
 
 **View/Entry/Edit hierarchy** (legacy `_editAccess` L13981, L13988):
+
 - Checking **Edit** auto-checks Entry and View
 - Checking **Entry** auto-checks View
 - View can be alone
@@ -60,9 +62,11 @@ On save the form rows are reconstituted from the View/Entry/Edit checkboxes and 
 ## 3. Roles (legacy)
 
 7 roles in the dropdown (L13879–13885):
+
 - `admin`, `manager`, `sr_engineer`, `engineer`, `jn_engineer`, `operator`, `viewer`
 
 ⚠️ **DELTA — role enum mismatch.** Our React app has **8 different roles** (`packages/shared/src/enums/user-role.ts`):
+
 - `admin`, `manager`, `operator`, `qc`, `procurement`, `dispatch`, `design`, `viewer`
 
 The React enum is domain-specialised (qc/procurement/dispatch/design) where legacy is seniority-tiered (sr/jn engineers). All existing RLS policies key off our 8-role enum. **Recommendation: keep our 8 roles unchanged.** Map legacy's tier roles to `operator` or `viewer` at migration if/when users are imported.
@@ -71,17 +75,17 @@ The React enum is domain-specialised (qc/procurement/dispatch/design) where lega
 
 ## 4. Departments (legacy, L13849)
 
-| key | label | colour |
-|---|---|---|
-| `planning` | Planning | #8B5CF6 |
-| `sales` | Sales | #22C55E |
-| `store` | Store | #F59E0B |
-| `design` | Design | #8B5CF6 |
+| key          | label      | colour  |
+| ------------ | ---------- | ------- |
+| `planning`   | Planning   | #8B5CF6 |
+| `sales`      | Sales      | #22C55E |
+| `store`      | Store      | #F59E0B |
+| `design`     | Design     | #8B5CF6 |
 | `production` | Production | #06B6D4 |
-| `qc` | QC | #EF4444 |
-| `purchase` | Purchase | #2563EB |
-| `finance` | Finance | #0D9488 |
-| `system` | System | #64748B |
+| `qc`         | QC         | #EF4444 |
+| `purchase`   | Purchase   | #2563EB |
+| `finance`    | Finance    | #0D9488 |
+| `system`     | System     | #64748B |
 
 Used for sidebar-section visibility (`_hasDeptAccess('sales')` → show Sales section). Port verbatim.
 
@@ -89,47 +93,48 @@ Used for sidebar-section visibility (`_hasDeptAccess('sales')` → show Sales se
 
 ## 5. Forms (legacy, L13811–13847) — 35 entries
 
-| # | key | dept | label | React module status |
-|---|---|---|---|---|
-| 1 | `so_create` | sales | SO Master | ✅ shipped |
-| 2 | `jw_create` | sales | JW Master | ✅ shipped |
-| 3 | `client_create` | sales | Client Master | ✅ shipped |
-| 4 | `dispatch_create` | sales | Dispatch Register | 🟡 partial (DC list, no Dispatch Register screen) |
-| 5 | `plan_create` | planning | SO/JW Planning | ✅ shipped |
-| 6 | `jc_create` | production | Job Cards | ✅ shipped (read-only) |
-| 7 | `op_entry` | production | Op Entry | ✅ shipped |
-| 8 | `machine_create` | production | Machine Master | ✅ shipped |
-| 9 | `operator_create` | production | Operator Master | ✅ shipped |
-| 10 | `routecard_create` | planning | Route Cards | ✅ shipped (moved from design, ADR-205) |
-| 11 | `bom_create` | design | BOM Master | ✅ shipped |
-| 12 | `item_create` | store | Item Master | ✅ shipped |
-| 13 | `grn_create` | store | GRN | ✅ shipped |
-| 14 | `issue_create` | store | Item Issue Register | ✅ shipped |
-| 15 | `design_create` | design | Design Tracker | ✅ shipped |
-| 16 | `dsnproj_create` | design | Design Projects | ✅ shipped |
-| 17 | `dsnissue_create` | design | Design Issues | ✅ shipped |
-| 18 | `dsnworklog_create` | design | Daily Work Log | ✅ shipped |
-| 19 | `dsndcr_create` | design | Design DCR/DCN | ✅ shipped |
-| 20 | `toolissue_create` | store | Tool Issue Register | ✅ shipped |
-| 21 | `party_create` | store | Party Material | ✅ shipped |
-| 22 | `qc_submit` | qc | QC Call Register | ✅ shipped |
-| 23 | `qc_incoming` | qc | Incoming QC | ✅ shipped |
-| 24 | `qcprocess_create` | qc | QC Process Master | ✅ shipped |
-| 25 | `nc_dispose` | qc | NC Register | ✅ shipped |
-| 26 | `capa_create` | qc | CAPA | ✅ shipped |
-| 27 | `pr_create` | purchase | Purchase Requests | ✅ shipped |
-| 28 | `po_create` | purchase | Purchase Orders | ✅ shipped |
-| 29 | `vendor_create` | purchase | Vendor Master | ✅ shipped |
-| 30 | `oj_create` | purchase | Outsource Jobs | ❌ missing module |
-| 31 | `ospdc_create` | purchase | OSP DC & Outward | ✅ shipped (via delivery-challans) |
-| 32 | `servicepo_create` | purchase | Service PO | ❌ missing module |
-| 33 | `machop_entry` | production | Machine Op Entry | ✅ shipped |
-| 34 | `cc_create` | finance | Cost Center Master | ✅ shipped |
-| 35 | `user_manage` | system | User Management | ✅ shipped |
+| #   | key                 | dept       | label               | React module status                               |
+| --- | ------------------- | ---------- | ------------------- | ------------------------------------------------- |
+| 1   | `so_create`         | sales      | SO Master           | ✅ shipped                                        |
+| 2   | `jw_create`         | sales      | JW Master           | ✅ shipped                                        |
+| 3   | `client_create`     | sales      | Client Master       | ✅ shipped                                        |
+| 4   | `dispatch_create`   | sales      | Dispatch Register   | 🟡 partial (DC list, no Dispatch Register screen) |
+| 5   | `plan_create`       | planning   | SO/JW Planning      | ✅ shipped                                        |
+| 6   | `jc_create`         | production | Job Cards           | ✅ shipped (read-only)                            |
+| 7   | `op_entry`          | production | Op Entry            | ✅ shipped                                        |
+| 8   | `machine_create`    | production | Machine Master      | ✅ shipped                                        |
+| 9   | `operator_create`   | production | Operator Master     | ✅ shipped                                        |
+| 10  | `routecard_create`  | planning   | Route Cards         | ✅ shipped (moved from design, ADR-205)           |
+| 11  | `bom_create`        | design     | BOM Master          | ✅ shipped                                        |
+| 12  | `item_create`       | store      | Item Master         | ✅ shipped                                        |
+| 13  | `grn_create`        | store      | GRN                 | ✅ shipped                                        |
+| 14  | `issue_create`      | store      | Item Issue Register | ✅ shipped                                        |
+| 15  | `design_create`     | design     | Design Tracker      | ✅ shipped                                        |
+| 16  | `dsnproj_create`    | design     | Design Projects     | ✅ shipped                                        |
+| 17  | `dsnissue_create`   | design     | Design Issues       | ✅ shipped                                        |
+| 18  | `dsnworklog_create` | design     | Daily Work Log      | ✅ shipped                                        |
+| 19  | `dsndcr_create`     | design     | Design DCR/DCN      | ✅ shipped                                        |
+| 20  | `toolissue_create`  | store      | Tool Issue Register | ✅ shipped                                        |
+| 21  | `party_create`      | store      | Party Material      | ✅ shipped                                        |
+| 22  | `qc_submit`         | qc         | QC Call Register    | ✅ shipped                                        |
+| 23  | `qc_incoming`       | qc         | Incoming QC         | ✅ shipped                                        |
+| 24  | `qcprocess_create`  | qc         | QC Process Master   | ✅ shipped                                        |
+| 25  | `nc_dispose`        | qc         | NC Register         | ✅ shipped                                        |
+| 26  | `capa_create`       | qc         | CAPA                | ✅ shipped                                        |
+| 27  | `pr_create`         | purchase   | Purchase Requests   | ✅ shipped                                        |
+| 28  | `po_create`         | purchase   | Purchase Orders     | ✅ shipped                                        |
+| 29  | `vendor_create`     | purchase   | Vendor Master       | ✅ shipped                                        |
+| 30  | `oj_create`         | purchase   | Outsource Jobs      | ❌ missing module                                 |
+| 31  | `ospdc_create`      | purchase   | OSP DC & Outward    | ✅ shipped (via delivery-challans)                |
+| 32  | `servicepo_create`  | purchase   | Service PO          | ❌ missing module                                 |
+| 33  | `machop_entry`      | production | Machine Op Entry    | ✅ shipped                                        |
+| 34  | `cc_create`         | finance    | Cost Center Master  | ✅ shipped                                        |
+| 35  | `user_manage`       | system     | User Management     | ✅ shipped                                        |
 
 Port all 35 verbatim. Keys for missing modules (#30, #32) stay in the registry so when those modules ship later their gating is pre-defined.
 
 **Forms our React build added that legacy didn't have separate keys for** (candidates for new keys):
+
 - TPI · QC Documents · QC History · QC Call Register (covered by `qc_submit`) · NC Register (covered by `nc_dispose`)
 - Delivery Challans (covered by `ospdc_create` + `dispatch_create`)
 - Reports · Activity Log · Alerts · Alert Config · Print Templates · Settings · Access Control itself
@@ -144,7 +149,7 @@ Open question for sign-off (Q3 below): do we add keys for these now or only as m
 - **Header:** `🔒 Access Control` + 2 ghost buttons (📥 Template — CSV download, 📤 Import Users — CSV/XLSX).
 - **Table cols:** User · Role (inline dropdown — saves on change) · Departments (`N/9` or `✅ Full Access`) · Forms (`N/35` or `✅ All`) · Actions (`🔒 Configure` → opens modal).
 - **Hint footer:** "💡 Click Configure to set department access and form-level view/edit permissions per user."
-- **Admin-gate:** any non-admin opening this page sees a locked view (legacy uses `isAdmin()` checks at the *write* path — the page itself renders for anyone but writes silently no-op + toast "Only Admin can change user roles"). Our React version should hide the route entirely from non-admins (cleaner).
+- **Admin-gate:** any non-admin opening this page sees a locked view (legacy uses `isAdmin()` checks at the _write_ path — the page itself renders for anyone but writes silently no-op + toast "Only Admin can change user roles"). Our React version should hide the route entirely from non-admins (cleaner).
 
 ## 7. Configure modal (legacy `_editAccess` L13917)
 
@@ -163,18 +168,34 @@ Open question for sign-off (Q3 below): do we add keys for these now or only as m
 
 ```ts
 // All fail-open when no user (script-loaded outside an authenticated session)
-function isAdmin()  { ac?.fullAccess || user.role === 'admin' }
-function isManager(){ user.role === 'admin' || user.role === 'manager' }
-function canEdit(formKey?)  { ac?.fullAccess || (formKey ? ac.forms[formKey]?.edit : ac.canEditAny !== false) }
-function canEntry(formKey?) { ac?.fullAccess || (formKey ? (ac.forms[formKey]?.entry || ac.forms[formKey]?.edit) : ac.canEntryAny !== false) }
-function canView(formKey?)  { ac?.fullAccess || (formKey ? (ac.forms[formKey]?.view || ac.forms[formKey]?.entry || ac.forms[formKey]?.edit) : true) }
-function _hasDeptAccess(dept){ ac?.fullAccess || ac.departments[dept] }
+function isAdmin() {
+  ac?.fullAccess || user.role === 'admin';
+}
+function isManager() {
+  user.role === 'admin' || user.role === 'manager';
+}
+function canEdit(formKey?) {
+  ac?.fullAccess || (formKey ? ac.forms[formKey]?.edit : ac.canEditAny !== false);
+}
+function canEntry(formKey?) {
+  ac?.fullAccess ||
+    (formKey ? ac.forms[formKey]?.entry || ac.forms[formKey]?.edit : ac.canEntryAny !== false);
+}
+function canView(formKey?) {
+  ac?.fullAccess ||
+    (formKey
+      ? ac.forms[formKey]?.view || ac.forms[formKey]?.entry || ac.forms[formKey]?.edit
+      : true);
+}
+function _hasDeptAccess(dept) {
+  ac?.fullAccess || ac.departments[dept];
+}
 ```
 
 Three implications worth flagging:
 
 1. **`canView` defaults to `true`** when called without a `formKey`. Only `canEdit` and `canEntry` use the `canEditAny` / `canEntryAny` precomputed caches.
-2. **Hierarchy is read-time, not write-time** — i.e. `canView('po_create')` returns true if *any* of view/entry/edit is set on that form. The write side already cascades them (Entry sets View true), so in practice you'll see all three together; but reads still fall back across them defensively.
+2. **Hierarchy is read-time, not write-time** — i.e. `canView('po_create')` returns true if _any_ of view/entry/edit is set on that form. The write side already cascades them (Entry sets View true), so in practice you'll see all three together; but reads still fall back across them defensively.
 3. **No user object ⇒ allow everything.** This is the legacy single-tenant-file model. **We MUST NOT replicate this on the server** — we require a session for every gated action. Frontend helpers can still do "no session ⇒ assume nothing" (deny by default).
 
 ---
@@ -197,15 +218,15 @@ Three implications worth flagging:
 
 This is the **biggest scope decision**, surfaced in §11 below as **Q1**.
 
-| | (A) Storage + UI only | (B) UI + service-layer gate | (C) UI + service + RLS session vars |
-|---|---|---|---|
-| **DB** | `user_access` table | same | same + `current_user_form_perms()` SECURITY DEFINER fn |
-| **API** | `GET /access-control/users` + `GET /:userId` + `PUT /:userId` + `GET /me/access` | same + per-write `requireFormPermission(key, action)` middleware on every protected route | same + RLS policies key off `current_user_form_perms()` |
-| **Web** | Matrix list + Configure modal · `useMyAccess()` hook · `canEdit/canEntry/canView` client helpers · sidebar dept-gate · button-hide gating | same | same |
-| **Touch points** | new module only | every write route (~80–120 lines) | new RLS migration on every table |
-| **Effort** | ~1 day | ~3–4 days | ~5–7 days |
-| **Risk** | low (additive) | medium (regression on writes if a route misses the gate) | high (RLS rewrite blast radius) |
-| **What it BREAKS if absent** | nothing — existing role-based RLS still protects writes; the matrix is purely advisory until enforced | clients with no `xxx_create.edit` permission can still PUT via direct API call — they're just hidden in UI | not applicable |
+|                              | (A) Storage + UI only                                                                                                                     | (B) UI + service-layer gate                                                                                | (C) UI + service + RLS session vars                     |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| **DB**                       | `user_access` table                                                                                                                       | same                                                                                                       | same + `current_user_form_perms()` SECURITY DEFINER fn  |
+| **API**                      | `GET /access-control/users` + `GET /:userId` + `PUT /:userId` + `GET /me/access`                                                          | same + per-write `requireFormPermission(key, action)` middleware on every protected route                  | same + RLS policies key off `current_user_form_perms()` |
+| **Web**                      | Matrix list + Configure modal · `useMyAccess()` hook · `canEdit/canEntry/canView` client helpers · sidebar dept-gate · button-hide gating | same                                                                                                       | same                                                    |
+| **Touch points**             | new module only                                                                                                                           | every write route (~80–120 lines)                                                                          | new RLS migration on every table                        |
+| **Effort**                   | ~1 day                                                                                                                                    | ~3–4 days                                                                                                  | ~5–7 days                                               |
+| **Risk**                     | low (additive)                                                                                                                            | medium (regression on writes if a route misses the gate)                                                   | high (RLS rewrite blast radius)                         |
+| **What it BREAKS if absent** | nothing — existing role-based RLS still protects writes; the matrix is purely advisory until enforced                                     | clients with no `xxx_create.edit` permission can still PUT via direct API call — they're just hidden in UI | not applicable                                          |
 
 **Build-first-audit-later recommendation: ship (A) now.** Hide buttons by per-user grants; back-end keeps role-based RLS as the actual security boundary. (B) becomes part of the focused logic-correction audit pass.
 
@@ -227,6 +248,7 @@ This is the **biggest scope decision**, surfaced in §11 below as **Q1**.
 If sign-off lands on plan **(A) + recommended answers** above:
 
 **Slice 1 — Foundation (DB + shared + API)**
+
 - Migration `004X_phase8_user_access.sql`: `user_access` table (`id`, `user_id` UNIQUE, `company_id`, `full_access`, `departments` jsonb, `forms` jsonb, meta cols, soft-delete, RLS: admin write + self-read).
 - Backfill: insert `{full_access:true,departments:{},forms:{}}` for every existing `users.role='admin'`; `{full_access:false,...}` for everyone else.
 - `packages/shared/src/enums/access-control.ts`: `ACCESS_DEPTS` (9), `ACCESS_FORMS` (35+4), `Action = 'view'|'entry'|'edit'`.
@@ -235,6 +257,7 @@ If sign-off lands on plan **(A) + recommended answers** above:
 - Service tests: list + get + save + cascade rules + admin-only enforcement + activity emission.
 
 **Slice 2 — Web matrix UI**
+
 - `apps/web/src/modules/access-control/{api,components,routes}/...`
 - `/access-control` list (table from §6) + Configure modal (from §7) + role-change inline.
 - `useMyAccess()` hook + `canView/canEdit/canEntry/hasDeptAccess` helpers in `apps/web/src/lib/access-control.ts`. Fail-closed.

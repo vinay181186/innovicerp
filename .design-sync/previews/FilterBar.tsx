@@ -32,7 +32,9 @@ export const FilterOnWithReset = () => (
       },
     ]}
   >
-    <Button size="sm" variant="ghost">Clear Filters</Button>
+    <Button size="sm" variant="ghost">
+      Clear Filters
+    </Button>
   </FilterBar>
 );
 

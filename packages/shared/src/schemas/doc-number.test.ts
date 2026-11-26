@@ -24,7 +24,11 @@ describe('doc-number config', () => {
       'grn',
       'delivery_challan',
     ]);
-    expect(DOC_NUMBER_FORMATS.sales_order).toEqual({ prefix: 'IN-SO-', digits: 5, label: 'SO No.' });
+    expect(DOC_NUMBER_FORMATS.sales_order).toEqual({
+      prefix: 'IN-SO-',
+      digits: 5,
+      label: 'SO No.',
+    });
     expect(DOC_NUMBER_FORMATS.job_work_order).toEqual({
       prefix: 'IN-JW-',
       digits: 5,
@@ -101,7 +105,9 @@ describe('doc-number config', () => {
   describe('checkDocNumberQuerySchema', () => {
     it('accepts a valid type with/without a code', () => {
       expect(checkDocNumberQuerySchema.safeParse({ type: 'sales_order' }).success).toBe(true);
-      expect(checkDocNumberQuerySchema.safeParse({ type: 'grn', code: 'IN-GRN-00001' }).success).toBe(true);
+      expect(
+        checkDocNumberQuerySchema.safeParse({ type: 'grn', code: 'IN-GRN-00001' }).success,
+      ).toBe(true);
     });
     it('rejects an unknown type and over-long code', () => {
       expect(checkDocNumberQuerySchema.safeParse({ type: 'bogus' }).success).toBe(false);

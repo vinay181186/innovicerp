@@ -12,7 +12,7 @@ Reference field: **`CLIENT★ (type to search)`** on the New Sales Order form
 (`apps/web/src/modules/sales-orders/components/sales-order-form.tsx`).
 
 > Building a NEW searchable field? First read the **`searchable-field`** skill — the
-> rule is *reuse this component, never hand-roll a `<datalist>`/`Picklist`*. THIS skill
+> rule is _reuse this component, never hand-roll a `<datalist>`/`Picklist`_. THIS skill
 > explains the internal behavior: what the dropdown does and why, for editing,
 > debugging, or explaining it.
 
@@ -40,59 +40,63 @@ When closed and a value is already picked, the input shows that value's label
 (`valueLabel`), so the field reads as "filled", not empty.
 
 **2. Typing → search.** Each keystroke:
-   - updates the visible `query` string,
-   - **invalidates any prior selection** — if a row was picked, `onChange(null)` fires so
-     the saved id clears (you must re-pick; prevents a stale id under new text),
-   - **debounces 250 ms**, then calls `onSearch(term)`. The caller wires `onSearch` to the
-     list hook's `?search=` param, so the **server** returns the matching page (this is
-     what scales past the 200-row cap — never load the whole table into the browser).
+
+- updates the visible `query` string,
+- **invalidates any prior selection** — if a row was picked, `onChange(null)` fires so
+  the saved id clears (you must re-pick; prevents a stale id under new text),
+- **debounces 250 ms**, then calls `onSearch(term)`. The caller wires `onSearch` to the
+  list hook's `?search=` param, so the **server** returns the matching page (this is
+  what scales past the 200-row cap — never load the whole table into the browser).
 
 **3. Filtering (two layers).**
-   - *Server:* returns rows for the typed term via `?search=`.
-   - *Client refinement:* a case-insensitive **substring** match **anywhere** in the
-     `"CODE — Name"` label — so a row is found by its **starting OR ending** characters
-     (typing `industries` finds `CLI-002 — jinal industries`). This only refines the page
-     the server already returned; it is not the primary filter.
+
+- _Server:_ returns rows for the typed term via `?search=`.
+- _Client refinement:_ a case-insensitive **substring** match **anywhere** in the
+  `"CODE — Name"` label — so a row is found by its **starting OR ending** characters
+  (typing `industries` finds `CLI-002 — jinal industries`). This only refines the page
+  the server already returned; it is not the primary filter.
 
 **4. Keyboard navigation.**
-   | Key        | Effect                                                        |
-   | ---------- | ------------------------------------------------------------ |
-   | ArrowDown  | open if closed; move highlight down (clamped to last row)    |
-   | ArrowUp    | move highlight up (clamped to first row)                     |
-   | Enter      | pick the highlighted row (only when open + a row exists)     |
-   | Escape     | close the dropdown (keeps current value)                     |
-   The highlight index resets to 0 whenever the filtered list length changes.
+| Key | Effect |
+| ---------- | ------------------------------------------------------------ |
+| ArrowDown | open if closed; move highlight down (clamped to last row) |
+| ArrowUp | move highlight up (clamped to first row) |
+| Enter | pick the highlighted row (only when open + a row exists) |
+| Escape | close the dropdown (keeps current value) |
+The highlight index resets to 0 whenever the filtered list length changes.
 
 **5. Selecting.** Click (`onMouseDown`, preventDefault so the input keeps focus) or Enter:
-   - calls `onChange(option.id)` — **always the row's `id`, never the label text**,
-   - sets the input to the picked label (default `"CODE — Name"`, or a custom
-     `selectedLabel`, e.g. code-only),
-   - closes the dropdown.
+
+- calls `onChange(option.id)` — **always the row's `id`, never the label text**,
+- sets the input to the picked label (default `"CODE — Name"`, or a custom
+  `selectedLabel`, e.g. code-only),
+- closes the dropdown.
 
 **6. Closing.** Escape, picking a row, or an **outside mousedown** (a document listener
 closes it when you click anywhere outside the component).
 
 **7. States shown in the list.**
-   - `loading` → **"Loading…"** row (while the hook is fetching),
-   - zero rows → **"No matches"** (override via `emptyText`),
-   - otherwise the rows, `"CODE — Name"` with CODE bold and name muted; a row with no
-     `code` renders just the name.
+
+- `loading` → **"Loading…"** row (while the hook is fetching),
+- zero rows → **"No matches"** (override via `emptyText`),
+- otherwise the rows, `"CODE — Name"` with CODE bold and name muted; a row with no
+  `code` renders just the name.
 
 ## The contract (props that drive the behavior)
 
 `<SearchableSelect>` is **presentational** — it owns none of the data. The caller owns the
 list hook + a `search` state string. Key props:
 
-| Prop            | Role                                                                    |
-| --------------- | ----------------------------------------------------------------------- |
-| `value`         | the selected option **id** (the saved value), or `null`                 |
-| `onChange(id)`  | fires with the picked **id** (or `null` when typing clears a selection) |
-| `options`       | current page from the hook: `{ id, code?, name }[]` (server-filtered)   |
-| `onSearch(term)`| debounced term → wire to the hook's `?search=` param                    |
-| `loading`       | hook `isFetching` → shows the "Loading…" row                            |
-| `valueLabel`    | label for a pre-selected `value` (edit forms) so it shows when closed   |
-| `selectedLabel` | what the input shows after a pick (default `"CODE — Name"`)             |
-| `placeholder` / `emptyText` | input placeholder / empty-list text                         |
+| Prop                        | Role                                                                    |
+| --------------------------- | ----------------------------------------------------------------------- |
+| `value`                     | the selected option **id** (the saved value), or `null`                 |
+| `onChange(id)`              | fires with the picked **id** (or `null` when typing clears a selection) |
+| `options`                   | current page from the hook: `{ id, code?, name }[]` (server-filtered)   |
+| `onSearch(term)`            | debounced term → wire to the hook's `?search=` param                    |
+| `loading`                   | hook `isFetching` → shows the "Loading…" row                            |
+| `valueLabel`                | label for a pre-selected `value` (edit forms) so it shows when closed   |
+| `selectedLabel`             | what the input shows after a pick (default `"CODE — Name"`)             |
+| `placeholder` / `emptyText` | input placeholder / empty-list text                                     |
 
 Reference wiring (the Client field):
 
@@ -100,7 +104,8 @@ Reference wiring (the Client field):
 const [clientSearch, setClientSearch] = useState('');
 const { data: clientsData, isFetching } = useClientsList({
   ...(clientSearch.trim() ? { search: clientSearch.trim() } : {}),
-  limit: 50, offset: 0,
+  limit: 50,
+  offset: 0,
 });
 
 <SearchableSelect
@@ -112,7 +117,7 @@ const { data: clientsData, isFetching } = useClientsList({
   options={clients.map((c) => ({ id: c.id, code: c.code, name: c.name }))}
   placeholder="🔍 Type client code or name…"
   valueLabel={selectedClient ? `${selectedClient.code} — ${selectedClient.name}` : undefined}
-/>
+/>;
 ```
 
 ## Accessibility (already built in)

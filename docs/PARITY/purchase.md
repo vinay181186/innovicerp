@@ -7,16 +7,16 @@
 
 ## Inventory
 
-| # | Legacy item | Legacy fn (line) | React route | Status after this build |
-|---|---|---|---|---|
-| 1 | Purchase Requests | `renderPurchaseRequests` (search L6217) | `/purchase-requests` | ✅ existing + `pr_type` enum added 2026-05-31 |
-| 2 | Purchase Orders | `renderPurchaseOrders` L25209 | `/purchase-orders` | ✅ existing + Draft/Approve/Reject flow shipped 2026-05-31 |
-| 3 | **Outsource Jobs** | `renderOutsourceJobs` L27044 | `/outsource-jobs` | **✅ NEW 2026-05-31** |
-| 4 | OSP DC | `renderOspDC` L27243 | `/delivery-challans` | 🟡 Partial — outward + receive already shipped; tabbed view-modal style not ported (DELTA accepted) |
-| 5 | **Service PO** | `renderServicePO` L27504 | `/service-pos` + `/service-pos/new` + `/service-pos/$id` | **✅ NEW 2026-05-31** |
-| 6 | Vendors | `renderVendors` L27734 | `/vendors` | ✅ existing |
-| 7 | **Supply Chain Dashboard** | `renderSCDashboard` L16790 | `/sc-dashboard` | **✅ NEW 2026-05-31** |
-| 8 | Purchase Reports | `renderDeptReport('purchase')` L20029 | `/reports?group=Purchase` | ✅ via generic Reports module |
+| #   | Legacy item                | Legacy fn (line)                        | React route                                              | Status after this build                                                                             |
+| --- | -------------------------- | --------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| 1   | Purchase Requests          | `renderPurchaseRequests` (search L6217) | `/purchase-requests`                                     | ✅ existing + `pr_type` enum added 2026-05-31                                                       |
+| 2   | Purchase Orders            | `renderPurchaseOrders` L25209           | `/purchase-orders`                                       | ✅ existing + Draft/Approve/Reject flow shipped 2026-05-31                                          |
+| 3   | **Outsource Jobs**         | `renderOutsourceJobs` L27044            | `/outsource-jobs`                                        | **✅ NEW 2026-05-31**                                                                               |
+| 4   | OSP DC                     | `renderOspDC` L27243                    | `/delivery-challans`                                     | 🟡 Partial — outward + receive already shipped; tabbed view-modal style not ported (DELTA accepted) |
+| 5   | **Service PO**             | `renderServicePO` L27504                | `/service-pos` + `/service-pos/new` + `/service-pos/$id` | **✅ NEW 2026-05-31**                                                                               |
+| 6   | Vendors                    | `renderVendors` L27734                  | `/vendors`                                               | ✅ existing                                                                                         |
+| 7   | **Supply Chain Dashboard** | `renderSCDashboard` L16790              | `/sc-dashboard`                                          | **✅ NEW 2026-05-31**                                                                               |
+| 8   | Purchase Reports           | `renderDeptReport('purchase')` L20029   | `/reports?group=Purchase`                                | ✅ via generic Reports module                                                                       |
 
 Sidebar Purchase block now contains 8 entries grouped Entry / Master / Report, matching legacy.
 

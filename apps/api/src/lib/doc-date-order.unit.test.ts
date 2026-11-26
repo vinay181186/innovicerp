@@ -4,9 +4,7 @@ import { assertNotBefore, latestDated } from './doc-date-order';
 
 describe('assertNotBefore', () => {
   it('refuses a child dated before its parent, with the given message', () => {
-    expect(() => assertNotBefore('2026-09-09', '2026-10-24', 'too early')).toThrow(
-      ValidationError,
-    );
+    expect(() => assertNotBefore('2026-09-09', '2026-10-24', 'too early')).toThrow(ValidationError);
     expect(() => assertNotBefore('2026-09-09', '2026-10-24', 'too early')).toThrow('too early');
   });
   it('allows the same day and later days', () => {

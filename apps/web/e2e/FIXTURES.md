@@ -28,14 +28,14 @@ production site) the old rule stands: smallest chain that proves it, and report 
 Created 2026-09-09 on the test stack. Everything carries the `E2E_` marker in a free-text
 field, because document numbers are locked to `IN-XX-#####` and cannot.
 
-| What | Code | Findable by |
-|---|---|---|
-| Vendor | `VND-959` | name "E2E_ Shreeji Precision Heat Treaters Pvt Ltd" |
-| Purchase Request | `IN-PR-00001` | operation "E2E_ HEAT TREATMENT" |
-| Purchase Order | `IN-PO-00003` | 45 lines `E2E-PRT-001`…`-045`, header remark "E2E_ print-format check" |
-| OSP Delivery Challan | `IN-DC-00002` | transporter "E2E_ Shree Ganesh Roadlines" |
+| What                 | Code          | Findable by                                                             |
+| -------------------- | ------------- | ----------------------------------------------------------------------- |
+| Vendor               | `VND-959`     | name "E2E\_ Shreeji Precision Heat Treaters Pvt Ltd"                    |
+| Purchase Request     | `IN-PR-00001` | operation "E2E\_ HEAT TREATMENT"                                        |
+| Purchase Order       | `IN-PO-00003` | 45 lines `E2E-PRT-001`…`-045`, header remark "E2E\_ print-format check" |
+| OSP Delivery Challan | `IN-DC-00002` | transporter "E2E\_ Shree Ganesh Roadlines"                              |
 
-The PO is **type `service`**, deliberately. A *job-work* PO line that is not tied to a job-card
+The PO is **type `service`**, deliberately. A _job-work_ PO line that is not tied to a job-card
 operation is refused by the challan screen — correctly — and satisfying that would mean building
 45 job cards with 45 operations. `service` is the other type the system accepts for sending
 material out and it prints the identical OSP Delivery Challan.

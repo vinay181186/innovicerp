@@ -15,11 +15,11 @@
 
 ## 1. Toolbar (L26477–26482)
 
-| # | Element | Legacy | React | Match? | Tag |
-|---|---|---|---|---|---|
-| 1 | Search input | "Search GRN, PO, vendor…" | "Search code, PO ref, DC, invoice…" | ✅ structure | **POLISH** placeholder |
-| 2 | QC status filter | (via stat-card click) | `<select>` with GRN_QC_STATUSES | ⚠️ richer in React | **DELTA** (workable; stat-card filtering covered below) |
-| 3 | + New GRN button | `addGRN()` modal | `/goods-receipt-notes/new` route | ✅ | — |
+| #   | Element          | Legacy                    | React                               | Match?             | Tag                                                     |
+| --- | ---------------- | ------------------------- | ----------------------------------- | ------------------ | ------------------------------------------------------- |
+| 1   | Search input     | "Search GRN, PO, vendor…" | "Search code, PO ref, DC, invoice…" | ✅ structure       | **POLISH** placeholder                                  |
+| 2   | QC status filter | (via stat-card click)     | `<select>` with GRN_QC_STATUSES     | ⚠️ richer in React | **DELTA** (workable; stat-card filtering covered below) |
+| 3   | + New GRN button | `addGRN()` modal          | `/goods-receipt-notes/new` route    | ✅                 | —                                                       |
 
 ---
 
@@ -27,12 +27,12 @@
 
 Legacy renders a 4-col stat grid above the table:
 
-| # | tile | colour | value | click action |
-|---|---|---|---|---|
-| 1 | Total GRNs | cyan | `grns.length` | `_grnFlt='all'` |
-| 2 | QC Pending | amber | `qcPendingGRNs.length` | `_grnFlt='qcpending'`; sub-text "→ Go to Incoming QC" |
-| 3 | QC Cleared | green | `qcDoneGRNs.length` | (non-clickable) |
-| 4 | Today | blue | `todayGRN.length` | `_grnFlt='today'` |
+| #   | tile       | colour | value                  | click action                                          |
+| --- | ---------- | ------ | ---------------------- | ----------------------------------------------------- |
+| 1   | Total GRNs | cyan   | `grns.length`          | `_grnFlt='all'`                                       |
+| 2   | QC Pending | amber  | `qcPendingGRNs.length` | `_grnFlt='qcpending'`; sub-text "→ Go to Incoming QC" |
+| 3   | QC Cleared | green  | `qcDoneGRNs.length`    | (non-clickable)                                       |
+| 4   | Today      | blue   | `todayGRN.length`      | `_grnFlt='today'`                                     |
 
 When filter is active, panel header shows `(<filter>)` in amber + "Show All" reset button.
 
@@ -44,21 +44,22 @@ When filter is active, panel header shows `(<filter>)` in amber + "Show All" res
 
 Legacy: **11 cols** (`GRN No · Date · PO/JWPO · Vendor · Item Code · Received · QC Accepted · QC Rejected · QC Status · Ref · Action`).
 
-| # | header | data | React match? | tag |
-|---|---|---|---|---|
-| 1 | GRN No. | cyan code | ✅ | — |
-| 2 | Date | formatted | ✅ | — |
-| 3 | PO/JWPO | blue mono | ✅ ("PO" col, but no JWPO distinction) | **POLISH** label |
-| 4 | Vendor | name | ✅ | — |
-| 5 | Item Code | purple (per-line view) | ❌ — React has grouped DC-header view, no per-item col on list | **DELTA** — legacy is flat per-receipt; React groups by GRN doc |
-| 6 | Received | bold mono | ✅ "Received" col (totalReceivedQty) | ✅ |
-| 7 | **QC Accepted** | green mono | ❌ missing | **BLOCKER** (per-GRN acceptance count — used by QC team) |
-| 8 | **QC Rejected** | red mono | ❌ missing | **BLOCKER** |
-| 9 | QC Status | badge | ⚠️ React shows "QC pending" count (richer in some ways) | **DELTA** — keep React |
-| 10 | Ref (invoice/dc) | text3 | ✅ React shows DC col | ⚠️ partial — invoice missing |
-| 11 | Assign action | 👤+ button for QC | ❌ | **DELTA** (Tasks module gate) |
+| #   | header           | data                   | React match?                                                   | tag                                                             |
+| --- | ---------------- | ---------------------- | -------------------------------------------------------------- | --------------------------------------------------------------- |
+| 1   | GRN No.          | cyan code              | ✅                                                             | —                                                               |
+| 2   | Date             | formatted              | ✅                                                             | —                                                               |
+| 3   | PO/JWPO          | blue mono              | ✅ ("PO" col, but no JWPO distinction)                         | **POLISH** label                                                |
+| 4   | Vendor           | name                   | ✅                                                             | —                                                               |
+| 5   | Item Code        | purple (per-line view) | ❌ — React has grouped DC-header view, no per-item col on list | **DELTA** — legacy is flat per-receipt; React groups by GRN doc |
+| 6   | Received         | bold mono              | ✅ "Received" col (totalReceivedQty)                           | ✅                                                              |
+| 7   | **QC Accepted**  | green mono             | ❌ missing                                                     | **BLOCKER** (per-GRN acceptance count — used by QC team)        |
+| 8   | **QC Rejected**  | red mono               | ❌ missing                                                     | **BLOCKER**                                                     |
+| 9   | QC Status        | badge                  | ⚠️ React shows "QC pending" count (richer in some ways)        | **DELTA** — keep React                                          |
+| 10  | Ref (invoice/dc) | text3                  | ✅ React shows DC col                                          | ⚠️ partial — invoice missing                                    |
+| 11  | Assign action    | 👤+ button for QC      | ❌                                                             | **DELTA** (Tasks module gate)                                   |
 
 Footer hint: `💡 GRN creates receipt record with QC Pending status…`
+
 - ⚠️ React has a similar info banner. ✅
 
 ---
@@ -67,11 +68,11 @@ Footer hint: `💡 GRN creates receipt record with QC Pending status…`
 
 Large modal with **3-mode toggle** (legacy L26530–26536):
 
-| mode | label | source |
-|---|---|---|
-| `po` | 📦 **Against PO** | Loads PO lines, fills receipt qty per line |
-| `jwpo` | 🏭 **Against JWPO / DC** | Selects JWPO + DC to receive |
-| `manual` | ✍ **Manual** | Free-form vendor + item + qty |
+| mode     | label                    | source                                     |
+| -------- | ------------------------ | ------------------------------------------ |
+| `po`     | 📦 **Against PO**        | Loads PO lines, fills receipt qty per line |
+| `jwpo`   | 🏭 **Against JWPO / DC** | Selects JWPO + DC to receive               |
+| `manual` | ✍ **Manual**             | Free-form vendor + item + qty              |
 
 Common fields: GRN No (auto), Date, Invoice No, DC No, Remarks.
 
@@ -82,15 +83,18 @@ Common fields: GRN No (auto), Date, Invoice No, DC No, Remarks.
 ## 5. Summary
 
 ### BLOCKERs (daily-use)
+
 1. **4-tile stat strip** with click-to-filter (Total / QC Pending / QC Cleared / Today) — high visibility metric.
 2. **QC Accepted + QC Rejected columns** in list — QC team scans these.
 
 ### DELTAs (workable today)
+
 3. Per-line vs per-doc grouping — React's per-doc is cleaner; keep.
 4. Assign-to-QC button — Tasks module gate.
 5. Invoice number column — would round out the "Ref" col.
 
 ### POLISH
+
 - Header `📥 Goods Receipt Note (GRN)` with emoji.
 - Sidebar label "GRN (Goods Receipt)" (the longer legacy label).
 - Search placeholder match.
@@ -99,5 +103,6 @@ Common fields: GRN No (auto), Date, Invoice No, DC No, Remarks.
 ---
 
 **Sign-off needed before code:**
+
 - Confirm 2 BLOCKERs above (tiles + QC counts) for next GRN slice.
 - Verify the addGRN modal has all 3 modes (or document that the React equivalent does only PO mode).

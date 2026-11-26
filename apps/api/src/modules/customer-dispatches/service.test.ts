@@ -34,11 +34,7 @@ import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
 import { AUDITOR, asAccess } from '../../lib/test-access';
 import { requestCancel } from '../cancel-requests/service';
-import {
-  createDispatch,
-  getDispatchableSo,
-  updateCustomerDispatch,
-} from './service';
+import { createDispatch, getDispatchableSo, updateCustomerDispatch } from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 const TEST_PREFIX = 'TDSPB-';
@@ -168,11 +164,7 @@ async function dispatchedQtyOf(soLineId: string): Promise<number> {
 
 /** One SO with TWO assembly lines, each pointing at its own parent-item BOM, so
  *  each line's readiness reads its own parent's on-hand stock. */
-async function makeTwoLineFixture(opts: {
-  tag: string;
-  qty1: number;
-  qty2: number;
-}): Promise<{
+async function makeTwoLineFixture(opts: { tag: string; qty1: number; qty2: number }): Promise<{
   soId: string;
   soLine1: string;
   soLine2: string;
@@ -282,7 +274,9 @@ async function cleanup(): Promise<void> {
     );
     await db.delete(invoices).where(like(invoices.code, `${TEST_PREFIX}%`));
   }
-  await db.delete(customerDispatchLines).where(like(customerDispatchLines.itemCodeText, `${TEST_PREFIX}%`));
+  await db
+    .delete(customerDispatchLines)
+    .where(like(customerDispatchLines.itemCodeText, `${TEST_PREFIX}%`));
   await db.delete(customerDispatches).where(like(customerDispatches.soCodeText, `${TEST_PREFIX}%`));
   if (ids.length > 0) {
     await db.delete(storeTransactions).where(inArray(storeTransactions.itemId, ids));
@@ -290,10 +284,16 @@ async function cleanup(): Promise<void> {
   }
   await db.delete(salesOrderLines).where(like(salesOrderLines.partName, 'PEN'));
   await db.delete(salesOrders).where(like(salesOrders.code, `${TEST_PREFIX}%`));
-  const boms = await db.select({ id: bomMasters.id }).from(bomMasters).where(like(bomMasters.bomNo, `${TEST_PREFIX}%`));
+  const boms = await db
+    .select({ id: bomMasters.id })
+    .from(bomMasters)
+    .where(like(bomMasters.bomNo, `${TEST_PREFIX}%`));
   if (boms.length > 0) {
     await db.delete(bomMasterLines).where(
-      inArray(bomMasterLines.bomMasterId, boms.map((b) => b.id)),
+      inArray(
+        bomMasterLines.bomMasterId,
+        boms.map((b) => b.id),
+      ),
     );
   }
   await db.delete(bomMasters).where(like(bomMasters.bomNo, `${TEST_PREFIX}%`));
@@ -352,7 +352,11 @@ describe('customer dispatch — assembly finished-good stock legs', () => {
     await creditStock(parentId, 10);
 
     const dispatch = await createDispatch(
-      { salesOrderId: soId, dispatchDate: '2026-08-03', lines: [{ salesOrderLineId: soLineId, qty: 4 }] },
+      {
+        salesOrderId: soId,
+        dispatchDate: '2026-08-03',
+        lines: [{ salesOrderLineId: soLineId, qty: 4 }],
+      },
       admin,
     );
 
@@ -391,7 +395,11 @@ describe('customer dispatch — assembly finished-good stock legs', () => {
 
     await expect(
       createDispatch(
-        { salesOrderId: soId, dispatchDate: '2026-08-03', lines: [{ salesOrderLineId: soLineId, qty: 4 }] },
+        {
+          salesOrderId: soId,
+          dispatchDate: '2026-08-03',
+          lines: [{ salesOrderLineId: soLineId, qty: 4 }],
+        },
         admin,
       ),
     ).rejects.toThrow(/cannot be more than Dispatchable \(3\)/);
@@ -570,17 +578,23 @@ describe('updateCustomerDispatch — ticks decide (ADR-232)', () => {
 
   it('sales L3 with role operator passes the gate', async () => {
     const user = asAccess(admin, { departments: { sales: 'L3' } }, 'operator');
-    await expect(updateCustomerDispatch(UNKNOWN_ID, {} as never, user)).rejects.not.toBeInstanceOf(AuthorizationError);
+    await expect(updateCustomerDispatch(UNKNOWN_ID, {} as never, user)).rejects.not.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('sales L2 (no tick) is refused', async () => {
     const user = asAccess(admin, { departments: { sales: 'L2' } }, 'manager');
-    await expect(updateCustomerDispatch(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(updateCustomerDispatch(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('L7 Auditor is refused', async () => {
     const user = asAccess(admin, AUDITOR, 'viewer');
-    await expect(updateCustomerDispatch(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(updateCustomerDispatch(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   // ADR-235 — cancel is a Cancel Request: Edit requests, Approve approves.

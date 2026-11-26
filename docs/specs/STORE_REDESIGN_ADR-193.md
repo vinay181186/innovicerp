@@ -405,7 +405,7 @@ the old cascade. M9 (undo a ledger-debited unit) is N/A; the old OUT path is sim
 - Complete (Stop and Mark Assembled): lock the SO row first (M15). Per BOM part need = Qty per Set × qty.
   Not the last units: Still Out < need → 409 `{ short[] }` "issue from the store first" (M6).
   Last units: Fitted = all Still Out; any part where Still Out ≠ need → 409 `{ needsConfirmation,
-  variance[] }` unless `confirmVarianceReason` (M7); a part with Still Out 0 is always short (P28).
+variance[] }` unless `confirmVarianceReason` (M7); a part with Still Out 0 is always short (P28).
   Writes consumption rows + the finished-machine IN (unchanged); NO component OUT. Last units also release
   the SO's leftover reservations (M14).
 - Undo last unit: dispatched → 409 (M8); soft-deletes its consumptions (parts are Still Out again, on the
@@ -416,13 +416,13 @@ the old cascade. M9 (undo a ledger-debited unit) is N/A; the old OUT path is sim
 
 ### Paper-test fixes
 
-| #   | Problem found on paper                                                                 | Fix                                                         |
-| --- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| P27 | `so_stock_reservations` is integer and keyed to an SO line; dispatch / PRO close read it | separate `assembly_part_reservations`; the view sums both   |
-| P28 | Last-unit variance would let a unit "complete" with a part never issued                | Still Out 0 on a part is always short, reason or not        |
-| P29 | Undo put parts back in the store though they are on the bench                          | Undo makes them Still Out again; the store Returns them     |
-| P30 | Tracker "can assemble" still counted store stock                                       | counts Still Out                                            |
-| P34 | Return / Reverse could send back parts already fitted                                  | capped by the SO's Still Out for that item                  |
+| #   | Problem found on paper                                                                   | Fix                                                       |
+| --- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| P27 | `so_stock_reservations` is integer and keyed to an SO line; dispatch / PRO close read it | separate `assembly_part_reservations`; the view sums both |
+| P28 | Last-unit variance would let a unit "complete" with a part never issued                  | Still Out 0 on a part is always short, reason or not      |
+| P29 | Undo put parts back in the store though they are on the bench                            | Undo makes them Still Out again; the store Returns them   |
+| P30 | Tracker "can assemble" still counted store stock                                         | counts Still Out                                          |
+| P34 | Return / Reverse could send back parts already fitted                                    | capped by the SO's Still Out for that item                |
 
 ### Phase 3c — as built
 
@@ -442,15 +442,14 @@ stock-writer message says "reserved for orders (sales and assembly)" · Store dr
 reservations (shared read contract widened: soLineId / lineNo nullable, decimals, source Assembly).
 M9: N/A (no ledger-debited units ever existed). M15: SO row lock in Complete / Undo / Return / Reverse.
 
-
 ## 14. Phase 4 — instrument / tool register (R9, Q4)
 
 Live check 2026-09-28: `tool_issues` 0 rows on TEST and PROD; tool items: TEST 1, PROD 0. Reshape freely.
 
 ### Requirements (plain)
 
-- A **Tool / Instrument** item is either a *bulk tool* (drill bits, inserts — counted by qty) or a
-  *serial instrument* (gauges, micrometers — `track_serial`, one register row per piece, calibrated).
+- A **Tool / Instrument** item is either a _bulk tool_ (drill bits, inserts — counted by qty) or a
+  _serial instrument_ (gauges, micrometers — `track_serial`, one register row per piece, calibrated).
 - Register each instrument by Serial No.: status In Store / Issued / At Calibration / Lost / Scrapped,
   calibration interval, last calibrated, next due, calibration history (date, result, certificate no., agency).
 - Issue a tool to an **Operator** (picked), optional Job Card, expected return date. Serial tools are
@@ -469,8 +468,8 @@ Live check 2026-09-28: `tool_issues` 0 rows on TEST and PROD; tool items: TEST 1
   location, remarks; audit; RLS.
 - `instrument_calibrations`: instrument_id, calibrated_on, result pass | fail, certificate_no, agency,
   next_due_on, remarks; audit; RLS.
-- `tool_issues` (0 rows → reshaped): qty numeric(14,3); += issued_to_operator_id, job_card_id,
-  cancelled_at / by / reason; old `return_*` totals dropped (derived from returns).
+- `tool_issues` (0 rows → reshaped): qty numeric(14,3); += issued*to_operator_id, job_card_id,
+  cancelled_at / by / reason; old `return*\*` totals dropped (derived from returns).
 - `tool_issue_instruments`: tool_issue_id, instrument_id, returned_on, return_condition good | damaged | lost.
 - `tool_issue_returns`: qty columns numeric; += lost_qty, reason.
 - `tool_writeoffs`: item_id, instrument_id?, tool_issue_return_id?, kind damaged | lost | scrap, qty, reason,
@@ -500,26 +499,26 @@ below the count of instruments In Store + At Calibration.
 
 ### Paper tests (API "running")
 
-| #   | Scenario                                                          | v1 result                         | Problem → fix                                                          |
-| --- | ----------------------------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------- |
-| I1  | Register MIC-001 on a gauge item with On Hand 0                   | registered                        | **P35** refuse: "receive it first (GRN / Stock Count)" — registered ≤ On Hand |
-| I2  | GRN 2 → register 2 → 3rd; duplicate serial "mic-001"              | 3rd refused; dup allowed (case)   | **P36** unique on lower(serial_no)                                     |
-| I3  | Issue gauge due yesterday                                         | 409 ✓ (P16)                        | —                                                                      |
-| I4  | Issue gauge At Calibration                                        | 409 ✓                              | —                                                                      |
-| I5  | Serial item issued by qty 1                                       | allowed                           | **P37** serial item needs instrumentIds; bulk item refuses them        |
-| I6  | Stock adjust −1 on a gauge item, On Hand 2, 2 in store            | allowed → register lies           | **P38** serial cover check inside `postStockMove`                      |
-| I7  | Stock Count counts 1 gauge, 2 registered in store                 | posts 1                           | P38 refuses: "mark the missing instrument Lost first"                  |
-| I8  | Item Issue (store) of a tool item                                 | allowed                           | **P39** refused — tools go out by Tool Issue (ITEM_TYPE_RULES.returnable) |
-| I9  | Return bulk 10: good 6, damaged 1, lost 1, consumed 2             | IN 6; 2 write-offs pending ✓       | —                                                                      |
-| I10 | Recorder approves own write-off                                   | allowed                           | **P40** approver ≠ recorder (as Stock Count)                           |
-| I11 | Reject Damaged / reject Lost                                      | —                                 | Damaged → IN as Good; Lost → out again with the operator ✓             |
-| I12 | Cancel after a return                                             | 409 ✓                              | —                                                                      |
-| I13 | Calibration result Fail                                           | status stays In Store, still due  | **P41** Fail → due = calibrated date (blocked from issue) until Pass or Scrap |
-| I14 | Two users issue the same instrument at once                       | both pass the read                | **P42** lock instrument rows (id order) before the status check        |
-| I15 | Return an instrument not on this issue / returned twice           | —                                 | 400 / 409 ✓                                                            |
-| I16 | Inactive operator                                                 | —                                 | 400 ✓                                                                  |
-| I17 | Turn off track_serial after instruments exist                     | allowed                           | P15 extended: 409                                                      |
-| I18 | Issue an in-store gauge that has a Scrap write-off pending        | allowed                           | **P43** a pending write-off blocks issue and calibration-out           |
+| #   | Scenario                                                   | v1 result                        | Problem → fix                                                                 |
+| --- | ---------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------- |
+| I1  | Register MIC-001 on a gauge item with On Hand 0            | registered                       | **P35** refuse: "receive it first (GRN / Stock Count)" — registered ≤ On Hand |
+| I2  | GRN 2 → register 2 → 3rd; duplicate serial "mic-001"       | 3rd refused; dup allowed (case)  | **P36** unique on lower(serial_no)                                            |
+| I3  | Issue gauge due yesterday                                  | 409 ✓ (P16)                      | —                                                                             |
+| I4  | Issue gauge At Calibration                                 | 409 ✓                            | —                                                                             |
+| I5  | Serial item issued by qty 1                                | allowed                          | **P37** serial item needs instrumentIds; bulk item refuses them               |
+| I6  | Stock adjust −1 on a gauge item, On Hand 2, 2 in store     | allowed → register lies          | **P38** serial cover check inside `postStockMove`                             |
+| I7  | Stock Count counts 1 gauge, 2 registered in store          | posts 1                          | P38 refuses: "mark the missing instrument Lost first"                         |
+| I8  | Item Issue (store) of a tool item                          | allowed                          | **P39** refused — tools go out by Tool Issue (ITEM_TYPE_RULES.returnable)     |
+| I9  | Return bulk 10: good 6, damaged 1, lost 1, consumed 2      | IN 6; 2 write-offs pending ✓     | —                                                                             |
+| I10 | Recorder approves own write-off                            | allowed                          | **P40** approver ≠ recorder (as Stock Count)                                  |
+| I11 | Reject Damaged / reject Lost                               | —                                | Damaged → IN as Good; Lost → out again with the operator ✓                    |
+| I12 | Cancel after a return                                      | 409 ✓                            | —                                                                             |
+| I13 | Calibration result Fail                                    | status stays In Store, still due | **P41** Fail → due = calibrated date (blocked from issue) until Pass or Scrap |
+| I14 | Two users issue the same instrument at once                | both pass the read               | **P42** lock instrument rows (id order) before the status check               |
+| I15 | Return an instrument not on this issue / returned twice    | —                                | 400 / 409 ✓                                                                   |
+| I16 | Inactive operator                                          | —                                | 400 ✓                                                                         |
+| I17 | Turn off track_serial after instruments exist              | allowed                          | P15 extended: 409                                                             |
+| I18 | Issue an in-store gauge that has a Scrap write-off pending | allowed                          | **P43** a pending write-off blocks issue and calibration-out                  |
 
 Phases: **4a** instruments + calibration + serial cover + track_serial + AL-020 (calibration due/overdue);
 **4b** tool issue rewrite (operator, instruments, returns, write-offs, cancel, holders) + AL-021 (not returned).
@@ -563,7 +562,7 @@ a "Raise PR" link opens the PR form prefilled with Min Qty − In Stock − On P
 ### Data (0160)
 
 - `items.min_stock_qty` → numeric(14,3) (screen name **Reorder Level**; column kept); += `reorder_qty numeric(14,3)
-  NOT NULL default 0` (**Reorder Qty**).
+NOT NULL default 0` (**Reorder Qty**).
 
 ### API
 
@@ -580,20 +579,20 @@ Alert   AL-019 Below Reorder Level
 
 ### Paper tests (API "running")
 
-| #   | Scenario                                                        | v1 result                  | Problem → fix                                                               |
-| --- | --------------------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------- |
-| R1  | Level 10, Reorder Qty 25, Available 4, On PO 0                  | below; suggest 25 ✓        | —                                                                           |
-| R2  | Level 10, Reorder Qty 5, Available 0                            | suggest 5 → still below    | **P44** suggest max(Reorder Qty, Level − (Available + On PO))               |
-| R3  | Available 4, On PO 8                                            | below (v1 used In Stock)   | **P19** Available + On PO (12 ≥ 10 → not below)                             |
-| R4  | 30 in stock, 28 reserved for SOs, level 10                      | not below (In Stock 30)    | P19 uses Available (2) → below                                              |
-| R5  | Open PR already raised for the item                             | second PR created          | **P18** listed with its PR code, not tickable; POST skips it                |
-| R6  | NOS item, shortfall 7.5                                         | PR qty 7.5 → refused       | **P45** round the suggestion up to a whole number for NOS / SET             |
-| R7  | No PO history → no vendor                                        | PR refused (vendor)        | **P46** vendor picker required on that row; POST 400 names the item         |
-| R8  | Two users press Raise PRs together                              | two PRs per item           | **P47** per-item lock + re-check open PR inside the same transaction        |
-| R9  | Reorder Level on an Assembly item                               | allowed                    | **P48** refused (ITEM_TYPE_RULES.reorderable); Tool made reorderable (inserts wear out) |
-| R10 | Reorder Level 2.5 on a NOS item                                  | saved                      | assertQtyFitsUom refuses it ✓                                                |
-| R11 | Consumption: slip 10, returned 3, another slip reversed          | 13 counted                 | **P49** net of returns, reversed slips excluded → 7                         |
-| R12 | PR created from the list                                        | —                          | status Open → PR approval inbox ✓ (ADR-189); PR remarks "Reorder: level L, available A, On PO P" |
+| #   | Scenario                                                | v1 result                | Problem → fix                                                                                    |
+| --- | ------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------ |
+| R1  | Level 10, Reorder Qty 25, Available 4, On PO 0          | below; suggest 25 ✓      | —                                                                                                |
+| R2  | Level 10, Reorder Qty 5, Available 0                    | suggest 5 → still below  | **P44** suggest max(Reorder Qty, Level − (Available + On PO))                                    |
+| R3  | Available 4, On PO 8                                    | below (v1 used In Stock) | **P19** Available + On PO (12 ≥ 10 → not below)                                                  |
+| R4  | 30 in stock, 28 reserved for SOs, level 10              | not below (In Stock 30)  | P19 uses Available (2) → below                                                                   |
+| R5  | Open PR already raised for the item                     | second PR created        | **P18** listed with its PR code, not tickable; POST skips it                                     |
+| R6  | NOS item, shortfall 7.5                                 | PR qty 7.5 → refused     | **P45** round the suggestion up to a whole number for NOS / SET                                  |
+| R7  | No PO history → no vendor                               | PR refused (vendor)      | **P46** vendor picker required on that row; POST 400 names the item                              |
+| R8  | Two users press Raise PRs together                      | two PRs per item         | **P47** per-item lock + re-check open PR inside the same transaction                             |
+| R9  | Reorder Level on an Assembly item                       | allowed                  | **P48** refused (ITEM_TYPE_RULES.reorderable); Tool made reorderable (inserts wear out)          |
+| R10 | Reorder Level 2.5 on a NOS item                         | saved                    | assertQtyFitsUom refuses it ✓                                                                    |
+| R11 | Consumption: slip 10, returned 3, another slip reversed | 13 counted               | **P49** net of returns, reversed slips excluded → 7                                              |
+| R12 | PR created from the list                                | —                        | status Open → PR approval inbox ✓ (ADR-189); PR remarks "Reorder: level L, available A, On PO P" |
 
 ### Phase 5 — as built
 
@@ -605,4 +604,3 @@ excluded → Net 7 · ledger = balances. Regression: 3b 25/25, 3c 27/27, 4 31/31
 Review fixes (5): a partly-ordered PR ('po_created' with balance) counts as open, OSP PRs don't; suggested vendor only
 from live non-OSP POs and active vendors; dashboard + stock valuation use the same Below Reorder rule; the Store row's
 Raise PR goes through the Reorder List; production-dashboard quantities decimal.
-

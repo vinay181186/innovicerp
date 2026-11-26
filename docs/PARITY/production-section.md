@@ -11,31 +11,34 @@ The Production dept has **15 sidebar entries in 3 groups** (legacy HTML L451–4
 ## Sidebar mapping (legacy L451–471 verbatim)
 
 ### Entry (4)
-| # | key | label | render fn | React route | Status |
-|---|---|---|---|---|---|
-| 1 | `opentry` | ✚ Op Entry | `renderOpEntry` L5202 | `/op-entry` | ✅ SHIPPED |
-| 2 | `machopentry` | ⚙ Machine Op Entry | `renderMachOpEntry` L5540 | `/op-entry/machines` | ✅ SHIPPED |
-| 3 | `jcops` | ⨯ JC Operations | `renderJCOps` L11349 | — | ❌ **MISSING** |
-| 4 | `dailyreport` | 📊 Daily Report | `renderDailyReport` L10823 | — | ❌ **MISSING** |
+
+| #   | key           | label              | render fn                  | React route          | Status         |
+| --- | ------------- | ------------------ | -------------------------- | -------------------- | -------------- |
+| 1   | `opentry`     | ✚ Op Entry         | `renderOpEntry` L5202      | `/op-entry`          | ✅ SHIPPED     |
+| 2   | `machopentry` | ⚙ Machine Op Entry | `renderMachOpEntry` L5540  | `/op-entry/machines` | ✅ SHIPPED     |
+| 3   | `jcops`       | ⨯ JC Operations    | `renderJCOps` L11349       | —                    | ❌ **MISSING** |
+| 4   | `dailyreport` | 📊 Daily Report    | `renderDailyReport` L10823 | —                    | ❌ **MISSING** |
 
 ### Master (3)
-| # | key | label | render fn | React route | Status |
-|---|---|---|---|---|---|
-| 5 | `jobcards` | ▭ Job Cards | `renderJobCards` L5739 | `/job-cards` | ✅ SHIPPED |
-| 6 | `machines` | ⚙ Machine Master | `renderMachines` L13070 | `/machines` | ✅ SHIPPED |
-| 7 | `operators` | 👷 Operator Master | `renderOperators` L13699 | `/operators` | ✅ SHIPPED |
+
+| #   | key         | label              | render fn                | React route  | Status     |
+| --- | ----------- | ------------------ | ------------------------ | ------------ | ---------- |
+| 5   | `jobcards`  | ▭ Job Cards        | `renderJobCards` L5739   | `/job-cards` | ✅ SHIPPED |
+| 6   | `machines`  | ⚙ Machine Master   | `renderMachines` L13070  | `/machines`  | ✅ SHIPPED |
+| 7   | `operators` | 👷 Operator Master | `renderOperators` L13699 | `/operators` | ✅ SHIPPED |
 
 ### Report (8)
-| # | key | label | render fn | React route | Status |
-|---|---|---|---|---|---|
-| 8 | `dashboard` | 📊 Production Dashboard | `renderDashboard` L3658 (global) | `/production-dashboard` | ⚠️ React has own page; legacy reuses global dashboard |
-| 9 | `shopfloor` | 🏭 Shop Floor | `renderShopFloor` L10286 | — | ❌ **MISSING** |
-| 10 | `jobqueue` | ⬛ Job Queue | `renderJobQueue` L10363 | — | ❌ **MISSING** |
-| 11 | `loading` | ▣ Machine Loading | `renderLoading` L5021 | `/machine-loading` | ✅ SHIPPED |
-| 12 | `prodschedule` | 📅 Production Schedule (Gantt) | `renderProductionSchedule` L15588 | — | ❌ **MISSING** (largest) |
-| 13 | `prodsolist` | 📋 SO List | `renderProdSOList` L22954 | — | ❌ **MISSING** |
-| 14 | `prodjwlist` | 📋 JW List | `renderProdJWList` L22995 | — | ❌ **MISSING** |
-| 15 | `rpt_production` | 📊 Production Reports | `renderDeptReport('production')` (L20020) | `/reports?group=Production` | ⚠️ No reports tagged `group:'Production'` yet (legacy reuses Item Tracker + SO Line Tracker from Sales) |
+
+| #   | key              | label                          | render fn                                 | React route                 | Status                                                                                                  |
+| --- | ---------------- | ------------------------------ | ----------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 8   | `dashboard`      | 📊 Production Dashboard        | `renderDashboard` L3658 (global)          | `/production-dashboard`     | ⚠️ React has own page; legacy reuses global dashboard                                                   |
+| 9   | `shopfloor`      | 🏭 Shop Floor                  | `renderShopFloor` L10286                  | —                           | ❌ **MISSING**                                                                                          |
+| 10  | `jobqueue`       | ⬛ Job Queue                   | `renderJobQueue` L10363                   | —                           | ❌ **MISSING**                                                                                          |
+| 11  | `loading`        | ▣ Machine Loading              | `renderLoading` L5021                     | `/machine-loading`          | ✅ SHIPPED                                                                                              |
+| 12  | `prodschedule`   | 📅 Production Schedule (Gantt) | `renderProductionSchedule` L15588         | —                           | ❌ **MISSING** (largest)                                                                                |
+| 13  | `prodsolist`     | 📋 SO List                     | `renderProdSOList` L22954                 | —                           | ❌ **MISSING**                                                                                          |
+| 14  | `prodjwlist`     | 📋 JW List                     | `renderProdJWList` L22995                 | —                           | ❌ **MISSING**                                                                                          |
+| 15  | `rpt_production` | 📊 Production Reports          | `renderDeptReport('production')` (L20020) | `/reports?group=Production` | ⚠️ No reports tagged `group:'Production'` yet (legacy reuses Item Tracker + SO Line Tracker from Sales) |
 
 **Total gap:** 7 missing pages + 7 sidebar entries to add + 1 dashboard parity check + 1 reports-group tagging.
 
@@ -118,6 +121,7 @@ Per `renderProductionSchedule` L15588 (largest legacy page in Production).
 ### Slice H — Production Dashboard parity check (POLISH, deferred)
 
 `/production-dashboard` exists but legacy points the sidebar slot at the global `renderDashboard`. Two options:
+
 - **(A)** Make sidebar entry navigate to `/` (global dashboard) — matches legacy 1:1.
 - **(B)** Keep `/production-dashboard` and extend it to match legacy's production-relevant blocks.
 
@@ -129,10 +133,10 @@ For this session: leave `/production-dashboard` as-is, sidebar still points ther
 
 ## Schema additions
 
-| Slice | Migration | New objects |
-|---|---|---|
-| F (Job Queue manual order) | `0034_phase8_jc_op_queue_position.sql` | `jc_ops.queue_position` (nullable int) |
-| G (Production Schedule) | `0035_phase8_jc_op_schedule.sql` | `jc_ops.planned_start`, `jc_ops.planned_end` (nullable dates) |
+| Slice                      | Migration                              | New objects                                                   |
+| -------------------------- | -------------------------------------- | ------------------------------------------------------------- |
+| F (Job Queue manual order) | `0034_phase8_jc_op_queue_position.sql` | `jc_ops.queue_position` (nullable int)                        |
+| G (Production Schedule)    | `0035_phase8_jc_op_schedule.sql`       | `jc_ops.planned_start`, `jc_ops.planned_end` (nullable dates) |
 
 ---
 
@@ -163,5 +167,6 @@ The earlier summary listed only 7 entries (Job Cards / Operators / Machines / Op
 - Wave 5: JC create/edit modal — still pending (separate full-stack slice)
 
 Cross-cutting backend gaps still open:
+
 1. `machines.hour_rate`, `maint_cycle_days`, `last_maint_date` + `machine_maint_log` (for Machine Master polish)
 2. JC write endpoints — create/update/delete with ops + docs

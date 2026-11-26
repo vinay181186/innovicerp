@@ -16,12 +16,12 @@
 
 ## 1. Toolbar (L5777–5783)
 
-| # | Element | Legacy | React (before) | Match? | Tag |
-|---|---|---|---|---|---|
-| 1 | Title | "Job Cards" | "Job Cards" + subtitle | ✅ (subtitle is extra) | — |
-| 2 | Search | `searchBox` "Search JC No., Item, SO…" | input "Search code, item, customer, SO/JW…" | ✅ structure | POLISH placeholder |
-| 3 | + Plan & Create Job Card | `nav('planning')`, gated canEntry | (missing) | ❌ | **BLOCKER** |
-| 4 | status/machine/operator/date filters | (none in legacy) | present in React | ⚠️ EXTRA | DELTA-extra — kept (useful, non-conflicting) |
+| #   | Element                              | Legacy                                 | React (before)                              | Match?                 | Tag                                          |
+| --- | ------------------------------------ | -------------------------------------- | ------------------------------------------- | ---------------------- | -------------------------------------------- |
+| 1   | Title                                | "Job Cards"                            | "Job Cards" + subtitle                      | ✅ (subtitle is extra) | —                                            |
+| 2   | Search                               | `searchBox` "Search JC No., Item, SO…" | input "Search code, item, customer, SO/JW…" | ✅ structure           | POLISH placeholder                           |
+| 3   | + Plan & Create Job Card             | `nav('planning')`, gated canEntry      | (missing)                                   | ❌                     | **BLOCKER**                                  |
+| 4   | status/machine/operator/date filters | (none in legacy)                       | present in React                            | ⚠️ EXTRA               | DELTA-extra — kept (useful, non-conflicting) |
 
 ---
 
@@ -29,23 +29,23 @@
 
 Legacy: **14 columns**. React (before): 10 columns.
 
-| # | Legacy header | Legacy data / style | React (before) | Match? | Tag |
-|---|---|---|---|---|---|
-| 1 | JC No. | cyan, dotted underline, → `viewJCStatus(id)` | "Code" → /op-entry?jc | ✅ col / ⚠️ link target | DELTA (link) |
-| 2 | Date | text2 11px, `fmt` | ✅ Date | ✅ | — |
-| 3 | SO/WO | mono, `soNo` + `/soLineNo` if ≠1 | merged into "Source" | ⚠️ | DELTA |
-| 4 | CPO Ln | mono purple, `clientPoLineNo` | (missing) | ❌ | **BLOCKER** (data: `sol.client_po_line_no`) |
-| 5 | Item Code | td-code purple | merged "Item" | ⚠️ | POLISH |
-| 6 | Item Name | plain | merged "Item" | ⚠️ | POLISH |
-| 7 | Order Qty | ctr mono bold | ✅ Qty | ✅ | — |
-| 8 | **Completed** | green bold `qtyDone` + 52px progress bar + `qtyPct%` | (missing) | ❌ | **BLOCKER** (data: last-op `completed_qty`) |
-| 9 | **Pending** | ctr mono bold, red if >0 else green | (missing) | ❌ | **BLOCKER** (`orderQty − qtyDone`) |
-| 10 | Priority | `badge(priority)` (Normal/High) | lowercase text | ⚠️ | POLISH (badge) |
-| 11 | Due Date | text2 `fmt` | ✅ Due | ✅ | — |
-| 12 | Ops Done | ctr text2 `doneOps/totalOps` | ✅ "Ops" | ✅ | — |
-| 13 | Status | `badge(status)` + `▶N` amber when running | badge only | ⚠️ | DELTA (running badge; data: `runningCount`) |
-| 14 | Actions | View 👁 / Print 🖨 / Edit ✎(canEdit) / Assign 👤(admin·mgr) / Delete 🗑(admin) | (missing) | ❌ | **BLOCKER** (View) + remaining (Print/Edit/Delete) |
-| — | Customer | (none in legacy) | present in React | ⚠️ EXTRA | DELTA-extra — kept |
+| #   | Legacy header | Legacy data / style                                                            | React (before)        | Match?                  | Tag                                                |
+| --- | ------------- | ------------------------------------------------------------------------------ | --------------------- | ----------------------- | -------------------------------------------------- |
+| 1   | JC No.        | cyan, dotted underline, → `viewJCStatus(id)`                                   | "Code" → /op-entry?jc | ✅ col / ⚠️ link target | DELTA (link)                                       |
+| 2   | Date          | text2 11px, `fmt`                                                              | ✅ Date               | ✅                      | —                                                  |
+| 3   | SO/WO         | mono, `soNo` + `/soLineNo` if ≠1                                               | merged into "Source"  | ⚠️                      | DELTA                                              |
+| 4   | CPO Ln        | mono purple, `clientPoLineNo`                                                  | (missing)             | ❌                      | **BLOCKER** (data: `sol.client_po_line_no`)        |
+| 5   | Item Code     | td-code purple                                                                 | merged "Item"         | ⚠️                      | POLISH                                             |
+| 6   | Item Name     | plain                                                                          | merged "Item"         | ⚠️                      | POLISH                                             |
+| 7   | Order Qty     | ctr mono bold                                                                  | ✅ Qty                | ✅                      | —                                                  |
+| 8   | **Completed** | green bold `qtyDone` + 52px progress bar + `qtyPct%`                           | (missing)             | ❌                      | **BLOCKER** (data: last-op `completed_qty`)        |
+| 9   | **Pending**   | ctr mono bold, red if >0 else green                                            | (missing)             | ❌                      | **BLOCKER** (`orderQty − qtyDone`)                 |
+| 10  | Priority      | `badge(priority)` (Normal/High)                                                | lowercase text        | ⚠️                      | POLISH (badge)                                     |
+| 11  | Due Date      | text2 `fmt`                                                                    | ✅ Due                | ✅                      | —                                                  |
+| 12  | Ops Done      | ctr text2 `doneOps/totalOps`                                                   | ✅ "Ops"              | ✅                      | —                                                  |
+| 13  | Status        | `badge(status)` + `▶N` amber when running                                      | badge only            | ⚠️                      | DELTA (running badge; data: `runningCount`)        |
+| 14  | Actions       | View 👁 / Print 🖨 / Edit ✎(canEdit) / Assign 👤(admin·mgr) / Delete 🗑(admin) | (missing)             | ❌                      | **BLOCKER** (View) + remaining (Print/Edit/Delete) |
+| —   | Customer      | (none in legacy)                                                               | present in React      | ⚠️ EXTRA                | DELTA-extra — kept                                 |
 
 Empty state: legacy `colspan=14` "No job cards".
 
@@ -66,6 +66,7 @@ Legacy modal sections: ▸ JC DETAILS (JC No auto `nextJCNo`, Date, SO/WO search
 2. **Frontend**: rebuild columns to legacy's 14 (SO/WO split, CPO Ln, Item Code+Name split, Completed w/ bar, Pending, Ops Done, running badge), add "+ Plan & Create Job Card" → `/planning`, add Actions col (View → `/so-status`; Print/Edit/Delete deferred w/ disabled-or-omitted per role). Keep React filter bar + Customer as non-conflicting extras.
 
 ### Remaining after this slice (LEGACY_AUDIT)
+
 - JC create/edit modal (ops routing builder, drawing + QC doc upload) + backend JC writes.
 - Print job card template.
 - Delete (admin) + Assign-to-user (Tasks module).

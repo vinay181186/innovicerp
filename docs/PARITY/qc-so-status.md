@@ -21,9 +21,11 @@ pill (Passed / In Progress / Pending / No QC). Read-only, no migration.
 The earlier 2-of-4 blocker is **resolved**: TPI/Docs/CAPA infra all landed (migrations 0036/0037/0039), and `purchase_order_lines` gained `source_so_line_id` + `source_jc_op_id`, which is the GRN→SO-line attribution path the original note said was missing.
 
 ## Minor DELTA (backlog, not blocking)
+
 - **No expandable per-line detail tables** (legacy `_sqcToggle` expands GRN/TPI/Docs sub-tables with vendor / inspector / file-link rows). The React page keeps the flat rollup design it was built with — pills + counts, no row expansion. Add detail expansion if the user wants drill-down.
 - **No per-line Overall %** bar — the React page uses an enum badge (none/pending/in_progress/passed) rather than legacy's % progress bar.
 - **"Required docs" gating** (legacy missing-doc concept) not modelled here; `qc_documents` only stores uploaded files. Plans `required_docs` is the future source for that.
 
 ## ⚠️ Note — dev-DB migration gap found 2026-05-24
+
 This dev DB was **missing migrations 0036–0039** (capa/tpi/report_types/qc_documents) — the existing TPI query (`op_log.is_tpi`) was 500ing and the new Docs query needs `qc_documents`. The prior QC modules shipped without tests, so this was latent. Applied all four (idempotent) via `apply-sql.ts`; the new so-qc-status service test now exercises the path.

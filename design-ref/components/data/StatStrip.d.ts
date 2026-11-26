@@ -14,5 +14,7 @@ export interface StatStripItem {
  * The ONE way to show counts above a list — a single row, hairline dividers, label over mono number.
  * @startingPoint section="Data" subtitle="KPI / filter strip" viewport="700x120"
  */
-export interface StatStripProps { items: StatStripItem[]; }
+export interface StatStripProps {
+  items: StatStripItem[];
+}
 export declare function StatStrip(props: StatStripProps): React.JSX.Element;

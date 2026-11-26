@@ -5,27 +5,27 @@ This document is the single truth for the build. Every agent implementing a slic
 
 ## 0. What already exists and is REUSED unchanged
 
-| Capability | Where |
-|---|---|
-| QC inspection writes accepted/rejected against JC + op | `op-entry/service.ts` `submitQcLog`; `incoming-qc/service.ts` `submitIncomingQc` |
-| Rejected qty auto-creates an NC | `nc-register/cascades.ts` `autoCreateNcFromQcReject` (called from both) |
-| Rejected qty never flows to the next op | `v_jc_op_status` (prev_output = qc_accepted) |
-| Dispositions `scrap`, `use_as_is`, `make_fresh` | `nc-register/cascades.ts` `disposeNcCascade` |
-| Legacy in-route `rework` rows (`rework_op_seq` set) | kept working via the existing `rework_outstanding` / `rework_raised` CTEs |
-| OSP outward DC → receive → auto-GRN → Incoming QC | `delivery-challans/service.ts`, `goods-receipt-notes`, `incoming-qc` |
-| Activity log on every write | `emitActivityLog` |
-| Permissions: `nc_dispose` (QC dept), `ospdc_create`, `qc_submit`, `qc_incoming` | `lib/access.ts` |
+| Capability                                                                      | Where                                                                            |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| QC inspection writes accepted/rejected against JC + op                          | `op-entry/service.ts` `submitQcLog`; `incoming-qc/service.ts` `submitIncomingQc` |
+| Rejected qty auto-creates an NC                                                 | `nc-register/cascades.ts` `autoCreateNcFromQcReject` (called from both)          |
+| Rejected qty never flows to the next op                                         | `v_jc_op_status` (prev_output = qc_accepted)                                     |
+| Dispositions `scrap`, `use_as_is`, `make_fresh`                                 | `nc-register/cascades.ts` `disposeNcCascade`                                     |
+| Legacy in-route `rework` rows (`rework_op_seq` set)                             | kept working via the existing `rework_outstanding` / `rework_raised` CTEs        |
+| OSP outward DC → receive → auto-GRN → Incoming QC                               | `delivery-challans/service.ts`, `goods-receipt-notes`, `incoming-qc`             |
+| Activity log on every write                                                     | `emitActivityLog`                                                                |
+| Permissions: `nc_dispose` (QC dept), `ospdc_create`, `qc_submit`, `qc_incoming` | `lib/access.ts`                                                                  |
 
 ## 1. Dispositions (§3) — enum `nc_disposition`
 
-| Value | PDF name | Action |
-|---|---|---|
-| `rework` | Rework | **NEW behaviour**: auto-create a CHILD Rework Job Card. (Legacy rows with `rework_op_seq` keep the old in-route behaviour; new dispositions never set `rework_op_seq`.) |
-| `repair` | Repair | **NEW value**: auto-create a CHILD Repair Job Card. Identical mechanics to rework; different label and JC code suffix. |
-| `return_to_vendor` | Return to Vendor | status → `disposed` (awaiting DC). A separate action **Create DC** issues the challan. |
-| `scrap` | Reject | status → `closed` immediately. Requires `nc_dispose` **approve** tier (§3 "close only after required authorization"). |
-| `use_as_is` | — (extra, kept) | unchanged |
-| `make_fresh` | — (extra, kept) | unchanged |
+| Value              | PDF name         | Action                                                                                                                                                                  |
+| ------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rework`           | Rework           | **NEW behaviour**: auto-create a CHILD Rework Job Card. (Legacy rows with `rework_op_seq` keep the old in-route behaviour; new dispositions never set `rework_op_seq`.) |
+| `repair`           | Repair           | **NEW value**: auto-create a CHILD Repair Job Card. Identical mechanics to rework; different label and JC code suffix.                                                  |
+| `return_to_vendor` | Return to Vendor | status → `disposed` (awaiting DC). A separate action **Create DC** issues the challan.                                                                                  |
+| `scrap`            | Reject           | status → `closed` immediately. Requires `nc_dispose` **approve** tier (§3 "close only after required authorization").                                                   |
+| `use_as_is`        | — (extra, kept)  | unchanged                                                                                                                                                               |
+| `make_fresh`       | — (extra, kept)  | unchanged                                                                                                                                                               |
 
 ## 2. NC status lifecycle — enum `nc_status`
 
@@ -43,19 +43,19 @@ New values: `under_rework`, `under_repair`, `sent_to_vendor`, `received_qc_pendi
 
 ## 3. Quantity model on `nc_register` (interlocks 2, 4, 5, 6)
 
-| Column | Meaning |
-|---|---|
-| `rejected_qty` (existing) | The qty THIS NC row is responsible for. After a partial disposition it is the dispositioned portion; the remainder lives on a sibling row. |
-| `split_from_nc_id` (new) | Sibling link when a disposition covered less than the full qty. |
-| `rtv_sent_qty` (new) | Qty on the DC issued for this NC. Must equal the DC line qty (interlock 4). |
-| `rtv_received_qty` (new) | Qty received back from the vendor (sum of DC receipts). |
-| `cleared_qty` (new) | Qty QC-ACCEPTED after recovery (child JC terminal QC, or Incoming QC on the replacement). |
-| `failed_qty` (new) | Qty QC-REJECTED after recovery. A follow-on NC is auto-raised for it by the existing QC cascade. |
-| `closed_at`, `closed_by` (new) | Audit of closure. |
-| `qc_log_id` (new) | The `op_log` inspection row that raised this NC (Flow 4). |
-| `grn_line_id` (new) | The GRN line for an Incoming-QC-raised NC. |
-| `child_job_card_id` (new) | The rework/repair child JC. |
-| `delivery_challan_id` (new) | The RTV DC. |
+| Column                         | Meaning                                                                                                                                    |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `rejected_qty` (existing)      | The qty THIS NC row is responsible for. After a partial disposition it is the dispositioned portion; the remainder lives on a sibling row. |
+| `split_from_nc_id` (new)       | Sibling link when a disposition covered less than the full qty.                                                                            |
+| `rtv_sent_qty` (new)           | Qty on the DC issued for this NC. Must equal the DC line qty (interlock 4).                                                                |
+| `rtv_received_qty` (new)       | Qty received back from the vendor (sum of DC receipts).                                                                                    |
+| `cleared_qty` (new)            | Qty QC-ACCEPTED after recovery (child JC terminal QC, or Incoming QC on the replacement).                                                  |
+| `failed_qty` (new)             | Qty QC-REJECTED after recovery. A follow-on NC is auto-raised for it by the existing QC cascade.                                           |
+| `closed_at`, `closed_by` (new) | Audit of closure.                                                                                                                          |
+| `qc_log_id` (new)              | The `op_log` inspection row that raised this NC (Flow 4).                                                                                  |
+| `grn_line_id` (new)            | The GRN line for an Incoming-QC-raised NC.                                                                                                 |
+| `child_job_card_id` (new)      | The rework/repair child JC.                                                                                                                |
+| `delivery_challan_id` (new)    | The RTV DC.                                                                                                                                |
 
 **Open NC qty** = `rejected_qty − cleared_qty − failed_qty`.
 
@@ -67,21 +67,22 @@ New values: `under_rework`, `under_repair`, `sent_to_vendor`, `received_qc_pendi
 
 Created in the dispose transaction by `createRecoveryJobCard`:
 
-| `job_cards` column | Value |
-|---|---|
-| `code` | `<parentCode>-RW<n>` (rework) / `<parentCode>-RP<n>` (repair), n = 1,2,… per parent |
-| `parent_job_card_id` (new) | the original JC |
-| `parent_nc_id` (existing) | the NC |
-| `origin_op_seq` (new) | the op the NC was raised against |
-| `recovery_kind` (new, `'rework'|'repair'`) | which disposition made it |
-| `item_id`, `drawing_file_path`, `source_so_line_id` / `source_jw_line_id`, raw material grade/size | copied from the parent |
-| `order_qty` | the disposition qty |
-| `remarks` | `Rework of <parentCode> Op <n> — <ncCode>` |
-| `jc_ops` | **none** — the user defines recovery operations (§4.3). When ops are saved, a terminal `Final Inspection` QC op (ADR-168; was `DIR`) is ALWAYS appended (`recovery_kind` set ⇒ `needsDefaultQcOp` is unconditional), so recovered qty can never merge into WIP without QC (§4.5, interlock 3). |
+| `job_cards` column                                                                                 | Value                                                                                                                                                                                                                                                                                          |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| `code`                                                                                             | `<parentCode>-RW<n>` (rework) / `<parentCode>-RP<n>` (repair), n = 1,2,… per parent                                                                                                                                                                                                            |
+| `parent_job_card_id` (new)                                                                         | the original JC                                                                                                                                                                                                                                                                                |
+| `parent_nc_id` (existing)                                                                          | the NC                                                                                                                                                                                                                                                                                         |
+| `origin_op_seq` (new)                                                                              | the op the NC was raised against                                                                                                                                                                                                                                                               |
+| `recovery_kind` (new, `'rework'                                                                    | 'repair'`)                                                                                                                                                                                                                                                                                     | which disposition made it |
+| `item_id`, `drawing_file_path`, `source_so_line_id` / `source_jw_line_id`, raw material grade/size | copied from the parent                                                                                                                                                                                                                                                                         |
+| `order_qty`                                                                                        | the disposition qty                                                                                                                                                                                                                                                                            |
+| `remarks`                                                                                          | `Rework of <parentCode> Op <n> — <ncCode>`                                                                                                                                                                                                                                                     |
+| `jc_ops`                                                                                           | **none** — the user defines recovery operations (§4.3). When ops are saved, a terminal `Final Inspection` QC op (ADR-168; was `DIR`) is ALWAYS appended (`recovery_kind` set ⇒ `needsDefaultQcOp` is unconditional), so recovered qty can never merge into WIP without QC (§4.5, interlock 3). |
 
 `order_qty` of a recovery JC cannot be edited above the NC's open qty (interlock 2 on the child).
 
 **Recovery QC cascade** (`nc-register/recovery.ts` `onRecoveryQc`): called from `submitQcLog` after the op_log insert when `job_cards.recovery_kind IS NOT NULL` and the op is the LAST op of that JC:
+
 1. `nc.cleared_qty += accepted`, `nc.failed_qty += rejected`.
 2. Re-inject `accepted` into the PARENT route: insert an `op_log` row `log_type='qc', qty=accepted, reject_qty=0` on the origin op (`nc.jc_op_id`), remarks `Recovered via <childCode> — <ncCode>`. This is the same mechanism `use_as_is` already uses; for an outsource origin op the view's outsource branch now adds op_log qc qty (see §7 of this doc).
 3. If `cleared + failed = rejected_qty` → `status='closed'`, `closed_at/by`.
@@ -91,6 +92,7 @@ Created in the dispose transaction by `createRecoveryJobCard`:
 ## 5. Return to Vendor (§5, §12)
 
 **Create DC from NC** — `POST /nc-register/:id/create-dc` `{ dcDate, vendorId?, vendorCodeText, transport?, vehicleNo?, remarks? }`. Gate: `nc_dispose` edit AND `ospdc_create` entry. Preconditions: `disposition='return_to_vendor'`, `status='disposed'`, no DC yet.
+
 - Inserts `delivery_challans` with `nc_id`, `job_card_id`, `reason = 'Return to vendor — <rework|repair>'`, `po_code_text = <ncCode>` (column is NOT NULL; the NC code is the reference), `purchase_order_id = NULL`.
 - One line: item from the NC, `qty = nc.rejected_qty`, `purchase_order_line_id = origin op's outsource_po_line_id` when the origin op is an outsource op (so the replacement GRN rolls into the op through the existing view path), else NULL.
 - `nc.rtv_sent_qty = qty`, `nc.delivery_challan_id`, `status = 'sent_to_vendor'`.
@@ -114,13 +116,13 @@ In `submitIncomingQc`, after writing the GRN line result for an OUTSOURCE op: if
 
 ## 8. Screens (reuse; additions only)
 
-| Screen | Change |
-|---|---|
-| NC detail `dispose-nc-panel.tsx` | Qty field (default = rejected, max = rejected); `repair` option; hide `reworkOpSeq` for new rework (child JC); scrap shows approve requirement. |
-| NC detail `routes/detail.tsx` | Status pill for new statuses; qty strip (rejected / cleared / failed / open; sent / received for RTV); links to child JC and DC; **Create DC** form (vendor, date, transport, vehicle) when RTV + disposed; **Close** button uses the gate and shows the shortfall reason when refused. |
-| JC op card `jc-op-card.tsx` | §6 breakup rows from `v_nc_op_breakup`: NC raised · Under rework · Under repair · Sent to vendor · Received – QC pending · Scrap · Closed. |
-| JC detail | Recovery children listed under the parent; a recovery JC shows a banner "Rework of IN-JC-… Op n — NC …" linking both. |
-| DC detail/list | "NC" reference and reason when `nc_id` set. |
+| Screen                           | Change                                                                                                                                                                                                                                                                                  |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| NC detail `dispose-nc-panel.tsx` | Qty field (default = rejected, max = rejected); `repair` option; hide `reworkOpSeq` for new rework (child JC); scrap shows approve requirement.                                                                                                                                         |
+| NC detail `routes/detail.tsx`    | Status pill for new statuses; qty strip (rejected / cleared / failed / open; sent / received for RTV); links to child JC and DC; **Create DC** form (vendor, date, transport, vehicle) when RTV + disposed; **Close** button uses the gate and shows the shortfall reason when refused. |
+| JC op card `jc-op-card.tsx`      | §6 breakup rows from `v_nc_op_breakup`: NC raised · Under rework · Under repair · Sent to vendor · Received – QC pending · Scrap · Closed.                                                                                                                                              |
+| JC detail                        | Recovery children listed under the parent; a recovery JC shows a banner "Rework of IN-JC-… Op n — NC …" linking both.                                                                                                                                                                   |
+| DC detail/list                   | "NC" reference and reason when `nc_id` set.                                                                                                                                                                                                                                             |
 
 ## 9. Audit actions (interlock 8)
 

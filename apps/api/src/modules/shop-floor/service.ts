@@ -6,11 +6,7 @@
 
 import { sql } from 'drizzle-orm';
 import { drawingRevOf } from '../../lib/drawing-rev';
-import type {
-  ShopFloorMachine,
-  ShopFloorResponse,
-  ShopFloorRunningRow,
-} from '@innovic/shared';
+import type { ShopFloorMachine, ShopFloorResponse, ShopFloorRunningRow } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
 import { polSql } from '../../lib/pol';

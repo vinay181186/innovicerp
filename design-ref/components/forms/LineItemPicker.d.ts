@@ -1,5 +1,9 @@
 import * as React from 'react';
-export interface LineItem { code: string; name: string; material?: string; }
+export interface LineItem {
+  code: string;
+  name: string;
+  material?: string;
+}
 /** Item Code (datalist over Item Master) + Item Name pair; a matching code auto-fills and locks the name. */
 export interface LineItemPickerProps {
   code?: string;

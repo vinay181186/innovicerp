@@ -181,7 +181,10 @@ async function createPr(
   await page.locator('#qty').fill(String(line.qty));
   await page.locator('#estCost').fill(String(line.rate));
   await page.locator('#remarks').fill('E2E_ GRN source-doc check (ADR-162) - safe to cancel.');
-  await page.getByRole('button', { name: /Save|Create/ }).first().click();
+  await page
+    .getByRole('button', { name: /Save|Create/ })
+    .first()
+    .click();
   await expect(page).not.toHaveURL(/purchase-requests\/new/, { timeout: 60_000 });
   await page.waitForTimeout(3000);
   const body = await page.locator('body').innerText();
@@ -255,7 +258,10 @@ async function approvePo(page: Page, poId: string): Promise<string> {
 }
 
 /** Reads {received, status} for every line off the PO detail page. */
-async function readPo(page: Page, poId: string): Promise<{ status: string; received: number[]; qty: number[] }> {
+async function readPo(
+  page: Page,
+  poId: string,
+): Promise<{ status: string; received: number[]; qty: number[] }> {
   await page.goto('/purchase-orders/' + poId, { waitUntil: 'domcontentloaded' });
   const table = page
     .locator('table.innovic-table')
@@ -289,12 +295,16 @@ async function readGrnDetail(page: Page, grnId: string) {
   // Our DC shows as "DC No." (DC-linked GRN); the vendor's own challan as
   // "Vendor Challan No."; neither pair renders when both are empty.
   const pairCount = async (l: string): Promise<number> =>
-    page.locator('.form-grp').filter({ has: page.getByText(l, { exact: true }) }).count();
-  const dcNo = (await pairCount('DC No.')) > 0
-    ? await readPair(page, 'DC No.')
-    : (await pairCount('Vendor Challan No.')) > 0
-      ? await readPair(page, 'Vendor Challan No.')
-      : '—';
+    page
+      .locator('.form-grp')
+      .filter({ has: page.getByText(l, { exact: true }) })
+      .count();
+  const dcNo =
+    (await pairCount('DC No.')) > 0
+      ? await readPair(page, 'DC No.')
+      : (await pairCount('Vendor Challan No.')) > 0
+        ? await readPair(page, 'Vendor Challan No.')
+        : '—';
   const vendor = await readPair(page, 'Vendor');
   const openDc = await page.getByRole('link', { name: 'Open DC' }).count();
   const table = page
@@ -376,26 +386,47 @@ test('A1 - build the buying chain: PR -> standard PO (10 + 5) -> approve', async
     log('A: PO ' + s.aPoCode + ' approved -> status ' + status);
   }
   const po = await readPo(page, s.aPoId!);
-  log('A: PO lines qty ' + JSON.stringify(po.qty) + ' received ' + JSON.stringify(po.received) + ' status ' + po.status);
+  log(
+    'A: PO lines qty ' +
+      JSON.stringify(po.qty) +
+      ' received ' +
+      JSON.stringify(po.received) +
+      ' status ' +
+      po.status,
+  );
   expect(po.qty).toEqual([10, 5]);
 });
 
-test('A2 - Against PO: picking the PO fills vendor + the two pending lines, no QC fields', async ({ page }) => {
+test('A2 - Against PO: picking the PO fills vendor + the two pending lines, no QC fields', async ({
+  page,
+}) => {
   test.setTimeout(300_000);
   const s = readState();
   if (s.aGrnId) {
-    test.skip(true, 'fresh-PO check already done before GRN ' + s.aGrnCode + ' was created (see A5 for the after-state)');
+    test.skip(
+      true,
+      'fresh-PO check already done before GRN ' +
+        s.aGrnCode +
+        ' was created (see A5 for the after-state)',
+    );
     return;
   }
   await openNewGrn(page, 'po');
-  await pickFromCombo(page, 'purchaseOrderId', s.aPoCode!, new RegExp(s.aPoCode!.replace('/', '\\/')));
+  await pickFromCombo(
+    page,
+    'purchaseOrderId',
+    s.aPoCode!,
+    new RegExp(s.aPoCode!.replace('/', '\\/')),
+  );
 
   const vendor = page.locator('#vendor');
   await expect(vendor).toHaveAttribute('readonly', '');
   await expect(vendor).toHaveValue(/E2E_ Shreeji/, { timeout: 30_000 });
   log('A2: vendor field = "' + (await vendor.inputValue()) + '" (read-only)');
 
-  await expect(page.getByLabel('Receive now, line 2', { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByLabel('Receive now, line 2', { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   const lines = await readPoTabLines(page);
   log('A2: lines [poQty, soFar, balance, receiveNow] = ' + JSON.stringify(lines));
   expect(lines).toHaveLength(2);
@@ -404,7 +435,10 @@ test('A2 - Against PO: picking the PO fills vendor + the two pending lines, no Q
 
   const form = page.locator('form');
   for (const t of ['QC By', 'QC Accepted', 'QC Rejected', 'QC Date', 'QC Report']) {
-    expect(await form.getByText(t, { exact: false }).count(), `no "${t}" on the Against PO form`).toBe(0);
+    expect(
+      await form.getByText(t, { exact: false }).count(),
+      `no "${t}" on the Against PO form`,
+    ).toBe(0);
   }
   log('A2: no QC By / QC Accepted / QC Rejected fields on the form');
 });
@@ -417,12 +451,19 @@ test('A3 - Receive Now 11 is refused inline; 4 + 5 creates the GRN', async ({ pa
     return;
   }
   await openNewGrn(page, 'po');
-  await pickFromCombo(page, 'purchaseOrderId', s.aPoCode!, new RegExp(s.aPoCode!.replace('/', '\\/')));
+  await pickFromCombo(
+    page,
+    'purchaseOrderId',
+    s.aPoCode!,
+    new RegExp(s.aPoCode!.replace('/', '\\/')),
+  );
   const line1 = page.getByLabel('Receive now, line 1', { exact: true });
   await expect(line1).toHaveValue('10', { timeout: 30_000 });
 
   await line1.fill('11');
-  await expect(page.getByText('Receive Now cannot be more than Pending (10).', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Receive Now cannot be more than Pending (10).', { exact: true }),
+  ).toBeVisible();
   await page.getByRole('button', { name: /Save GRN/ }).click();
   await page.waitForTimeout(3000);
   // Two nets stop the submit: the input's native max=10 (browser constraint
@@ -431,7 +472,9 @@ test('A3 - Receive Now 11 is refused inline; 4 + 5 creates the GRN', async ({ pa
   const native = await line1.evaluate((el) => (el as HTMLInputElement).validity.rangeOverflow);
   const summary = await page.getByText('Fix the highlighted quantities.').count();
   await expect(page).toHaveURL(/goods-receipt-notes\/new/);
-  await expect(page.getByText('Receive Now cannot be more than Pending (10).', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Receive Now cannot be more than Pending (10).', { exact: true }),
+  ).toBeVisible();
   log(
     'A3: 11 -> "Cannot exceed balance of 10." shown; Create refused (still on /new; native max block=' +
       native +
@@ -448,7 +491,16 @@ test('A3 - Receive Now 11 is refused inline; 4 + 5 creates the GRN', async ({ pa
   const grnId = /goods-receipt-notes\/([0-9a-f-]{36})/.exec(page.url())![1]!;
   const d = await readGrnDetail(page, grnId);
   s = writeState({ aGrnId: grnId, aGrnCode: d.code });
-  log('A3: GRN ' + d.code + ' (' + grnId + ') PO=' + d.po + ' lines received=' + JSON.stringify(d.received));
+  log(
+    'A3: GRN ' +
+      d.code +
+      ' (' +
+      grnId +
+      ') PO=' +
+      d.po +
+      ' lines received=' +
+      JSON.stringify(d.received),
+  );
   expect(d.po).toBe(s.aPoCode);
   expect(d.received).toEqual([4, 5]);
   expect(d.openDc, 'a PO-sourced GRN has no Open DC button').toBe(0);
@@ -463,18 +515,24 @@ test('A4 - PO detail: received 4 and 5, status partial', async ({ page }) => {
   expect(po.status).toBe('partial');
 });
 
-test('A5 - Against PO again: only line 1 (balance 6) is offered; clearing / swapping the PO refreshes the table', async ({ page }) => {
+test('A5 - Against PO again: only line 1 (balance 6) is offered; clearing / swapping the PO refreshes the table', async ({
+  page,
+}) => {
   test.setTimeout(300_000);
   const s = readState();
   await openNewGrn(page, 'po');
   const escaped = s.aPoCode!.replace('/', '\\/');
   await pickFromCombo(page, 'purchaseOrderId', s.aPoCode!, new RegExp(escaped));
-  await expect(page.getByLabel('Receive now, line 1', { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByLabel('Receive now, line 1', { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   const lines = await readPoTabLines(page);
   log('A5: lines after re-pick = ' + JSON.stringify(lines));
   expect(lines).toHaveLength(1);
   expect(lines[0]).toEqual([10, 4, 6, 6]);
-  const item = (await page.locator('form table.innovic-table tbody tr').first().locator('td').nth(1).innerText()).trim();
+  const item = (
+    await page.locator('form table.innovic-table tbody tr').first().locator('td').nth(1).innerText()
+  ).trim();
   expect(item).toContain(A_LINE1.code);
 
   // Clear the picker (delete its text) -> the table must empty.
@@ -482,7 +540,9 @@ test('A5 - Against PO again: only line 1 (balance 6) is offered; clearing / swap
   await box.click();
   await box.fill('');
   await closeCombo(page);
-  await expect(page.getByText('Pick a purchase order to load its pending lines.')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('Pick a purchase order to load its pending lines.')).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(page.locator('#vendor')).toHaveValue('');
   expect(await page.getByLabel(/Receive now, line/).count()).toBe(0);
   log('A5: cleared -> "Pick a purchase order to load its pending lines.", vendor blank, 0 lines');
@@ -495,23 +555,47 @@ test('A5 - Against PO again: only line 1 (balance 6) is offered; clearing / swap
     log('A5: no other approved buying PO on the test stack — swap check done via clear only');
   } else {
     const otherCode = /IN-[A-Z]*PO-\d+(?:\/R\d+)?/.exec(others[0]!)![0];
-    await pickFromCombo(page, 'purchaseOrderId', otherCode, new RegExp(otherCode.replace('/', '\\/')));
+    await pickFromCombo(
+      page,
+      'purchaseOrderId',
+      otherCode,
+      new RegExp(otherCode.replace('/', '\\/')),
+    );
     await page.waitForTimeout(3000);
     const swapped = await readPoTabLines(page);
     const firstItem = swapped.length
-      ? (await page.locator('form table.innovic-table tbody tr').first().locator('td').nth(1).innerText()).trim()
+      ? (
+          await page
+            .locator('form table.innovic-table tbody tr')
+            .first()
+            .locator('td')
+            .nth(1)
+            .innerText()
+        ).trim()
       : '(no pending lines)';
-    log('A5: swapped to ' + otherCode + ' -> ' + swapped.length + ' line(s), first item "' + firstItem + '"');
+    log(
+      'A5: swapped to ' +
+        otherCode +
+        ' -> ' +
+        swapped.length +
+        ' line(s), first item "' +
+        firstItem +
+        '"',
+    );
     expect(firstItem, 'the previous PO’s item must not linger').not.toContain(A_LINE1.code);
     // Back to ours: line 1 / balance 6 comes back.
     await pickFromCombo(page, 'purchaseOrderId', s.aPoCode!, new RegExp(escaped));
-    await expect(page.getByLabel('Receive now, line 1', { exact: true })).toHaveValue('6', { timeout: 30_000 });
+    await expect(page.getByLabel('Receive now, line 1', { exact: true })).toHaveValue('6', {
+      timeout: 30_000,
+    });
     log('A5: back to ' + s.aPoCode + ' -> Receive Now 6 again');
   }
   // Nothing saved here.
 });
 
-test('A6 - server guard via API: over-balance -> 409, same PO line twice -> 400', async ({ page }) => {
+test('A6 - server guard via API: over-balance -> 409, same PO line twice -> 400', async ({
+  page,
+}) => {
   test.setTimeout(180_000);
   const s = readState();
   const token = await bearer(page);
@@ -523,7 +607,14 @@ test('A6 - server guard via API: over-balance -> 409, same PO line twice -> 400'
   const po = (await poRes.json()) as {
     code: string;
     vendorId: string | null;
-    lines: { id: string; lineNo: number; itemName: string; itemCodeText: string | null; qty: number; receivedQty: number }[];
+    lines: {
+      id: string;
+      lineNo: number;
+      itemName: string;
+      itemCodeText: string | null;
+      qty: number;
+      receivedQty: number;
+    }[];
   };
   const l1 = po.lines.find((l) => l.lineNo === 1)!;
   log('A6: PO line 1 from API: qty ' + l1.qty + ' received ' + l1.receivedQty);
@@ -565,7 +656,9 @@ test('A6 - server guard via API: over-balance -> 409, same PO line twice -> 400'
   expect(dupBody).toContain('appears twice');
 
   // Prove neither probe wrote anything: the PO line balance is unchanged.
-  const after = (await (await page.request.get(api + '/purchase-orders/' + s.aPoId, { headers })).json()) as {
+  const after = (await (
+    await page.request.get(api + '/purchase-orders/' + s.aPoId, { headers })
+  ).json()) as {
     lines: { lineNo: number; receivedQty: number }[];
   };
   const l1After = after.lines.find((l) => l.lineNo === 1)!;
@@ -577,7 +670,9 @@ test('A6 - server guard via API: over-balance -> 409, same PO line twice -> 400'
 // Part B — JWPO → DC → Item → GRN
 // ═══════════════════════════════════════════════════════════════════════════
 
-test('B1 - build the material-out chain: PR -> service PO (10) -> approve -> Issue DC for 10', async ({ page }) => {
+test('B1 - build the material-out chain: PR -> service PO (10) -> approve -> Issue DC for 10', async ({
+  page,
+}) => {
   test.setTimeout(600_000);
   let s = readState();
   if (!s.bPrCode) {
@@ -627,11 +722,18 @@ test('B1 - build the material-out chain: PR -> service PO (10) -> approve -> Iss
   }
 });
 
-test('B2 - Against JWPO / DC: pickers cascade (JWPO -> DC -> vendor + lines) and clear on change', async ({ page }) => {
+test('B2 - Against JWPO / DC: pickers cascade (JWPO -> DC -> vendor + lines) and clear on change', async ({
+  page,
+}) => {
   test.setTimeout(300_000);
   const s = readState();
   if (s.bGrnId) {
-    test.skip(true, 'fresh-DC check already done before GRN ' + s.bGrnCode + ' was created (see B6 for the after-state)');
+    test.skip(
+      true,
+      'fresh-DC check already done before GRN ' +
+        s.bGrnCode +
+        ' was created (see B6 for the after-state)',
+    );
     return;
   }
   await openNewGrn(page, 'dc');
@@ -640,25 +742,54 @@ test('B2 - Against JWPO / DC: pickers cascade (JWPO -> DC -> vendor + lines) and
   await expect(dcBox, 'DC picker disabled before a JWPO is picked').toBeDisabled();
 
   const jwpoOpts = await comboOptions(page, 'jwpoId', '');
-  log('B2: JWPO picker offers ' + jwpoOpts.length + ' PO(s): ' + JSON.stringify(jwpoOpts.slice(0, 10)));
-  expect(jwpoOpts.some((o) => o.includes(s.bPoCode!)), 'my service PO is offered').toBe(true);
-  expect(jwpoOpts.some((o) => o.includes(s.aPoCode!)), 'the buying PO from part A is NOT offered').toBe(false);
+  log(
+    'B2: JWPO picker offers ' +
+      jwpoOpts.length +
+      ' PO(s): ' +
+      JSON.stringify(jwpoOpts.slice(0, 10)),
+  );
+  expect(
+    jwpoOpts.some((o) => o.includes(s.bPoCode!)),
+    'my service PO is offered',
+  ).toBe(true);
+  expect(
+    jwpoOpts.some((o) => o.includes(s.aPoCode!)),
+    'the buying PO from part A is NOT offered',
+  ).toBe(false);
 
   await pickFromCombo(page, 'jwpoId', s.bPoCode!, new RegExp(s.bPoCode!.replace('/', '\\/')));
   await expect(dcBox).toBeEnabled({ timeout: 30_000 });
   const dcOpts = await comboOptions(page, 'dcId', '');
   log('B2: DC picker offers: ' + JSON.stringify(dcOpts));
-  expect(dcOpts.some((o) => o.includes(s.bDcCode!)), 'my DC is offered').toBe(true);
+  expect(
+    dcOpts.some((o) => o.includes(s.bDcCode!)),
+    'my DC is offered',
+  ).toBe(true);
 
   await pickFromCombo(page, 'dcId', s.bDcCode!, new RegExp(s.bDcCode!.replace('/', '\\/')));
   await expect(page.locator('#dcVendor')).toHaveValue(/E2E_ Shreeji/, { timeout: 30_000 });
-  await expect(page.getByLabel('Receive now, line 1', { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByLabel('Receive now, line 1', { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   const tds = page.locator('form table.innovic-table tbody tr').first().locator('td');
   const sent = Number((await tds.nth(3).innerText()).trim());
   const soFar = Number((await tds.nth(4).innerText()).trim());
   const balance = Number((await tds.nth(5).innerText()).trim());
-  const receiveNow = Number(await page.getByLabel('Receive now, line 1', { exact: true }).inputValue());
-  log('B2: vendor="' + (await page.locator('#dcVendor').inputValue()) + '" sent=' + sent + ' soFar=' + soFar + ' balance=' + balance + ' receiveNow=' + receiveNow);
+  const receiveNow = Number(
+    await page.getByLabel('Receive now, line 1', { exact: true }).inputValue(),
+  );
+  log(
+    'B2: vendor="' +
+      (await page.locator('#dcVendor').inputValue()) +
+      '" sent=' +
+      sent +
+      ' soFar=' +
+      soFar +
+      ' balance=' +
+      balance +
+      ' receiveNow=' +
+      receiveNow,
+  );
   expect([sent, soFar, balance, receiveNow]).toEqual([10, 0, 10, 10]);
 
   // Change / clear the JWPO -> DC + vendor + lines must go.
@@ -676,11 +807,15 @@ test('B2 - Against JWPO / DC: pickers cascade (JWPO -> DC -> vendor + lines) and
   // Re-pick -> everything comes back.
   await pickFromCombo(page, 'jwpoId', s.bPoCode!, new RegExp(s.bPoCode!.replace('/', '\\/')));
   await pickFromCombo(page, 'dcId', s.bDcCode!, new RegExp(s.bDcCode!.replace('/', '\\/')));
-  await expect(page.getByLabel('Receive now, line 1', { exact: true })).toHaveValue('10', { timeout: 30_000 });
+  await expect(page.getByLabel('Receive now, line 1', { exact: true })).toHaveValue('10', {
+    timeout: 30_000,
+  });
   log('B2: re-picked -> line 1 Receive Now 10 again');
 });
 
-test('B3 - receive 6 of 10 through the DC tab -> lands on the auto-GRN with Open DC', async ({ page }) => {
+test('B3 - receive 6 of 10 through the DC tab -> lands on the auto-GRN with Open DC', async ({
+  page,
+}) => {
   test.setTimeout(300_000);
   let s = readState();
   if (s.bGrnId) {
@@ -699,7 +834,20 @@ test('B3 - receive 6 of 10 through the DC tab -> lands on the auto-GRN with Open
   const grnId = /goods-receipt-notes\/([0-9a-f-]{36})/.exec(page.url())![1]!;
   const d = await readGrnDetail(page, grnId);
   s = writeState({ bGrnId: grnId, bGrnCode: d.code });
-  log('B3: GRN ' + d.code + ' (' + grnId + ') PO=' + d.po + ' DC No.=' + d.dcNo + ' OpenDC=' + d.openDc + ' received=' + JSON.stringify(d.received));
+  log(
+    'B3: GRN ' +
+      d.code +
+      ' (' +
+      grnId +
+      ') PO=' +
+      d.po +
+      ' DC No.=' +
+      d.dcNo +
+      ' OpenDC=' +
+      d.openDc +
+      ' received=' +
+      JSON.stringify(d.received),
+  );
   expect(d.openDc, '"Open DC" button on the DC-sourced GRN').toBe(1);
   expect(d.dcNo).toBe(s.bDcCode);
   expect(d.po).toBe(s.bPoCode);
@@ -710,15 +858,28 @@ test('B4 - DC detail shows one receipt of 6 and stays issued; PO received 6', as
   test.setTimeout(180_000);
   const s = readState();
   await page.goto('/delivery-challans/' + s.bDcId, { waitUntil: 'domcontentloaded' });
-  const panel = page.locator('.panel').filter({ has: page.getByText('Receipts', { exact: true }) }).first();
+  const panel = page
+    .locator('.panel')
+    .filter({ has: page.getByText('Receipts', { exact: true }) })
+    .first();
   await expect(panel).toBeVisible({ timeout: 60_000 });
   const count = (await panel.locator('.panel-hdr').innerText()).trim();
   const receivedCells = panel.locator('tbody tr td:nth-child(2)');
   await expect(receivedCells.first()).toBeVisible({ timeout: 30_000 });
   const receipts: string[] = [];
-  for (let i = 0; i < (await receivedCells.count()); i += 1) receipts.push((await receivedCells.nth(i).innerText()).trim());
+  for (let i = 0; i < (await receivedCells.count()); i += 1)
+    receipts.push((await receivedCells.nth(i).innerText()).trim());
   const status = (await page.locator('.panel-hdr .badge').first().innerText()).trim().toLowerCase();
-  log('B4: DC ' + s.bDcCode + ' receipts panel "' + count.replace(/\s+/g, ' ') + '" received cells ' + JSON.stringify(receipts) + ' status ' + status);
+  log(
+    'B4: DC ' +
+      s.bDcCode +
+      ' receipts panel "' +
+      count.replace(/\s+/g, ' ') +
+      '" received cells ' +
+      JSON.stringify(receipts) +
+      ' status ' +
+      status,
+  );
   expect(count).toContain('1 receipt');
   expect(receipts).toEqual(['6.00']);
   expect(status).toBe('issued');
@@ -728,7 +889,9 @@ test('B4 - DC detail shows one receipt of 6 and stays issued; PO received 6', as
   expect(po.received).toEqual([6]);
 });
 
-test('B5 - GRN list cards: Against DC / Against PO badges, expand, pills, no horizontal scroll at 1280', async ({ page }) => {
+test('B5 - GRN list cards: Against DC / Against PO badges, expand, pills, no horizontal scroll at 1280', async ({
+  page,
+}) => {
   test.setTimeout(300_000);
   const s = readState();
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -737,7 +900,10 @@ test('B5 - GRN list cards: Against DC / Against PO badges, expand, pills, no hor
   await search.waitFor({ timeout: 60_000 });
 
   const cardFor = (code: string) =>
-    page.locator('.panel').filter({ has: page.getByRole('link', { name: code, exact: true }) }).first();
+    page
+      .locator('.panel')
+      .filter({ has: page.getByRole('link', { name: code, exact: true }) })
+      .first();
 
   await search.fill(s.bGrnCode!);
   await page.waitForTimeout(3000);
@@ -745,12 +911,24 @@ test('B5 - GRN list cards: Against DC / Against PO badges, expand, pills, no hor
   await expect(bCard).toBeVisible({ timeout: 30_000 });
   await expect(bCard.locator('.badge', { hasText: 'Against DC' })).toBeVisible();
   await expect(bCard.locator('.badge', { hasText: 'QC Pending' })).toBeVisible();
-  log('B5: ' + s.bGrnCode + ' card badges: ' + (await bCard.locator('.badge').allInnerTexts()).join(' | '));
+  log(
+    'B5: ' +
+      s.bGrnCode +
+      ' card badges: ' +
+      (await bCard.locator('.badge').allInnerTexts()).join(' | '),
+  );
 
   // Click the card -> its lines expand.
-  await bCard.getByText(/E2E_ Shreeji/).first().click();
-  await expect(bCard.locator('table.innovic-table tbody tr').first()).toBeVisible({ timeout: 30_000 });
-  const expanded = (await bCard.locator('table.innovic-table tbody tr').first().innerText()).replace(/\s+/g, ' ');
+  await bCard
+    .getByText(/E2E_ Shreeji/)
+    .first()
+    .click();
+  await expect(bCard.locator('table.innovic-table tbody tr').first()).toBeVisible({
+    timeout: 30_000,
+  });
+  const expanded = (
+    await bCard.locator('table.innovic-table tbody tr').first().innerText()
+  ).replace(/\s+/g, ' ');
   log('B5: expanded line: ' + expanded);
   expect(expanded).toContain(B_LINE1.code);
 
@@ -759,7 +937,12 @@ test('B5 - GRN list cards: Against DC / Against PO badges, expand, pills, no hor
   const aCard = cardFor(s.aGrnCode!);
   await expect(aCard).toBeVisible({ timeout: 30_000 });
   await expect(aCard.locator('.badge', { hasText: 'Against PO' })).toBeVisible();
-  log('B5: ' + s.aGrnCode + ' card badges: ' + (await aCard.locator('.badge').allInnerTexts()).join(' | '));
+  log(
+    'B5: ' +
+      s.aGrnCode +
+      ' card badges: ' +
+      (await aCard.locator('.badge').allInnerTexts()).join(' | '),
+  );
 
   // Status pills filter: "completed" must hide both fresh (pending) GRNs; "pending" shows them.
   await search.fill('');
@@ -771,11 +954,15 @@ test('B5 - GRN list cards: Against DC / Against PO badges, expand, pills, no hor
     page.getByRole('link', { name: s.aGrnCode!, exact: true }),
     'pending GRN hidden under "completed"',
   ).toHaveCount(0, { timeout: 30_000 });
-  log('B5: under "completed": ' + (await page.locator('.panel .td-code').allInnerTexts()).join(', '));
+  log(
+    'B5: under "completed": ' + (await page.locator('.panel .td-code').allInnerTexts()).join(', '),
+  );
   await page.getByRole('button', { name: /^pending$/i }).click();
   await expect(page).toHaveURL(/qcStatus=pending/, { timeout: 30_000 });
   await page.waitForTimeout(3000);
-  await expect(page.getByRole('link', { name: s.aGrnCode!, exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('link', { name: s.aGrnCode!, exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   await page.getByRole('button', { name: /^All$/i }).click();
   await page.waitForTimeout(2000);
   log('B5: pills — completed hides the fresh GRNs, pending shows them');
@@ -793,11 +980,15 @@ test('B5 - GRN list cards: Against DC / Against PO badges, expand, pills, no hor
   log('B5: widths at 1280: ' + JSON.stringify(scroll));
   expect(scroll.docScrollW, 'no horizontal page scrollbar').toBeLessThanOrEqual(scroll.docClientW);
   if (scroll.contentScrollW !== null && scroll.contentClientW !== null) {
-    expect(scroll.contentScrollW, 'no horizontal scroll in #content').toBeLessThanOrEqual(scroll.contentClientW + 1);
+    expect(scroll.contentScrollW, 'no horizontal scroll in #content').toBeLessThanOrEqual(
+      scroll.contentClientW + 1,
+    );
   }
 });
 
-test('B6 - receive the remaining 4: DC picker shows balance 4, then DC = received and the JWPO drops out', async ({ page }) => {
+test('B6 - receive the remaining 4: DC picker shows balance 4, then DC = received and the JWPO drops out', async ({
+  page,
+}) => {
   test.setTimeout(300_000);
   let s = readState();
   if (!s.bGrn2Id) {
@@ -807,7 +998,9 @@ test('B6 - receive the remaining 4: DC picker shows balance 4, then DC = receive
     log('B6: DC picker offers: ' + JSON.stringify(dcOpts));
     expect(dcOpts.filter((o) => o.includes(s.bDcCode!))).toHaveLength(1);
     await pickFromCombo(page, 'dcId', s.bDcCode!, new RegExp(s.bDcCode!.replace('/', '\\/')));
-    await expect(page.getByLabel('Receive now, line 1', { exact: true })).toHaveValue('4', { timeout: 30_000 });
+    await expect(page.getByLabel('Receive now, line 1', { exact: true })).toHaveValue('4', {
+      timeout: 30_000,
+    });
     const tds = page.locator('form table.innovic-table tbody tr').first().locator('td');
     const nums = [3, 4, 5].map(async (i) => Number((await tds.nth(i).innerText()).trim()));
     const [sent, soFar, balance] = await Promise.all(nums);
@@ -820,13 +1013,24 @@ test('B6 - receive the remaining 4: DC picker shows balance 4, then DC = receive
     const grnId = /goods-receipt-notes\/([0-9a-f-]{36})/.exec(page.url())![1]!;
     const d = await readGrnDetail(page, grnId);
     s = writeState({ bGrn2Id: grnId, bGrn2Code: d.code });
-    log('B6: GRN ' + d.code + ' (' + grnId + ') DC No.=' + d.dcNo + ' received=' + JSON.stringify(d.received));
+    log(
+      'B6: GRN ' +
+        d.code +
+        ' (' +
+        grnId +
+        ') DC No.=' +
+        d.dcNo +
+        ' received=' +
+        JSON.stringify(d.received),
+    );
     expect(d.received).toEqual([4]);
     expect(d.dcNo).toBe(s.bDcCode);
   }
 
   await page.goto('/delivery-challans/' + s.bDcId, { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('.panel-hdr .badge').first()).toHaveText(/^received$/i, { timeout: 60_000 });
+  await expect(page.locator('.panel-hdr .badge').first()).toHaveText(/^received$/i, {
+    timeout: 60_000,
+  });
   log('B6: DC ' + s.bDcCode + ' status = received');
   const po = await readPo(page, s.bPoId!);
   log('B6: PO ' + s.bPoCode + ' received=' + JSON.stringify(po.received) + ' status=' + po.status);
@@ -835,7 +1039,10 @@ test('B6 - receive the remaining 4: DC picker shows balance 4, then DC = receive
   await openNewGrn(page, 'dc');
   const jwpoOpts = await comboOptions(page, 'jwpoId', '');
   log('B6: JWPO picker now offers: ' + JSON.stringify(jwpoOpts.slice(0, 10)));
-  expect(jwpoOpts.some((o) => o.includes(s.bPoCode!)), 'fully-received JWPO no longer offered').toBe(false);
+  expect(
+    jwpoOpts.some((o) => o.includes(s.bPoCode!)),
+    'fully-received JWPO no longer offered',
+  ).toBe(false);
 });
 
 test('B7 - Incoming QC lists both new GRNs as pending inspection (read-only)', async ({ page }) => {
@@ -844,11 +1051,24 @@ test('B7 - Incoming QC lists both new GRNs as pending inspection (read-only)', a
   await page.goto('/incoming-qc', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText(/Pending Inspection/)).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(2000);
-  const pendingTable = page.locator('table').filter({ has: page.getByText('QC Pending', { exact: true }) }).first();
-  const rowsText = (await pendingTable.locator('tbody tr').allInnerTexts()).map((t) => t.replace(/\s+/g, ' '));
-  const mine = rowsText.filter((t) => t.includes(s.aGrnCode!) || t.includes(s.bGrnCode!) || t.includes(s.bGrn2Code ?? '§'));
+  const pendingTable = page
+    .locator('table')
+    .filter({ has: page.getByText('QC Pending', { exact: true }) })
+    .first();
+  const rowsText = (await pendingTable.locator('tbody tr').allInnerTexts()).map((t) =>
+    t.replace(/\s+/g, ' '),
+  );
+  const mine = rowsText.filter(
+    (t) => t.includes(s.aGrnCode!) || t.includes(s.bGrnCode!) || t.includes(s.bGrn2Code ?? '§'),
+  );
   log('B7: pending rows for my GRNs (' + mine.length + '):\n   ' + mine.join('\n   '));
-  expect(rowsText.filter((t) => t.includes(s.aGrnCode!)), s.aGrnCode + ' lines pending').toHaveLength(2);
-  expect(rowsText.filter((t) => t.includes(s.bGrnCode!)), s.bGrnCode + ' line pending').toHaveLength(1);
+  expect(
+    rowsText.filter((t) => t.includes(s.aGrnCode!)),
+    s.aGrnCode + ' lines pending',
+  ).toHaveLength(2);
+  expect(
+    rowsText.filter((t) => t.includes(s.bGrnCode!)),
+    s.bGrnCode + ' line pending',
+  ).toHaveLength(1);
   log('STATE: ' + JSON.stringify(readState()));
 });

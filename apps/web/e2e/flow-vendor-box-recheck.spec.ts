@@ -54,29 +54,53 @@ function apiBase(): string {
   return s.apiBase;
 }
 async function apiGet<T>(page: Page, path: string): Promise<T> {
-  const res = await page.request.get(apiBase() + path, { headers: { authorization: 'Bearer ' + (await bearer(page)) } });
-  if (res.status() !== 200) throw new Error('GET ' + path + ' -> HTTP ' + res.status() + ' ' + (await res.text()).slice(0, 200));
+  const res = await page.request.get(apiBase() + path, {
+    headers: { authorization: 'Bearer ' + (await bearer(page)) },
+  });
+  if (res.status() !== 200)
+    throw new Error(
+      'GET ' + path + ' -> HTTP ' + res.status() + ' ' + (await res.text()).slice(0, 200),
+    );
   return (await res.json()) as T;
 }
 
-interface JcListItem { id: string; code: string }
-interface JcDetailOp { id: string; opSeq: number; operation: string; opType: string; outsourceVendorCode: string | null; hasStarted: boolean; available: number }
+interface JcListItem {
+  id: string;
+  code: string;
+}
+interface JcDetailOp {
+  id: string;
+  opSeq: number;
+  operation: string;
+  opType: string;
+  outsourceVendorCode: string | null;
+  hasStarted: boolean;
+  available: number;
+}
 
 /** First candidate card that has an outsource op on VND-959. */
 async function findJcWith959(page: Page): Promise<{ id: string; code: string; op: JcDetailOp }> {
   for (const code of CANDIDATE_JCS) {
-    const list = await apiGet<{ items: JcListItem[] }>(page, '/job-cards?search=' + encodeURIComponent(code) + '&limit=20&offset=0');
+    const list = await apiGet<{ items: JcListItem[] }>(
+      page,
+      '/job-cards?search=' + encodeURIComponent(code) + '&limit=20&offset=0',
+    );
     const hit = list.items.find((x) => x.code === code);
     if (!hit) continue;
     const detail = await apiGet<{ ops: JcDetailOp[] }>(page, '/job-cards/' + hit.id + '/edit');
-    const op = detail.ops.filter((o) => o.opType === 'outsource' && o.outsourceVendorCode === VENDOR_CODE).sort((a, b) => a.opSeq - b.opSeq)[0];
+    const op = detail.ops
+      .filter((o) => o.opType === 'outsource' && o.outsourceVendorCode === VENDOR_CODE)
+      .sort((a, b) => a.opSeq - b.opSeq)[0];
     if (op) return { id: hit.id, code, op };
   }
   throw new Error('none of ' + CANDIDATE_JCS.join(', ') + ' has an outsource op on ' + VENDOR_CODE);
 }
 
 /** Read the box as soon as it is visible, then let the label settle (≤ 15 s). */
-async function readOnLoad(page: Page, id: string): Promise<{ first: string; settled: string; ms: number }> {
+async function readOnLoad(
+  page: Page,
+  id: string,
+): Promise<{ first: string; settled: string; ms: number }> {
   const box = page.locator('#' + id);
   await box.waitFor({ timeout: 60_000 });
   const t0 = Date.now();
@@ -90,28 +114,49 @@ async function readOnLoad(page: Page, id: string): Promise<{ first: string; sett
 }
 
 /** Open the picker, type the term, return the option texts and the matching one. */
-async function search(page: Page, id: string, term: string): Promise<{ texts: string[]; hit: string }> {
+async function search(
+  page: Page,
+  id: string,
+  term: string,
+): Promise<{ texts: string[]; hit: string }> {
   const box = page.locator('#' + id);
   await box.click();
   await box.fill('');
   await box.fill(term);
   const hit = page.getByRole('option').filter({ hasText: WANT }).first();
-  const found = await hit.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true).catch(() => false);
-  const texts = (await page.getByRole('option').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
-  return { texts, hit: found ? (await hit.innerText()).replace(/\s+/g, ' ').trim() : '(no option)' };
+  const found = await hit
+    .waitFor({ state: 'visible', timeout: 20_000 })
+    .then(() => true)
+    .catch(() => false);
+  const texts = (await page.getByRole('option').allInnerTexts()).map((t) =>
+    t.replace(/\s+/g, ' ').trim(),
+  );
+  return {
+    texts,
+    hit: found ? (await hit.innerText()).replace(/\s+/g, ' ').trim() : '(no option)',
+  };
 }
 
 /** Leave the edit page without saving: ESC → exit guard "Exit"; else its Cancel link. Never hangs. */
 async function leaveEdit(page: Page): Promise<string> {
   await page.keyboard.press('Escape');
   const guard = page.getByText('Are you sure you want to exit?');
-  const asked = await guard.waitFor({ state: 'visible', timeout: 4_000 }).then(() => true).catch(() => false);
+  const asked = await guard
+    .waitFor({ state: 'visible', timeout: 4_000 })
+    .then(() => true)
+    .catch(() => false);
   if (asked) {
-    await page.getByRole('button', { name: /^Exit$/ }).click({ timeout: 5_000 }).catch(() => {});
+    await page
+      .getByRole('button', { name: /^Exit$/ })
+      .click({ timeout: 5_000 })
+      .catch(() => {});
     await page.waitForTimeout(1000);
     return 'ESC → exit guard → Exit';
   }
-  const cancel = page.locator('a.btn-ghost').filter({ hasText: /^Cancel$/ }).last();
+  const cancel = page
+    .locator('a.btn-ghost')
+    .filter({ hasText: /^Cancel$/ })
+    .last();
   if (await cancel.count()) {
     await cancel.click({ timeout: 5_000 }).catch(() => {});
     await page.waitForTimeout(1000);
@@ -120,7 +165,9 @@ async function leaveEdit(page: Page): Promise<string> {
   return 'ESC (no guard, no Cancel link)';
 }
 
-test('R3-07b-1 recheck — Edit JC: VND-959 op vendor box reads "CODE — Name" on load (Job Cards → Edit, and Status page → Edit Job Card)', async ({ page }) => {
+test('R3-07b-1 recheck — Edit JC: VND-959 op vendor box reads "CODE — Name" on load (Job Cards → Edit, and Status page → Edit Job Card)', async ({
+  page,
+}) => {
   test.setTimeout(300_000);
   const jc = await findJcWith959(page);
   const boxId = 'jc-edit-vend-' + jc.op.id;
@@ -129,13 +176,16 @@ test('R3-07b-1 recheck — Edit JC: VND-959 op vendor box reads "CODE — Name" 
   const lookups: string[] = [];
   page.on('response', (res) => {
     const u = res.url();
-    if (u.includes('/vendors?search=' + VENDOR_CODE)) lookups.push(`${res.status()} ${u.replace(/^https?:\/\/[^/]+/, '')}`);
+    if (u.includes('/vendors?search=' + VENDOR_CODE))
+      lookups.push(`${res.status()} ${u.replace(/^https?:\/\/[^/]+/, '')}`);
   });
 
   // (1) Job Cards → Edit
   await page.goto('/job-cards/' + jc.id + '/edit', { waitUntil: 'domcontentloaded' });
   const a = await readOnLoad(page, boxId);
-  await page.screenshot({ path: SHOT_DIR + '/R3-07b-recheck-edit.png', fullPage: true }).catch(() => {});
+  await page
+    .screenshot({ path: SHOT_DIR + '/R3-07b-recheck-edit.png', fullPage: true })
+    .catch(() => {});
   const opts = await search(page, boxId, '959');
   await page.keyboard.press('Escape'); // closes the option list only
   await page.waitForTimeout(300);
@@ -144,18 +194,34 @@ test('R3-07b-1 recheck — Edit JC: VND-959 op vendor box reads "CODE — Name" 
 
   // (2) Job Card Status page → "Edit Job Card" → same op editor
   await page.goto('/job-cards/' + jc.id, { waitUntil: 'domcontentloaded' });
-  const editBtn = page.getByRole('link', { name: /Edit Job Card/ }).or(page.getByRole('button', { name: /Edit Job Card/ })).first();
+  const editBtn = page
+    .getByRole('link', { name: /Edit Job Card/ })
+    .or(page.getByRole('button', { name: /Edit Job Card/ }))
+    .first();
   await editBtn.waitFor({ timeout: 60_000 });
   await editBtn.click();
   const b = await readOnLoad(page, boxId);
-  await page.screenshot({ path: SHOT_DIR + '/R3-07b-recheck-status.png', fullPage: true }).catch(() => {});
+  await page
+    .screenshot({ path: SHOT_DIR + '/R3-07b-recheck-status.png', fullPage: true })
+    .catch(() => {});
   const leftB = await leaveEdit(page);
 
   record('R3-07b-1', {
-    jc: jc.code, jcId: jc.id, opSeq: jc.op.opSeq, operation: jc.op.operation, opId: jc.op.id,
+    jc: jc.code,
+    jcId: jc.id,
+    opSeq: jc.op.opSeq,
+    operation: jc.op.operation,
+    opId: jc.op.id,
     editPage: { onLoadFirstRead: a.first, settled: a.settled, settleMs: a.ms, leftVia: leftA },
-    statusPageEdit: { onLoadFirstRead: b.first, settled: b.settled, settleMs: b.ms, leftVia: leftB },
-    search959: opts, boxAfterSearchEsc: afterSearch, vendorLookupCalls: lookups,
+    statusPageEdit: {
+      onLoadFirstRead: b.first,
+      settled: b.settled,
+      settleMs: b.ms,
+      leftVia: leftB,
+    },
+    search959: opts,
+    boxAfterSearchEsc: afterSearch,
+    vendorLookupCalls: lookups,
     pass: WANT.test(a.settled) && WANT.test(b.settled) && WANT.test(opts.hit),
   });
   expect(a.settled, 'Edit page: vendor box on load').toMatch(WANT);
@@ -163,11 +229,24 @@ test('R3-07b-1 recheck — Edit JC: VND-959 op vendor box reads "CODE — Name" 
   expect(opts.hit, 'typing "959" offers VND-959').toMatch(WANT);
 });
 
-test('R3-07c-1 recheck — started in-house op → "Outsource balance" → vendor picker searches to VND-959 and shows "CODE — Name"; Cancel', async ({ page }) => {
+test('R3-07c-1 recheck — started in-house op → "Outsource balance" → vendor picker searches to VND-959 and shows "CODE — Name"; Cancel', async ({
+  page,
+}) => {
   test.setTimeout(300_000);
-  interface BoardOp { jcId: string | null; jcCode: string; opSeq: number; opType: string; status: string; completed: number; available: number; operation: string }
+  interface BoardOp {
+    jcId: string | null;
+    jcCode: string;
+    opSeq: number;
+    opType: string;
+    status: string;
+    completed: number;
+    available: number;
+    operation: string;
+  }
   const board = await apiGet<{ items: BoardOp[] }>(page, '/jc-ops?limit=500&offset=0');
-  const cands = board.items.filter((x) => x.opType === 'process' && x.status === 'in_progress' && x.available > 0 && x.jcId);
+  const cands = board.items.filter(
+    (x) => x.opType === 'process' && x.status === 'in_progress' && x.available > 0 && x.jcId,
+  );
   const pick = cands.find((x) => x.jcCode === PREFERRED_MODAL_JC) ?? cands[0];
   expect(pick, 'a started in-house op with a balance exists on this stack').toBeTruthy();
 
@@ -178,7 +257,15 @@ test('R3-07c-1 recheck — started in-house op → "Outsource balance" → vendo
   const box = page.locator('#jcOutsourceBalanceVendor');
   await box.waitFor({ timeout: 30_000 });
   await page.waitForTimeout(1000);
-  const header = (await page.locator('.section-hdr').filter({ hasText: /Outsource Available Qty —/ }).first().innerText()).replace(/\s+/g, ' ').trim();
+  const header = (
+    await page
+      .locator('.section-hdr')
+      .filter({ hasText: /Outsource Available Qty —/ })
+      .first()
+      .innerText()
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
   const preset = await box.inputValue();
   const placeholder = (await box.getAttribute('placeholder')) ?? '';
   const opts = await search(page, 'jcOutsourceBalanceVendor', '959');
@@ -196,16 +283,25 @@ test('R3-07c-1 recheck — started in-house op → "Outsource balance" → vendo
   // the modal "still open" on the earlier run). Picking an option already
   // closed the list; if the list is still open, click the modal header instead.
   if (await page.getByRole('option').count()) {
-    await page.locator('.section-hdr').filter({ hasText: /Outsource Available Qty —/ }).first().click();
+    await page
+      .locator('.section-hdr')
+      .filter({ hasText: /Outsource Available Qty —/ })
+      .first()
+      .click();
     await page.waitForTimeout(300);
   }
   let cancelHow = 'modal Cancel (mouse)';
   const panel = page.locator('div:has(#jcOutsourceBalanceVendor):has(button)').last();
-  await panel.getByRole('button', { name: /^Cancel$/ }).click({ timeout: 10_000 }).catch(() => {});
+  await panel
+    .getByRole('button', { name: /^Cancel$/ })
+    .click({ timeout: 10_000 })
+    .catch(() => {});
   await page.waitForTimeout(800);
   if (await box.count()) {
     await page.evaluate(() => {
-      const b = [...document.querySelectorAll('button.btn-ghost')].find((x) => x.textContent?.trim() === 'Cancel') as HTMLButtonElement | undefined;
+      const b = [...document.querySelectorAll('button.btn-ghost')].find(
+        (x) => x.textContent?.trim() === 'Cancel',
+      ) as HTMLButtonElement | undefined;
       b?.click();
     });
     await page.waitForTimeout(800);
@@ -215,8 +311,19 @@ test('R3-07c-1 recheck — started in-house op → "Outsource balance" → vendo
   const leftVia = await leaveEdit(page);
 
   record('R3-07c-1', {
-    jc: pick!.jcCode, jcId: pick!.jcId, opSeq: pick!.opSeq, operation: pick!.operation, available: pick!.available,
-    modalHeader: header, boxOnOpen: preset, placeholder, search959: opts, boxAfterPick: picked, modalGone, cancelHow, leftVia,
+    jc: pick!.jcCode,
+    jcId: pick!.jcId,
+    opSeq: pick!.opSeq,
+    operation: pick!.operation,
+    available: pick!.available,
+    modalHeader: header,
+    boxOnOpen: preset,
+    placeholder,
+    search959: opts,
+    boxAfterPick: picked,
+    modalGone,
+    cancelHow,
+    leftVia,
     pass: WANT.test(opts.hit) && WANT.test(picked) && modalGone,
   });
   expect(opts.hit, 'modal: typing "959" offers VND-959').toMatch(WANT);

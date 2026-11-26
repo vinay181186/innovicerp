@@ -37,7 +37,9 @@ export const machineEditRegistryEntry: DocEditRegistryEntry = {
     const rows = await tx
       .select()
       .from(machines)
-      .where(and(eq(machines.id, id), eq(machines.companyId, companyId), isNull(machines.deletedAt)))
+      .where(
+        and(eq(machines.id, id), eq(machines.companyId, companyId), isNull(machines.deletedAt)),
+      )
       .limit(1)
       .for('update');
     const machine = rows[0];

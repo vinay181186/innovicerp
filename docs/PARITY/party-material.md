@@ -11,6 +11,7 @@
 Catalogue of **raw materials supplied by clients** for Job Work orders. Distinct from regular `items` master — these belong to the client, not the company. Stock is tracked separately (issued / received / on-hand) and feeds Party Material GRN + JW DC workflows.
 
 Schema (`db.partyMaterials[*]`):
+
 - `code` (`PM-NNNN`), `name`, `description`, `material` (grade), `uom`
 - `clientCode` (FK→clients.code) — the client who supplies this
 - `itemCode` (optional — link to canonical Item Master entry for cross-ref)
@@ -31,24 +32,25 @@ Footer hint: `💡 Party Material Master tracks raw materials supplied by client
 
 ## 2. List table (L24158) — 10 columns
 
-| col | header | colour |
-|---|---|---|
-| 1 | Code | purple code |
-| 2 | Name | bold |
-| 3 | Description | text2 11px |
-| 4 | Material | default |
-| 5 | UOM | tag |
-| 6 | Client | bold |
-| 7 | **In Stock** | green (or text3 if 0) |
-| 8 | **Issued** | amber |
-| 9 | **Total Received** | cyan |
-| 10 | Actions | Edit + Del |
+| col | header             | colour                |
+| --- | ------------------ | --------------------- |
+| 1   | Code               | purple code           |
+| 2   | Name               | bold                  |
+| 3   | Description        | text2 11px            |
+| 4   | Material           | default               |
+| 5   | UOM                | tag                   |
+| 6   | Client             | bold                  |
+| 7   | **In Stock**       | green (or text3 if 0) |
+| 8   | **Issued**         | amber                 |
+| 9   | **Total Received** | cyan                  |
+| 10  | Actions            | Edit + Del            |
 
 ---
 
 ## 3. addPartyMaterial / edit modals (L24173–24231)
 
 Add form (8 fields):
+
 - Material Code ★ (auto `PM-NNNN`, editable)
 - Item Master cross-ref picker (optional — auto-fills name/desc/material/uom from existing Item)
 - Material Name ★
@@ -87,6 +89,7 @@ Indices: unique (company_id, code), index on client_id.
 ## 5. Summary — building from scratch
 
 ### BLOCKERs (paired with §0 docs/PARITY/party-grn.md and jw-dc.md)
+
 1. Schema + RLS + migration.
 2. CRUD endpoints.
 3. List page.
@@ -94,11 +97,13 @@ Indices: unique (company_id, code), index on client_id.
 5. Sidebar entry "🏭 Party Material Master" under Store → Master.
 
 ### DELTAs
+
 6. Item Master cross-ref picker — nice-to-have; defer if simple.
 
 ---
 
 **Sign-off needed:**
+
 - Confirm scope. Estimate ~500 LOC. Pair with party-grn (these tables connect).
 - Confirm `PM-NNNN` 4-digit prefix.
 - Confirm cross-ref to items table (legacy itemCode is loose; React should use uuid FK with text fallback).

@@ -54,7 +54,10 @@ describe('computeLineOspCover', () => {
 
   it('GRN total = PO Raised qty, QC total = GRN qty; each capped at the one before', () => {
     const c = computeLineOspCover(34, [
-      jc('1', 34, [[line({ receivedQty: 20, acceptedQty: 7 })], [line({ receivedQty: 34, acceptedQty: 34 })]]),
+      jc('1', 34, [
+        [line({ receivedQty: 20, acceptedQty: 7 })],
+        [line({ receivedQty: 34, acceptedQty: 34 })],
+      ]),
     ]);
     expect(c.poRaised).toEqual({ qty: 34, total: 34, required: true });
     expect(c.grnReceived).toEqual({ qty: 20, total: 34, required: true });
@@ -124,7 +127,15 @@ describe('computeOpCover', () => {
 
   it('short-closed PO counts only what was received', () => {
     const c = computeOpCover(
-      [line({ poShortClosed: true, poStatus: 'closed', approvedQty: 34, receivedQty: 12, acceptedQty: 10 })],
+      [
+        line({
+          poShortClosed: true,
+          poStatus: 'closed',
+          approvedQty: 34,
+          receivedQty: 12,
+          acceptedQty: 10,
+        }),
+      ],
       34,
     );
     expect(c.approvedPoQty).toBe(12);
@@ -133,7 +144,10 @@ describe('computeOpCover', () => {
   });
 
   it('PO 40 on a JC of 34 is capped at 34', () => {
-    const c = computeOpCover([line({ qty: 40, approvedQty: 40, receivedQty: 40, acceptedQty: 40 })], 34);
+    const c = computeOpCover(
+      [line({ qty: 40, approvedQty: 40, receivedQty: 40, acceptedQty: 40 })],
+      34,
+    );
     expect(c.approvedPoQty).toBe(34);
     expect(c.grnReceivedQty).toBe(34);
     expect(c.qcAcceptedQty).toBe(34);
@@ -188,7 +202,10 @@ describe('computeLineOspCover — code review cases (ADR-320)', () => {
   });
 
   it('a job card with no outsourced op needs no PO: 20 (OSP, covered) + 14 (in-house) → 34 / 34', () => {
-    const c = computeLineOspCover(34, [jc('1', 20, [[line({ qty: 20, approvedQty: 20 })]]), jc('2', 14, [])]);
+    const c = computeLineOspCover(34, [
+      jc('1', 20, [[line({ qty: 20, approvedQty: 20 })]]),
+      jc('2', 14, []),
+    ]);
     expect(c.poRaised).toEqual({ qty: 34, total: 34, required: true });
   });
 

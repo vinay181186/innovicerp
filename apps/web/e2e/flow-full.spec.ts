@@ -1,5 +1,10 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
+import {
+  clickRowMenuItem,
+  clickFirstRowMenuItem,
+  planningLineRows,
+  executePlanFromMenu,
+} from './row-menu';
 import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 
 // FULLY AUTONOMOUS end-to-end: SO → plan(4 ops incl OSP) → execute → op logs →
@@ -19,7 +24,11 @@ async function pickFirst(page: Page, input: Locator, term: string): Promise<void
   await input.click();
   await input.fill(term);
   await page.waitForTimeout(1300);
-  await page.locator('[role="option"], li, [class*="option"], [class*="ss-"]').filter({ hasText: /\S/ }).first().click();
+  await page
+    .locator('[role="option"], li, [class*="option"], [class*="ss-"]')
+    .filter({ hasText: /\S/ })
+    .first()
+    .click();
   await page.waitForTimeout(400);
 }
 async function loadJc(page: Page, jc: string): Promise<void> {
@@ -57,7 +66,11 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   await page.waitForTimeout(1300);
   await page.getByText('559918151000 — SPACER').first().click();
   await page.getByPlaceholder('Qty', { exact: true }).first().fill(QTY);
-  await page.getByPlaceholder('₹ Rate', { exact: true }).first().fill('10').catch(() => {});
+  await page
+    .getByPlaceholder('₹ Rate', { exact: true })
+    .first()
+    .fill('10')
+    .catch(() => {});
   // ADR-236: POL is compulsory on every SO line.
   await page.getByPlaceholder('POL', { exact: true }).first().fill('1');
   await fillInternalSoNo(page);
@@ -78,7 +91,13 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   await page.waitForTimeout(1300);
   await page.getByRole('button', { name: /^Save Plan$/ }).click();
   await page.waitForTimeout(2500);
-  const pln = (await page.locator('text=/Plan:\\s*PLN-/i').first().innerText().catch(() => '')).match(/PLN-\d+/);
+  const pln = (
+    await page
+      .locator('text=/Plan:\\s*PLN-/i')
+      .first()
+      .innerText()
+      .catch(() => '')
+  ).match(/PLN-\d+/);
   if (pln) rec('PLN', pln[0]);
   const del = page.locator('table.ops-routing tbody tr button.btn-danger');
   for (let i = (await del.count()) - 1; i >= 0; i--) {
@@ -99,7 +118,11 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
     await rows.nth(i).getByPlaceholder('Operation name').fill(names[i]!);
     if (i === 2) {
       await pickFirst(page, rows.nth(i).getByPlaceholder(/Vendor/i), 'a');
-      await rows.nth(i).getByPlaceholder('₹/pc').fill('5').catch(() => {});
+      await rows
+        .nth(i)
+        .getByPlaceholder('₹/pc')
+        .fill('5')
+        .catch(() => {});
     } else {
       await pickFirst(page, rows.nth(i).getByPlaceholder(/Machine/i), 'a');
     }
@@ -122,9 +145,17 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   // ── 4. OSP loop: PR → PO → DC → receive → Incoming QC ──
   await page.goto(`/purchase-requests?search=${docs['OSP PR']}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await clickRowMenuItem(page, page.locator('table tbody tr', { hasText: docs['OSP PR']! }).first(), /^Create PO/);
+  await clickRowMenuItem(
+    page,
+    page.locator('table tbody tr', { hasText: docs['OSP PR']! }).first(),
+    /^Create PO/,
+  );
   await page.waitForTimeout(3000);
-  const poAuto = await page.locator('input[value^="IN-PO-"], input[value^="IN-JWPO-"]').first().inputValue().catch(() => '');
+  const poAuto = await page
+    .locator('input[value^="IN-PO-"], input[value^="IN-JWPO-"]')
+    .first()
+    .inputValue()
+    .catch(() => '');
   await page.getByRole('button', { name: /Save PO/i }).click();
   await page.waitForTimeout(4000);
   const poId = new URL(page.url()).pathname.split('/').pop()!;
@@ -152,14 +183,24 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   await page.goto('/incoming-qc', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4000);
   // The pending row is the one with the ⋯ row menu (Inspect lives in it).
-  const grnRow = page.locator('tr', { hasText: docs['OSP PO']! }).filter({ has: page.getByRole('button', { name: 'Actions' }) }).first();
+  const grnRow = page
+    .locator('tr', { hasText: docs['OSP PO']! })
+    .filter({ has: page.getByRole('button', { name: 'Actions' }) })
+    .first();
   const grnNo = (await grnRow.innerText().catch(() => '')).match(/IN-GRN-\d+/);
   if (grnNo) rec('OSP GRN', grnNo[0]);
   await clickRowMenuItem(page, grnRow, /^Inspect/);
   await page.waitForTimeout(3000);
-  await page.getByPlaceholder(/QC ?By|Inspector|Inspected/i).first().fill('E2E QC').catch(() => {});
+  await page
+    .getByPlaceholder(/QC ?By|Inspector|Inspected/i)
+    .first()
+    .fill('E2E QC')
+    .catch(() => {});
   await page.getByRole('spinbutton').first().fill(QTY);
-  await page.getByRole('button', { name: /Submit QC|Accept|Submit/i }).first().click();
+  await page
+    .getByRole('button', { name: /Submit QC|Accept|Submit/i })
+    .first()
+    .click();
   await page.waitForTimeout(4000);
 
   // ── 5. Complete op4 Grinding ──
@@ -169,17 +210,35 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   // ── 6. Customer Dispatch ──
   await page.goto('/customer-dispatches/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  const dspAuto = await page.locator('input[value^="DSP-"]').first().inputValue().catch(() => '');
-  await page.locator('select').first().selectOption({ label: `${so} — Demo Engineering Works` });
+  const dspAuto = await page
+    .locator('input[value^="DSP-"]')
+    .first()
+    .inputValue()
+    .catch(() => '');
+  await page
+    .locator('select')
+    .first()
+    .selectOption({ label: `${so} — Demo Engineering Works` });
   await page.waitForTimeout(2000);
-  await page.getByRole('button', { name: /Add Line/i }).first().click();
+  await page
+    .getByRole('button', { name: /Add Line/i })
+    .first()
+    .click();
   await page.waitForTimeout(1200);
   const di = page.getByPlaceholder(/code or name/i).first();
   await di.click();
   await di.fill('559918151000');
   await page.waitForTimeout(1400);
-  await page.getByText(/559918151000/).first().click().catch(() => {});
-  await page.getByRole('spinbutton').first().fill(QTY, { timeout: 8000 }).catch(() => {});
+  await page
+    .getByText(/559918151000/)
+    .first()
+    .click()
+    .catch(() => {});
+  await page
+    .getByRole('spinbutton')
+    .first()
+    .fill(QTY, { timeout: 8000 })
+    .catch(() => {});
   await page.waitForTimeout(600);
   await page.getByRole('button', { name: /Save Dispatch/i }).click();
   await page.waitForTimeout(4000);
@@ -189,10 +248,22 @@ test('full: SO → … → invoice (autonomous)', async ({ page }) => {
   // ── 7. Invoice (from the dispatch row) ──
   await page.goto('/customer-dispatches', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await clickRowMenuItem(page, page.locator('tr', { hasText: docs['Dispatch']! }).first(), /^Invoice/);
+  await clickRowMenuItem(
+    page,
+    page.locator('tr', { hasText: docs['Dispatch']! }).first(),
+    /^Invoice/,
+  );
   await page.waitForTimeout(3500);
-  const invAuto = await page.locator('input[value^="INV-"]').first().inputValue().catch(() => '');
-  await page.getByRole('spinbutton').first().fill(QTY, { timeout: 8000 }).catch(() => {});
+  const invAuto = await page
+    .locator('input[value^="INV-"]')
+    .first()
+    .inputValue()
+    .catch(() => '');
+  await page
+    .getByRole('spinbutton')
+    .first()
+    .fill(QTY, { timeout: 8000 })
+    .catch(() => {});
   await page.waitForTimeout(800);
   await page.getByRole('button', { name: /Save Invoice/i }).click();
   await page.waitForTimeout(4000);

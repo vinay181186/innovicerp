@@ -80,12 +80,7 @@ function op(over: Partial<JcOpRow> & Pick<JcOpRow, 'id' | 'opSeq'>): JcOpRow {
   } as JcOpRow;
 }
 
-function log(
-  jcOpId: string,
-  logType: OpLogRow['logType'],
-  qty: number,
-  rejectQty = 0,
-): OpLogRow {
+function log(jcOpId: string, logType: OpLogRow['logType'], qty: number, rejectQty = 0): OpLogRow {
   return {
     id: `log-${Math.random().toString(36).slice(2)}`,
     companyId: COMPANY,
@@ -467,10 +462,7 @@ describe('enrichOps', () => {
   });
 
   it('output of qcRequired op flows qcAccepted to next op input, not completed', () => {
-    const ops = [
-      op({ id: 'o1', opSeq: 1, qcRequired: true }),
-      op({ id: 'o2', opSeq: 2 }),
-    ];
+    const ops = [op({ id: 'o1', opSeq: 1, qcRequired: true }), op({ id: 'o2', opSeq: 2 })];
     // 100 produced, only 80 QC-accepted (15 rejected, 5 pending)
     const logs = [log('o1', 'complete', 100), log('o1', 'qc', 80, 15)];
     const enriched = enrichOps(jc(), ops, logs, new Set());
@@ -505,10 +497,7 @@ describe('rollupJC', () => {
   });
 
   it('any qc_pending op → JC status=qc_pending', () => {
-    const ops = [
-      op({ id: 'o1', opSeq: 1 }),
-      op({ id: 'o2', opSeq: 2, qcRequired: true }),
-    ];
+    const ops = [op({ id: 'o1', opSeq: 1 }), op({ id: 'o2', opSeq: 2, qcRequired: true })];
     const logs = [log('o1', 'complete', 100), log('o2', 'complete', 100)];
     const enriched = enrichOps(jc(), ops, logs, new Set());
     const rollup = rollupJC(jc(), enriched);

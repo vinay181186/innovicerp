@@ -103,7 +103,11 @@ async function pickActual(page: Page, code: string): Promise<void> {
   const input = page.locator('#opf-actual-machine');
   await input.click();
   await input.fill(code);
-  const opt = page.locator('[role="option"]').filter({ hasText: code }).filter({ hasNotText: /Loading/i }).first();
+  const opt = page
+    .locator('[role="option"]')
+    .filter({ hasText: code })
+    .filter({ hasNotText: /Loading/i })
+    .first();
   await opt.waitFor({ state: 'visible', timeout: 45_000 });
   await opt.click();
   await page.waitForTimeout(400);
@@ -119,68 +123,110 @@ test('planned vs actual machine: start on cnc-2, plan stays cnc-1', async ({ pag
   await page.locator('#opf-actual-machine').waitFor({ timeout: 30_000 });
   // The picker is seeded once the machines list is in; wait for a value, not a clock.
   await expect(page.locator('#opf-actual-machine')).toHaveValue(PLANNED, { timeout: 45_000 });
-  await step(page, 'Start popup opens', `Op Entry → ${JC} → ▶ Start`, `Planned Machine = ${PLANNED} (read-only); Actual Machine defaults to ${PLANNED}`, async () => {
-    const planned = await page.locator('#opf-machine').inputValue();
-    const actual = await page.locator('#opf-actual-machine').inputValue();
-    const ro = await page.locator('#opf-machine').getAttribute('readonly');
-    if (planned !== PLANNED) throw new Error(`planned box reads "${planned}"`);
-    if (ro === null) throw new Error('planned box is editable');
-    if (actual !== PLANNED) throw new Error(`actual defaulted to "${actual}"`);
-    const grp = await page.locator('#opf-mgrp').inputValue();
-    return `Planned ${planned} (read-only) · Group "${grp}" · Actual ${actual}`;
-  });
+  await step(
+    page,
+    'Start popup opens',
+    `Op Entry → ${JC} → ▶ Start`,
+    `Planned Machine = ${PLANNED} (read-only); Actual Machine defaults to ${PLANNED}`,
+    async () => {
+      const planned = await page.locator('#opf-machine').inputValue();
+      const actual = await page.locator('#opf-actual-machine').inputValue();
+      const ro = await page.locator('#opf-machine').getAttribute('readonly');
+      if (planned !== PLANNED) throw new Error(`planned box reads "${planned}"`);
+      if (ro === null) throw new Error('planned box is editable');
+      if (actual !== PLANNED) throw new Error(`actual defaulted to "${actual}"`);
+      const grp = await page.locator('#opf-mgrp').inputValue();
+      return `Planned ${planned} (read-only) · Group "${grp}" · Actual ${actual}`;
+    },
+  );
 
   // ── 2. Change Actual to cnc-2 via the picker ────────────────────────────
   await pickActual(page, ACTUAL);
-  await step(page, 'Change Actual Machine', `Actual Machine → ${ACTUAL}`, `Actual = ${ACTUAL}; Planned still ${PLANNED}; notice "(planned ${PLANNED})"`, async () => {
-    const planned = await page.locator('#opf-machine').inputValue();
-    const actual = await page.locator('#opf-actual-machine').inputValue();
-    if (planned !== PLANNED) throw new Error(`planned changed to "${planned}"`);
-    if (actual !== ACTUAL) throw new Error(`actual reads "${actual}"`);
-    const dlg = await page.locator('[role="dialog"]').first().innerText();
-    if (!new RegExp(`Planned Machine\\s*${PLANNED}[\\s\\S]{0,40}Actual Machine\\s*${ACTUAL}`).test(dlg)) {
-      throw new Error('deviation note missing');
-    }
-    return `Planned ${planned} · Actual ${actual} · "as Running on ${ACTUAL} (planned ${PLANNED})"`;
-  });
+  await step(
+    page,
+    'Change Actual Machine',
+    `Actual Machine → ${ACTUAL}`,
+    `Actual = ${ACTUAL}; Planned still ${PLANNED}; notice "(planned ${PLANNED})"`,
+    async () => {
+      const planned = await page.locator('#opf-machine').inputValue();
+      const actual = await page.locator('#opf-actual-machine').inputValue();
+      if (planned !== PLANNED) throw new Error(`planned changed to "${planned}"`);
+      if (actual !== ACTUAL) throw new Error(`actual reads "${actual}"`);
+      const dlg = await page.locator('[role="dialog"]').first().innerText();
+      if (
+        !new RegExp(`Planned Machine\\s*${PLANNED}[\\s\\S]{0,40}Actual Machine\\s*${ACTUAL}`).test(
+          dlg,
+        )
+      ) {
+        throw new Error('deviation note missing');
+      }
+      return `Planned ${planned} · Actual ${actual} · "as Running on ${ACTUAL} (planned ${PLANNED})"`;
+    },
+  );
 
   // ── 3. Start ─────────────────────────────────────────────────────────────
   await fillEntryHeader(page, 'E2E Operator');
-  await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: /Start Operation/i })
+    .click();
   await popupGone(page);
-  await step(page, 'Start on cnc-2', 'date/time/shift/operator → ▶ Start Operation', `Session running on ${ACTUAL}; ops row offers Log`, async () => {
-    await loadJc(page, JC);
-    if (!(await hasRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Complete/))) {
-      throw new Error('op did not show as running');
-    }
-    return 'Op running; row ⋯ now offers Complete';
-  });
+  await step(
+    page,
+    'Start on cnc-2',
+    'date/time/shift/operator → ▶ Start Operation',
+    `Session running on ${ACTUAL}; ops row offers Log`,
+    async () => {
+      await loadJc(page, JC);
+      if (!(await hasRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Complete/))) {
+        throw new Error('op did not show as running');
+      }
+      return 'Op running; row ⋯ now offers Complete';
+    },
+  );
 
   // ── 4. Busy gate keys on the ACTUAL machine ─────────────────────────────
   await loadJc(page, JC_OTHER);
   await clickRowMenuItem(page, rowWith(page, PLANNED_ROW), /^Start Operation/);
   await page.locator('#opf-actual-machine').waitFor({ timeout: 30_000 });
   await expect(page.locator('#opf-actual-machine')).toHaveValue(PLANNED, { timeout: 45_000 });
-  await step(page, 'Other JC, planned cnc-1', `${JC_OTHER} → ▶ Start`, `No busy notice — ${PLANNED} is free`, async () => {
-    const dlg = await page.locator('[role="dialog"]').first().innerText();
-    if (/currently running/.test(dlg)) throw new Error('busy notice shown for a free machine');
-    return `Actual ${PLANNED}, Start enabled, no notice`;
-  });
+  await step(
+    page,
+    'Other JC, planned cnc-1',
+    `${JC_OTHER} → ▶ Start`,
+    `No busy notice — ${PLANNED} is free`,
+    async () => {
+      const dlg = await page.locator('[role="dialog"]').first().innerText();
+      if (/currently running/.test(dlg)) throw new Error('busy notice shown for a free machine');
+      return `Actual ${PLANNED}, Start enabled, no notice`;
+    },
+  );
   await pickActual(page, ACTUAL);
-  await step(page, 'Busy gate', `Actual Machine → ${ACTUAL} (running ${JC})`, `Notice "${ACTUAL} is currently running ${JC} / Op 1"; Start disabled`, async () => {
-    const notice = page.locator('[role="dialog"]').first().getByText(/currently running/);
-    await notice.waitFor({ timeout: 30_000 });
-    const txt = await page.locator('[role="dialog"]').first().innerText();
-    if (!txt.includes(JC)) throw new Error('notice does not name the running JC');
-    const disabled = await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).isDisabled();
-    if (!disabled) throw new Error('Start still enabled');
-    return `Notice names ${JC}; ▶ Start Operation disabled`;
-  });
+  await step(
+    page,
+    'Busy gate',
+    `Actual Machine → ${ACTUAL} (running ${JC})`,
+    `Notice "${ACTUAL} is currently running ${JC} / Op 1"; Start disabled`,
+    async () => {
+      const notice = page
+        .locator('[role="dialog"]')
+        .first()
+        .getByText(/currently running/);
+      await notice.waitFor({ timeout: 30_000 });
+      const txt = await page.locator('[role="dialog"]').first().innerText();
+      if (!txt.includes(JC)) throw new Error('notice does not name the running JC');
+      const disabled = await page
+        .getByRole('dialog')
+        .getByRole('button', { name: /Start Operation/i })
+        .isDisabled();
+      if (!disabled) throw new Error('Start still enabled');
+      return `Notice names ${JC}; ▶ Start Operation disabled`;
+    },
+  );
   // The machine listbox is portaled over the dialog; Escape closes it first,
   // then the dialog's own X.
   await page.keyboard.press('Escape');
   await page.waitForTimeout(300);
   await page.locator('[role="dialog"] button[aria-label="Close"]').first().click({ force: true });
   await popupGone(page);
-
 });

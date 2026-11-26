@@ -1,7 +1,4 @@
-import {
-  productionScheduleQuerySchema,
-  rescheduleJcOpInputSchema,
-} from '@innovic/shared';
+import { productionScheduleQuerySchema, rescheduleJcOpInputSchema } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';

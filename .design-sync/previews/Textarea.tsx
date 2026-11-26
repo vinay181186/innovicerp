@@ -18,7 +18,12 @@ export const Empty = () => (
 
 export const WithError = () => (
   <FormGrid>
-    <FormField label="Cancel Reason" required size="full" error="Enter why this Sales Order is being cancelled.">
+    <FormField
+      label="Cancel Reason"
+      required
+      size="full"
+      error="Enter why this Sales Order is being cancelled."
+    >
       <Textarea />
     </FormField>
   </FormGrid>

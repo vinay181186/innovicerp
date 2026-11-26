@@ -1,7 +1,4 @@
-import {
-  createDesignWorkLogInputSchema,
-  listDesignWorkLogQuerySchema,
-} from '@innovic/shared';
+import { createDesignWorkLogInputSchema, listDesignWorkLogQuerySchema } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';

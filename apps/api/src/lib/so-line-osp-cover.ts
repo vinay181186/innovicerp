@@ -241,7 +241,10 @@ export function computeLineOspCover(
   lineItemId: string | null = null,
 ): LineOspCover {
   const ospOps: SoStatusOspOp[] = [];
-  const groups = new Map<string, { need: number; po: number; grn: number; qc: number; anyOp: boolean }>();
+  const groups = new Map<
+    string,
+    { need: number; po: number; grn: number; qc: number; anyOp: boolean }
+  >();
   for (const jc of jobCards) {
     // A job card with no item (legacy) belongs to the line's own item.
     const key = jc.itemId ?? lineItemId ?? 'line';
@@ -294,7 +297,8 @@ export function computeLineOspCover(
       qc = Math.min(qc, g.qc);
     } else {
       // A child part: its share of what it needs, in line units (sets).
-      const share = (v: number): number => (g.need > 0 ? (Math.min(v, g.need) / g.need) * lineOrderQty : 0);
+      const share = (v: number): number =>
+        g.need > 0 ? (Math.min(v, g.need) / g.need) * lineOrderQty : 0;
       po = Math.min(po, share(g.po));
       grn = Math.min(grn, share(g.grn));
       qc = Math.min(qc, share(g.qc));

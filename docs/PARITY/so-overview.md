@@ -12,7 +12,7 @@
 
 - ✅ Route `/so-overview` exists; sidebar entry "📊 SO Overview" under Sales & CRM.
 - ✅ Per-row Activity-icon link → `/sales-orders/$id/status` (PL-1).
-- ⚠️ Per-row main click (legacy) → expands drill-down view in-screen (`_soOvShowSODetail` L9146). Today: per-row main click goes to `/sales-orders/$id` (SO Master). Either path takes the user *off* the overview screen. **THE NAMED GAP.**
+- ⚠️ Per-row main click (legacy) → expands drill-down view in-screen (`_soOvShowSODetail` L9146). Today: per-row main click goes to `/sales-orders/$id` (SO Master). Either path takes the user _off_ the overview screen. **THE NAMED GAP.**
 
 ---
 
@@ -54,7 +54,7 @@ Diffs:
 
 ### 1.5 Row click behaviour (L9123)
 
-- ❌ **In-screen drill-down** — legacy: clicking a row stashes detail HTML in `window._soOvDetailHtml` and re-renders the *same* route with the detail view (replacing the list). A "← Back to SO Overview" button at the top of the detail clears the stash. **BLOCKER** (this is the named gap from 2026-05-21 — the planner clicks an SO to see its items + stages without leaving the overview).
+- ❌ **In-screen drill-down** — legacy: clicking a row stashes detail HTML in `window._soOvDetailHtml` and re-renders the _same_ route with the detail view (replacing the list). A "← Back to SO Overview" button at the top of the detail clears the stash. **BLOCKER** (this is the named gap from 2026-05-21 — the planner clicks an SO to see its items + stages without leaving the overview).
 - ⚠️ Today: per-row main click → `/sales-orders/$id`; Activity icon → `/sales-orders/$id/status`. Both routes exist and serve their purpose, but **neither replaces the overview screen** — the user loses the filter + summary context. **DELTA → BLOCKER** for parity.
 
 ### 1.6 Helper text (L9142)
@@ -136,6 +136,7 @@ Legacy `_deriveSOSummaries` (L9064) computes for each SO:
 ## 4. API contract — what changes
 
 **Option A (recommended):** New endpoint `GET /so-overview/:soId/detail` returning:
+
 ```ts
 {
   generatedAt: string;
@@ -164,11 +165,13 @@ Ranked for this slice (PL-2b):
 The new endpoint (§4 Option A) plus the front-end drill component land together.
 
 DELTAs deferred to backlog:
+
 - ⬇ Export All (§1.1) + per-SO ⬇ Export Excel (§2.6) — project-wide Excel gap.
 - Per-column filter row in drill table (§2.4) — nice-to-have when row counts grow.
 - Items-vs-Lines column semantics (§1.4) — today's "Lines" count is technically correct.
 
 POLISH deferred:
+
 - SO Date column (§1.4), Alerts column visual weight (§1.4), Footer helper text (§1.6), drill row tinting (§2.4), make summary tiles clickable as filters (§1.3).
 
 ---
@@ -182,6 +185,7 @@ POLISH deferred:
 ---
 
 **Sign-off needed before code:**
+
 - Confirm the **4 BLOCKERs** in §5 are the right scope.
 - Approve **Option A endpoint** in §4 (new `GET /so-overview/:soId/detail`, no schema changes).
 - Tell me if you want any of the DELTAs (Export, column filters, Items-vs-Lines) promoted to BLOCKER.

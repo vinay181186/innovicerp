@@ -12,6 +12,7 @@ Legacy `renderLoading(calc)` consumes `calc.machineLoad` + `calc.enrichedOps`. `
 Per machine: `totalAvailQty`, `pendingHrs` (Σ available×cycleTime over its open ops), `dailyCap` (capPerShift×shifts), `daysToClear` (pendingHrs/dailyCap), `loadPct` (pendingHrs/dailyCap normalised), `loadStatus` (Clear/OK/Busy/Overloaded badge), and `ops[]` (its enriched ops).
 
 ### Page structure (to build)
+
 1. **Header** `.section-hdr` "Machine Loading" + view toggle **Operation View / Job Queue View** + "All Machines ×" reset.
 2. **Machine cards** (`.mach-cards` grid): per machine — id/name/type, Avail / Hrs / Days nums, load progress bar (green/amber/red by %), `loadStatus` badge, %; click → filter + Job Queue view.
 3. **Operation View** (`.panel` table, 13 cols): `# · JC No · Part/Item · SO No · Op · Operation · Priority · Due · Order · Done · Avail★ · Pend Hrs · Status`, sorted Priority→Due.
@@ -25,6 +26,7 @@ Per op (L1668): `pendingHrs = available × cycleTime` (legacy cycleTime is HOURS
 `available` + `completed` come from `v_jc_op_status`.
 
 Per machine (L1703–1715), over its ops (`jc_ops.machine_id = m.id`):
+
 ```
 totalAvailQty = Σ available
 pendingHrs    = Σ (available × cycle_time_min / 60)          -- 2 dp
@@ -37,6 +39,7 @@ loadStatus    = loadPct > 1   ? 'Overloaded'
               : pendingHrs > 0 ? 'Manageable'
               : 'Clear'
 ```
+
 Card % display = `min(150, round(loadPct × 100))`. Inputs verified to exist:
 `jc_ops.machine_id` (uuid→machines.id), `jc_ops.cycle_time_min`,
 `machines.capacity_per_shift`, `machines.shifts_per_day`, `v_jc_op_status.{available,completed_qty,computed_status}`.
@@ -45,6 +48,7 @@ Card % display = `min(150, round(loadPct × 100))`. Inputs verified to exist:
 > `job-cards`/`store-inventory` services), not a view.
 
 ### ⚠️ Build blocker (2026-05-23)
+
 Wiring a new API module touches `apps/api/src/server.ts` (route registration)
 and `packages/shared/src/index.ts` (schema export). **Both currently carry
 uncommitted Store Wave 3/4 edits** (party-materials / party-grn / jw-dc), and
@@ -53,6 +57,7 @@ without entangling that work or breaking the build. **Resolve the store-wave
 tree first** (commit or stash), then build Waves 3-5.
 
 ### Build plan (full-stack)
+
 1. **Backend `v_machine_load` view** (or service aggregation): per machine — avail qty, pending hrs, daily cap, days to clear, load %, load status. Joins `machines` ⨝ `jc_ops`/`v_jc_op_status` (cycle time × available) ⨝ `running_ops`. RLS via base tables. Needs `machines.cycle`/`jc_ops.cycle_time` (cycle_time exists on jc_ops per v_jc_op_status usage).
 2. **Shared schema** + `machine-loading` API hook.
 3. **Web module** `apps/web/src/modules/machine-loading/` (route + cards + 2 views + capacity table) in legacy chrome.

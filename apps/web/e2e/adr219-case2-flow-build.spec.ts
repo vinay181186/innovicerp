@@ -70,7 +70,10 @@ test('A1 - Sales Order for 10', async ({ page }) => {
   await page.locator('#internalSoNo').fill(internalSoNo);
 
   // One line: our item, qty 10, Rev A, a rate so the order has a value.
-  await page.getByRole('button', { name: /Add Line/i }).first().click();
+  await page
+    .getByRole('button', { name: /Add Line/i })
+    .first()
+    .click();
   await page.waitForTimeout(800);
   await pickFirst(page, page.locator('#soln-ic-0'), ITEM_CODE);
   await page.getByLabel('Drawing Rev, line 1', { exact: true }).fill('A');
@@ -106,8 +109,14 @@ test('A2 - plan one OUTSOURCE op and execute → Job Card + auto JW PR', async (
   const soCode = s.soCode!;
 
   await page.goto('/planning', { waitUntil: 'domcontentloaded' });
-  await page.getByPlaceholder(/Search SO/i).first().waitFor({ timeout: 60_000 });
-  await page.getByPlaceholder(/Search SO/i).first().fill(soCode);
+  await page
+    .getByPlaceholder(/Search SO/i)
+    .first()
+    .waitFor({ timeout: 60_000 });
+  await page
+    .getByPlaceholder(/Search SO/i)
+    .first()
+    .fill(soCode);
   await page.getByText(soCode, { exact: true }).first().waitFor({ timeout: 60_000 });
   await page.getByText(soCode, { exact: true }).first().click();
   await page.waitForTimeout(2500);
@@ -147,7 +156,10 @@ test('A2 - plan one OUTSOURCE op and execute → Job Card + auto JW PR', async (
   await page.waitForTimeout(2500);
 
   await executePlanFromMenu(page, 120_000);
-  await page.getByText(/IN-JC-\d{2}-\d+/).first().waitFor({ timeout: 180_000 });
+  await page
+    .getByText(/IN-JC-\d{2}-\d+/)
+    .first()
+    .waitFor({ timeout: 180_000 });
   await page.waitForTimeout(2000);
   await shot(page, 'a2-executed');
 
@@ -345,7 +357,10 @@ test('A7 - Incoming QC: 0 accepted, all 5 deviated → NC raised', async ({ page
   await shot(page, 'a7-iqc-list');
 
   await row.getByRole('button', { name: 'Actions' }).first().click();
-  await page.getByRole('menuitem', { name: /^Inspect/ }).first().click();
+  await page
+    .getByRole('menuitem', { name: /^Inspect/ })
+    .first()
+    .click();
   const dialog = page.getByRole('dialog').first();
   await dialog.waitFor({ state: 'visible', timeout: 60_000 });
   await page.waitForTimeout(1500);
@@ -375,7 +390,12 @@ test('A7 - Incoming QC: 0 accepted, all 5 deviated → NC raised', async ({ page
   const alert = dialog.getByRole('alert');
   await page.waitForTimeout(3000);
   if (await alert.count()) {
-    const t = (await alert.first().innerText().catch(() => '')).trim();
+    const t = (
+      await alert
+        .first()
+        .innerText()
+        .catch(() => '')
+    ).trim();
     if (t) throw new Error('Incoming QC refused: ' + t);
   }
   await dialog.waitFor({ state: 'hidden', timeout: 180_000 });
@@ -420,9 +440,11 @@ test('A8 - dispose the deviation as Return to Vendor for 5 (NO return challan)',
   await dispose.waitFor({ timeout: 120_000 });
   await dispose.click();
   await page.locator('#dispAction').waitFor({ state: 'visible', timeout: 60_000 });
-  const offered = (await page.locator('#dispAction option').evaluateAll((els) =>
-    els.map((e) => (e as HTMLOptionElement).value),
-  )).filter(Boolean);
+  const offered = (
+    await page
+      .locator('#dispAction option')
+      .evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value))
+  ).filter(Boolean);
   log(`dispose actions offered: ${offered.join(', ')}`);
   expect(offered, 'Return to Vendor must be offered on a vendor-sourced NC').toContain(
     'return_to_vendor',

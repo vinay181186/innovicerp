@@ -1,6 +1,11 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
+import {
+  clickRowMenuItem,
+  clickFirstRowMenuItem,
+  planningLineRows,
+  executePlanFromMenu,
+} from './row-menu';
 import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 
 // QC → NC → Rework → Re-QC → Closure, exactly the worked example in §9 of
@@ -76,7 +81,10 @@ async function step(
 async function pickFirst(page: Page, input: Locator, term: string): Promise<void> {
   await input.click();
   await input.fill(term);
-  const opt = page.locator('[role="option"]').filter({ hasNotText: /Loading/i }).first();
+  const opt = page
+    .locator('[role="option"]')
+    .filter({ hasNotText: /Loading/i })
+    .first();
   await opt.waitFor({ state: 'visible', timeout: 45_000 });
   await opt.click();
   await page.waitForTimeout(400);
@@ -149,7 +157,9 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   await page.getByRole('button', { name: /Save SO/i }).click();
   // The test API can take a while on a cold start: wait for the save to land
   // (the form navigates away from /new) rather than a fixed pause.
-  await page.waitForURL((u) => !/\/sales-orders\/new/.test(u.pathname), { timeout: 60_000 }).catch(() => {});
+  await page
+    .waitForURL((u) => !/\/sales-orders\/new/.test(u.pathname), { timeout: 60_000 })
+    .catch(() => {});
   await page.waitForTimeout(2000);
   await step(
     page,
@@ -177,7 +187,9 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   // The create-plan box suggests (remaining − finished stock). The item has
   // stock from earlier runs, so the suggestion is less than the order; the
   // cycle needs the whole order on ONE job card, so set it explicitly.
-  const planQty = page.locator('.form-grp:has(label:has-text("Plan Qty")) input[type="number"]').first();
+  const planQty = page
+    .locator('.form-grp:has(label:has-text("Plan Qty")) input[type="number"]')
+    .first();
   await planQty.waitFor({ state: 'visible', timeout: 30_000 });
   await planQty.fill(String(ORDER_QTY));
   await page.getByRole('button', { name: /^Save Plan$/ }).click();
@@ -194,11 +206,16 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   await pickFirst(page, row0.getByPlaceholder('🔍 Machine', { exact: true }), 'cnc');
   await page.getByRole('button', { name: /Save Plan/i }).click();
   // The modal closes when the save lands; Execute only exists after that.
-  await page.getByRole('button', { name: /Save Plan/i }).waitFor({ state: 'hidden', timeout: 60_000 });
+  await page
+    .getByRole('button', { name: /Save Plan/i })
+    .waitFor({ state: 'hidden', timeout: 60_000 });
   await executePlanFromMenu(page);
   // Execute raises the job card server-side; on the test API that is many
   // seconds. Wait for the code to appear, not for a clock.
-  await page.getByText(/IN-JC-\d{2}-\d+/).first().waitFor({ timeout: 120_000 });
+  await page
+    .getByText(/IN-JC-\d{2}-\d+/)
+    .first()
+    .waitFor({ timeout: 120_000 });
   await page.waitForTimeout(1500);
   await step(
     page,
@@ -218,24 +235,39 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
 
   // ── 3. Run the process op: Start, then Stop with all 10 made ──────────────
   await loadJc(page, JC);
-  await step(page, 'Op Entry', `Load ${JC} on By Job Card`, 'Ops table shows Turning + DIR', async () => {
-    const body = await page.locator('body').innerText();
-    if (!/Turning/.test(body)) throw new Error('Turning op not listed');
-    if (!/DIR/.test(body)) throw new Error('DIR QC op not listed — terminal QC was not appended');
-    return 'Turning (process) and DIR (qc) both listed';
-  });
+  await step(
+    page,
+    'Op Entry',
+    `Load ${JC} on By Job Card`,
+    'Ops table shows Turning + DIR',
+    async () => {
+      const body = await page.locator('body').innerText();
+      if (!/Turning/.test(body)) throw new Error('Turning op not listed');
+      if (!/DIR/.test(body)) throw new Error('DIR QC op not listed — terminal QC was not appended');
+      return 'Turning (process) and DIR (qc) both listed';
+    },
+  );
 
   await clickRowMenuItem(page, opRow(page, 'Turning'), /^Start Operation/);
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Operator');
-  await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: /Start Operation/i })
+    .click();
   await popupGone(page);
-  await step(page, 'Start Op 1', 'Popup: date/time/shift/operator → ▶ Start Operation', 'Session running on cnc-1', async () => {
-    await loadJc(page, JC);
-    const body = await page.locator('body').innerText();
-    if (!/Running|✓ Complete/.test(body)) throw new Error('op did not show as running');
-    return 'Op 1 running; row ⋯ now offers Complete';
-  });
+  await step(
+    page,
+    'Start Op 1',
+    'Popup: date/time/shift/operator → ▶ Start Operation',
+    'Session running on cnc-1',
+    async () => {
+      await loadJc(page, JC);
+      const body = await page.locator('body').innerText();
+      if (!/Running|✓ Complete/.test(body)) throw new Error('op did not show as running');
+      return 'Op 1 running; row ⋯ now offers Complete';
+    },
+  );
 
   await clickRowMenuItem(page, opRow(page, 'Turning'), /^Complete/);
   await page.waitForTimeout(1200);
@@ -244,11 +276,17 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   await page.locator('#opf-rej').fill('0');
   await page.getByRole('button', { name: /^Stop/ }).click();
   await popupGone(page);
-  await step(page, 'Stop Op 1', `Stop with ${ORDER_QTY} made`, `Op 1 complete, ${ORDER_QTY} pcs to DIR QC`, async () => {
-    await loadJc(page, JC);
-    const body = await page.locator('body').innerText();
-    return `Turning logged; QC pending on DIR: ${/DIR/.test(body) ? 'listed' : 'missing'}`;
-  });
+  await step(
+    page,
+    'Stop Op 1',
+    `Stop with ${ORDER_QTY} made`,
+    `Op 1 complete, ${ORDER_QTY} pcs to DIR QC`,
+    async () => {
+      await loadJc(page, JC);
+      const body = await page.locator('body').innerText();
+      return `Turning logged; QC pending on DIR: ${/DIR/.test(body) ? 'listed' : 'missing'}`;
+    },
+  );
 
   // ── 4. QC: accept 8, reject 2 → NC auto-raised ────────────────────────────
   await clickRowMenuItem(page, opRow(page, 'DIR'), /^Inspect/);
@@ -280,11 +318,17 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   // ── 5. Job card shows the breakup: 8 accepted AND 2 NC raised ─────────────
   await page.goto('/job-cards', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2000);
-  await page.getByPlaceholder(/search/i).first().fill(JC);
+  await page
+    .getByPlaceholder(/search/i)
+    .first()
+    .fill(JC);
   const jcRow = page.getByText(JC, { exact: true }).first();
   await jcRow.waitFor({ timeout: 60_000 });
   await jcRow.click();
-  await page.getByText(/Op\s*1/).first().waitFor({ timeout: 60_000 });
+  await page
+    .getByText(/Op\s*1/)
+    .first()
+    .waitFor({ timeout: 60_000 });
   await page.waitForTimeout(1500);
   rec('JC_URL', page.url());
   await step(
@@ -313,7 +357,10 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   await page.locator('#dispQty').fill(String(REJECT_1));
   await page.locator('#dispRemarks').fill('E2E rework cycle');
   await page.getByRole('button', { name: /^Save Disposition$/ }).click();
-  await page.getByText(/-RW\d+/).first().waitFor({ timeout: 90_000 });
+  await page
+    .getByText(/-RW\d+/)
+    .first()
+    .waitFor({ timeout: 90_000 });
   await page.waitForTimeout(1000);
   await step(
     page,
@@ -333,42 +380,73 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
 
   // ── 7. Interlock 6: closure refused while under rework ────────────────────
   await page.goto(docs['NC_URL']!, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: /^Close$/ }).first().waitFor({ timeout: 60_000 });
+  await page
+    .getByRole('button', { name: /^Close$/ })
+    .first()
+    .waitFor({ timeout: 60_000 });
   await page.waitForTimeout(800);
-  await step(page, 'Closure gate', 'Look at the Close button while pieces are under rework', 'Close disabled with the reason named', async () => {
-    const body = await page.locator('body').innerText();
-    const m = body.match(/\d+ of \d+ pcs still under rework[^\n]*/i);
-    if (!m) throw new Error('blocking reason not shown');
-    const btn = page.getByRole('button', { name: /^Close$/ }).first();
-    const disabled = await btn.isDisabled().catch(() => true);
-    if (!disabled) throw new Error('Close button is enabled while under rework');
-    return `Close disabled — "${m[0]}"`;
-  });
+  await step(
+    page,
+    'Closure gate',
+    'Look at the Close button while pieces are under rework',
+    'Close disabled with the reason named',
+    async () => {
+      const body = await page.locator('body').innerText();
+      const m = body.match(/\d+ of \d+ pcs still under rework[^\n]*/i);
+      if (!m) throw new Error('blocking reason not shown');
+      const btn = page.getByRole('button', { name: /^Close$/ }).first();
+      const disabled = await btn.isDisabled().catch(() => true);
+      if (!disabled) throw new Error('Close button is enabled while under rework');
+      return `Close disabled — "${m[0]}"`;
+    },
+  );
 
   // ── 8. Parent shows 2 Under rework ────────────────────────────────────────
   await page.goto(docs['JC_URL']!, { waitUntil: 'domcontentloaded' });
-  await page.getByText(/Under rework/i).first().waitFor({ timeout: 60_000 });
+  await page
+    .getByText(/Under rework/i)
+    .first()
+    .waitFor({ timeout: 60_000 });
   await page.waitForTimeout(800);
-  await step(page, 'Parent JC (§6)', 'Re-open the parent job card', `"Under rework ${REJECT_1}" on the DIR op card`, async () => {
-    const body = await page.locator('body').innerText();
-    if (!new RegExp(`Under Rework\\s*${REJECT_1}`).test(body)) throw new Error('"Under rework 2" not visible');
-    return `"Under rework ${REJECT_1}" shown`;
-  });
+  await step(
+    page,
+    'Parent JC (§6)',
+    'Re-open the parent job card',
+    `"Under rework ${REJECT_1}" on the DIR op card`,
+    async () => {
+      const body = await page.locator('body').innerText();
+      if (!new RegExp(`Under Rework\\s*${REJECT_1}`).test(body))
+        throw new Error('"Under rework 2" not visible');
+      return `"Under rework ${REJECT_1}" shown`;
+    },
+  );
 
   // ── 9. Child: define the recovery op; DIR appended ────────────────────────
   await page.goto('/job-cards', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2000);
-  await page.getByPlaceholder(/search/i).first().fill(docs['CHILD_JC']!);
+  await page
+    .getByPlaceholder(/search/i)
+    .first()
+    .fill(docs['CHILD_JC']!);
   const childRow = page.getByText(docs['CHILD_JC']!, { exact: true }).first();
   await childRow.waitFor({ timeout: 60_000 });
   await childRow.click();
-  await page.getByText(/REWORK of/i).first().waitFor({ timeout: 60_000 });
+  await page
+    .getByText(/REWORK of/i)
+    .first()
+    .waitFor({ timeout: 60_000 });
   rec('CHILD_URL', page.url());
-  await step(page, 'Child JC banner (§4)', 'Open the child job card', 'Amber banner: REWORK of <parent> · Op n · NC …', async () => {
-    const body = await page.locator('body').innerText();
-    if (!/REWORK of/i.test(body)) throw new Error('recovery banner missing');
-    return body.match(/REWORK of[^\n]*/i)![0];
-  });
+  await step(
+    page,
+    'Child JC banner (§4)',
+    'Open the child job card',
+    'Amber banner: REWORK of <parent> · Op n · NC …',
+    async () => {
+      const body = await page.locator('body').innerText();
+      if (!/REWORK of/i.test(body)) throw new Error('recovery banner missing');
+      return body.match(/REWORK of[^\n]*/i)![0];
+    },
+  );
   await page.getByRole('link', { name: /Edit/ }).first().click();
   await page.waitForTimeout(2500);
   await page.getByRole('button', { name: /\+ Add Op$/ }).click();
@@ -378,19 +456,28 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   await pickFirst(page, crow.getByPlaceholder('🔍 Machine', { exact: true }), 'cnc');
   await page.getByRole('button', { name: /Save/ }).first().click();
   await page.waitForTimeout(3500);
-  await step(page, 'Child route', 'Add one recovery op "Rework polish" and save', 'DIR QC appended as the last op (interlock 3)', async () => {
-    await loadJc(page, docs['CHILD_JC']!);
-    const body = await page.locator('body').innerText();
-    if (!/Rework polish/.test(body)) throw new Error('recovery op not listed');
-    if (!/DIR/.test(body)) throw new Error('terminal DIR not appended on the child');
-    return 'Rework polish + DIR listed on the child';
-  });
+  await step(
+    page,
+    'Child route',
+    'Add one recovery op "Rework polish" and save',
+    'DIR QC appended as the last op (interlock 3)',
+    async () => {
+      await loadJc(page, docs['CHILD_JC']!);
+      const body = await page.locator('body').innerText();
+      if (!/Rework polish/.test(body)) throw new Error('recovery op not listed');
+      if (!/DIR/.test(body)) throw new Error('terminal DIR not appended on the child');
+      return 'Rework polish + DIR listed on the child';
+    },
+  );
 
   // ── 10. Run the child: start, stop with 2, QC accept 2 ────────────────────
   await clickRowMenuItem(page, opRow(page, 'Rework polish'), /^Start Operation/);
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Operator');
-  await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: /Start Operation/i })
+    .click();
   await popupGone(page);
   await loadJc(page, docs['CHILD_JC']!);
   await clickRowMenuItem(page, opRow(page, 'Rework polish'), /^Complete/);
@@ -400,10 +487,16 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
   await page.locator('#opf-rej').fill('0');
   await page.getByRole('button', { name: /^Stop/ }).click();
   await popupGone(page);
-  await step(page, 'Child rework run', `Start + Stop the child op with ${REJECT_1} made`, `${REJECT_1} pcs at the child's DIR — QC pending`, async () => {
-    await loadJc(page, docs['CHILD_JC']!);
-    return 'child op logged';
-  });
+  await step(
+    page,
+    'Child rework run',
+    `Start + Stop the child op with ${REJECT_1} made`,
+    `${REJECT_1} pcs at the child's DIR — QC pending`,
+    async () => {
+      await loadJc(page, docs['CHILD_JC']!);
+      return 'child op logged';
+    },
+  );
 
   await clickRowMenuItem(page, opRow(page, 'DIR'), /^Inspect/);
   await page.waitForTimeout(1200);
@@ -419,7 +512,10 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
     'NC auto-closes (cleared = rejected); pieces re-enter the parent route',
     async () => {
       await page.goto(docs['NC_URL']!, { waitUntil: 'domcontentloaded' });
-      await page.getByText(/Rejected|Cleared/).first().waitFor({ timeout: 60_000 });
+      await page
+        .getByText(/Rejected|Cleared/)
+        .first()
+        .waitFor({ timeout: 60_000 });
       await page.waitForTimeout(800);
       const body = await page.locator('body').innerText();
       if (!/Closed/i.test(body)) throw new Error('NC not closed after full clearance');
@@ -429,7 +525,10 @@ test('QC → NC → Rework → Re-QC → Closure (§9 example)', async ({ page }
 
   // ── 11. Parent: 10 accepted, NC closed 2, JC complete ─────────────────────
   await page.goto(docs['JC_URL']!, { waitUntil: 'domcontentloaded' });
-  await page.getByText(/NC closed/i).first().waitFor({ timeout: 60_000 });
+  await page
+    .getByText(/NC closed/i)
+    .first()
+    .waitFor({ timeout: 60_000 });
   await page.waitForTimeout(800);
   await step(
     page,

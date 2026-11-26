@@ -326,9 +326,7 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
     // Build the per-line response.
     const lines: SoStatusLine[] = lineRows.map((line) => {
       const jcsForLine = jcsByLine.get(line.id) ?? [];
-      const rollupsForLine: JCRollup[] = jcsForLine.map(
-        (jc) => rollupByJcId.get(jc.id)!.rollup,
-      );
+      const rollupsForLine: JCRollup[] = jcsForLine.map((jc) => rollupByJcId.get(jc.id)!.rollup);
 
       const soLineRollup = rollupSoLine(line.id, line.orderQty, rollupsForLine);
 
@@ -526,10 +524,7 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
             .from(bomMasterLines)
             .innerJoin(items, eq(items.id, bomMasterLines.childItemId))
             .where(
-              and(
-                eq(bomMasterLines.bomMasterId, equipmentBomId),
-                isNull(bomMasterLines.deletedAt),
-              ),
+              and(eq(bomMasterLines.bomMasterId, equipmentBomId), isNull(bomMasterLines.deletedAt)),
             )
             .orderBy(asc(bomMasterLines.lineNo)),
         ]);
@@ -670,9 +665,7 @@ function earliestOpenDueDate(lines: readonly SoStatusLine[]): string | null {
   );
 }
 
-function buildEmptyResponse(
-  header: typeof salesOrders.$inferSelect,
-): SoStatusResponse {
+function buildEmptyResponse(header: typeof salesOrders.$inferSelect): SoStatusResponse {
   const equipmentBomId =
     header.type === 'equipment' && header.bomMasterId && UUID_RE.test(header.bomMasterId)
       ? header.bomMasterId

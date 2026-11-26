@@ -49,9 +49,7 @@ test('@bombrowse the child code field lists the item master, not the parent’s 
 
   // Typing still narrows it.
   await page.locator('#bom-item-0').fill('724639000000');
-  await expect
-    .poll(async () => rows.count(), { timeout: 20_000 })
-    .toBeLessThan(n);
+  await expect.poll(async () => rows.count(), { timeout: 20_000 }).toBeLessThan(n);
   // eslint-disable-next-line no-console
   console.log(`>> after typing a full code: ${await rows.count()} option(s)`);
 });

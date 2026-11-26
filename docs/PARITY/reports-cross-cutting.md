@@ -16,21 +16,21 @@ between them.
 
 For each non-deleted SO header, derive these phase timestamps (legacy field → our source):
 
-| Phase | Legacy source | Our source |
-| --- | --- | --- |
-| `so_created` | salesOrders.soDate | `sales_orders.so_date` |
-| `design_assigned` | designTracker.createdAt/startDate | `design_tracker.start_date` (by `sales_order_id`) |
-| `design_approved` | designTracker.approvedAt when status Approved | `design_tracker.approved_at` when `status='Approved'` |
-| `bom_linked` | bomMasters.revisionDate/createdAt | `bom_masters.created_at` via `sales_orders.bom_master_id` |
-| `plan_created` | plans.createdAt | `plans.created_at` (by `sales_order_id`/line) min |
-| `jc_created` | jobCards.date min | `job_cards.created_at` min (JCs of this SO) |
-| `pr_raised` | purchaseRequests.prDate min | `purchase_requests` linked to SO, min date |
-| `grn_received` | grn.grnDate max (POs of SO) | `goods_receipt_notes.grn_date` max for SO-linked POs |
-| `first_op_start`/`last_op_end` | opEntries (non-QC) min/max date | `op_log` where `log_type IN (start,complete)`, min/max `log_date` |
-| `first_qc_start`/`last_qc_end` | opEntries (QC) min/max | `op_log` where `log_type='qc'`, min/max `log_date` |
-| `assembly_started`/`assembly_done` | assemblyUnits.date min/max | `assembly_units.assembly_date` min/max (by `sales_order_id`) |
-| `dispatched` | dispatchLog.date max | **`assembly_units.dispatch_date` max where `dispatched=true`**, else `sales_orders.status IN (dispatched,closed)` → `updated_at` (fallback) |
-| `invoiced` | invoices.invoiceDate max | `invoices.invoice_date` max (by SO) |
+| Phase                              | Legacy source                                 | Our source                                                                                                                                  |
+| ---------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `so_created`                       | salesOrders.soDate                            | `sales_orders.so_date`                                                                                                                      |
+| `design_assigned`                  | designTracker.createdAt/startDate             | `design_tracker.start_date` (by `sales_order_id`)                                                                                           |
+| `design_approved`                  | designTracker.approvedAt when status Approved | `design_tracker.approved_at` when `status='Approved'`                                                                                       |
+| `bom_linked`                       | bomMasters.revisionDate/createdAt             | `bom_masters.created_at` via `sales_orders.bom_master_id`                                                                                   |
+| `plan_created`                     | plans.createdAt                               | `plans.created_at` (by `sales_order_id`/line) min                                                                                           |
+| `jc_created`                       | jobCards.date min                             | `job_cards.created_at` min (JCs of this SO)                                                                                                 |
+| `pr_raised`                        | purchaseRequests.prDate min                   | `purchase_requests` linked to SO, min date                                                                                                  |
+| `grn_received`                     | grn.grnDate max (POs of SO)                   | `goods_receipt_notes.grn_date` max for SO-linked POs                                                                                        |
+| `first_op_start`/`last_op_end`     | opEntries (non-QC) min/max date               | `op_log` where `log_type IN (start,complete)`, min/max `log_date`                                                                           |
+| `first_qc_start`/`last_qc_end`     | opEntries (QC) min/max                        | `op_log` where `log_type='qc'`, min/max `log_date`                                                                                          |
+| `assembly_started`/`assembly_done` | assemblyUnits.date min/max                    | `assembly_units.assembly_date` min/max (by `sales_order_id`)                                                                                |
+| `dispatched`                       | dispatchLog.date max                          | **`assembly_units.dispatch_date` max where `dispatched=true`**, else `sales_orders.status IN (dispatched,closed)` → `updated_at` (fallback) |
+| `invoiced`                         | invoices.invoiceDate max                      | `invoices.invoice_date` max (by SO)                                                                                                         |
 
 Durations (whole days, `round((d2-d1)/86400000)`, null if either end missing) — identical to legacy:
 `design`, `design_to_plan`, `plan_to_jc`, `material_proc` (pr→grn), `production` (firstOp→lastOp),
@@ -51,6 +51,7 @@ production_op 5 · qc 3 · assembly 5 · assembly_to_dispatch 2
 ```
 
 Stuck rules (legacy verbatim):
+
 - **Design** — design_assigned set, design_approved not, days > `design`.
 - **Planning** — (design_approved||bom_linked) set, plan_created not, days > `design_to_plan`.
 - **JC Creation** — plan_created set, jc_created not, days > `plan_to_jc`.
@@ -80,8 +81,8 @@ Excel export of the full phase+duration matrix. Clicking SO → timeline.
 > hours can't be sourced faithfully. Build later "if required" once hours-capture exists. Only
 > Stuck Dashboard + SO Cycle Time ship in this batch. Spec retained below for when it's revived.
 
-
 Period filter (7/30/365/all days). Pulls time entries from:
+
 - **Design** — `design_time_log` (date, worker, hours, design, SO). ✅ fully available.
 - **Production/QC** — legacy reads `opEntries.hoursWorked`. **We do not store hours-worked on
   `op_log`.** → see DECISION below.

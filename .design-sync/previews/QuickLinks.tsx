@@ -2,7 +2,9 @@ import type { ReactNode } from 'react';
 import { QuickLinks } from '@innovic/web';
 
 const hashLink = ({ to, children, ...rest }: { to: string; children: ReactNode }) => (
-  <a href={`#${to}`} {...rest}>{children}</a>
+  <a href={`#${to}`} {...rest}>
+    {children}
+  </a>
 );
 
 export const QuickAccess = () => (

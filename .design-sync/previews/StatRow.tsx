@@ -2,7 +2,9 @@ import type { ReactNode } from 'react';
 import { Panel, StatRow } from '@innovic/web';
 
 const hashLink = ({ to, children, ...rest }: { to: string; children: ReactNode }) => (
-  <a href={`#${to}`} {...rest}>{children}</a>
+  <a href={`#${to}`} {...rest}>
+    {children}
+  </a>
 );
 
 export const TodayPanel = () => (
@@ -15,4 +17,6 @@ export const TodayPanel = () => (
   </Panel>
 );
 
-export const Single = () => <StatRow icon="🔬" label="QC calls waiting" value={5} onClick={() => {}} />;
+export const Single = () => (
+  <StatRow icon="🔬" label="QC calls waiting" value={5} onClick={() => {}} />
+);

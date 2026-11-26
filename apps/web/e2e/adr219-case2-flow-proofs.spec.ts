@@ -73,7 +73,9 @@ test('PROOF 1 - the picker lists the order, marks the row, and reads 5', async (
   await shot(page, 'p1-picker-marked');
 
   // The note above the table that explains the marked rows.
-  const note = page.getByText(/Marked orders have deviated pieces waiting to go back to the vendor/);
+  const note = page.getByText(
+    /Marked orders have deviated pieces waiting to go back to the vendor/,
+  );
   await expect(note, 'the note explaining the marked rows').toBeVisible({ timeout: 30_000 });
 
   expect(r.pending, 'Return Challan Pending on the order').toBe(String(SEND_QTY));
@@ -109,7 +111,10 @@ test('PROOF 2 - an ordinary order is unmarked and its cell is EMPTY, not 0', asy
     zeros,
     `these rows printed a literal 0 in Return Challan Pending — the column must be blank when nothing waits: ${zeros.join(', ')}`,
   ).toEqual([]);
-  expect(clean, 'at least one job-work / service order with nothing waiting to go back').toBeTruthy();
+  expect(
+    clean,
+    'at least one job-work / service order with nothing waiting to go back',
+  ).toBeTruthy();
   log(`PROOF 2 clean order: ${clean!.code} — cell empty, no orange. Row: ${clean!.text}`);
 });
 
@@ -131,10 +136,7 @@ test('PROOF 3 - the fresh cap did not move: Can Send Now = 5, not 10', async ({ 
     .trim();
   log(`PROOF 3 line: ${lineText}`);
   const cap = /Can send now:\s*([\d.]+)/.exec(lineText);
-  expect(
-    cap,
-    `no "Can send now" figure on the line — the row read: ${lineText}`,
-  ).toBeTruthy();
+  expect(cap, `no "Can send now" figure on the line — the row read: ${lineText}`).toBeTruthy();
   log(`PROOF 3 Can send now = ${cap![1]}`);
   // The max attribute the input itself enforces must agree with the words.
   const maxAttr = await qtyBoxes.first().getAttribute('max');
@@ -177,9 +179,7 @@ test('PROOF 4 - the warning states the total and names Against NC', async ({ pag
   );
   expect(text, 'it must name Against NC as the route').toMatch(/Raise the return on Against NC/i);
   expect(text, 'the deviation must be listed by its number').toContain(ncCode);
-  expect(text, 'the deviation must be listed with 5 pcs').toMatch(
-    new RegExp(`${SEND_QTY} pcs`),
-  );
+  expect(text, 'the deviation must be listed with 5 pcs').toMatch(new RegExp(`${SEND_QTY} pcs`));
   expect(text, 'the button must name the total and the route').toContain(
     `Send the ${SEND_QTY} back → Against NC`,
   );
@@ -208,11 +208,11 @@ test('PROOF 5 - the button lands on Against NC with the NC No. already searched'
   await qtyBoxes.first().fill(String(SEND_QTY));
   await page.waitForTimeout(2500);
 
-  await page
-    .getByRole('button', { name: `Send the ${SEND_QTY} back → Against NC` })
-    .click();
+  await page.getByRole('button', { name: `Send the ${SEND_QTY} back → Against NC` }).click();
   // A typed quantity makes the form dirty, so the screen asks before dropping it.
-  const confirm = page.getByRole('alertdialog').filter({ hasText: /Are you sure you want to exit/ });
+  const confirm = page
+    .getByRole('alertdialog')
+    .filter({ hasText: /Are you sure you want to exit/ });
   if (await confirm.count()) {
     log('PROOF 5 — the screen asked before dropping the typed quantity; pressed Exit');
     await confirm.getByRole('button', { name: 'Exit' }).click();

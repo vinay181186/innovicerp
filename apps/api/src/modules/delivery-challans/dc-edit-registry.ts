@@ -89,10 +89,7 @@ export const dcEditRegistryEntry: DocEditRegistryEntry = {
       })
       .from(deliveryChallanLines)
       .where(
-        and(
-          eq(deliveryChallanLines.deliveryChallanId, id),
-          isNull(deliveryChallanLines.deletedAt),
-        ),
+        and(eq(deliveryChallanLines.deliveryChallanId, id), isNull(deliveryChallanLines.deletedAt)),
       )
       .orderBy(asc(deliveryChallanLines.lineNo))
       .for('update');

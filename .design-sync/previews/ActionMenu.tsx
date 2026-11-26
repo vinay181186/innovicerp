@@ -8,7 +8,15 @@ const Opened = ({ children }: { children: ReactNode }) => {
     box.current?.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')?.click();
   }, []);
   return (
-    <div ref={box} style={{ minHeight: 190, display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-start' }}>
+    <div
+      ref={box}
+      style={{
+        minHeight: 190,
+        display: 'flex',
+        justifyContent: 'flex-end',
+        alignItems: 'flex-start',
+      }}
+    >
       {children}
     </div>
   );
@@ -43,5 +51,12 @@ export const Open = () => (
 );
 
 export const CustomLabel = () => (
-  <ActionMenu label="Print" icon="printer" items={[{ label: 'Job Card', onClick: noop }, { label: 'Route Card', onClick: noop }]} />
+  <ActionMenu
+    label="Print"
+    icon="printer"
+    items={[
+      { label: 'Job Card', onClick: noop },
+      { label: 'Route Card', onClick: noop },
+    ]}
+  />
 );

@@ -4,21 +4,21 @@
 
 Canonical QC menu (legacy sidebar L474–489), grouped Entry / Master / Report:
 
-| # | Menu label | nav page | legacy fn | React route | Status |
-|---|---|---|---|---|---|
-| 1 | Incoming QC | `incomingqc` | `renderIncomingQC` L23748 | — | ❌ missing |
-| 2 | NC Register | `ncregister` | `renderNCRegister` L22494 | `/nc-register` | ✅ exists (verify) |
-| 3 | CAPA | `capa` | `renderCAPA` L22779 | — | ❌ missing |
-| 4 | QC Call Register | `qcdashboard` | `renderQCDashboard` L4126 | — | ❌ missing |
-| 5 | TPI Inspection | `tpi` | `renderTPI`? | — | ❌ missing |
-| 6 | QC Process Master | `qcprocessmaster` | `renderQCProcessMaster` L23446 | `/qc-processes` | ✅ exists (verify) |
-| 7 | Report Master | `reportmaster` | `renderReportMaster` | — | ⚠️ likely Reports module |
-| 8 | QC Dashboard | `qcengineer` | `renderQCEngineerDash` L3963 | `/qc-dashboard` | ✅ exists (verify + chrome refactor) |
-| 9 | QC Command Center | `qccommand` | `renderQCCommandCenter` L18613 | — | ❌ missing |
-| 10 | SO QC Status | `soqcstatus` | `renderSOQCStatus` L18347 | — | ❌ missing |
-| 11 | QC History | `qchistory` | `renderQCHistory` L23531 | — | ❌ missing |
-| 12 | QC Documents | `qcdocs` | `renderQCDocuments` L23039 | — | ❌ missing |
-| 13 | QC Reports | `rpt_qc` | (grouped reports) | `/reports?group=QC` | ⚠️ Reports module |
+| #   | Menu label        | nav page          | legacy fn                      | React route         | Status                               |
+| --- | ----------------- | ----------------- | ------------------------------ | ------------------- | ------------------------------------ |
+| 1   | Incoming QC       | `incomingqc`      | `renderIncomingQC` L23748      | —                   | ❌ missing                           |
+| 2   | NC Register       | `ncregister`      | `renderNCRegister` L22494      | `/nc-register`      | ✅ exists (verify)                   |
+| 3   | CAPA              | `capa`            | `renderCAPA` L22779            | —                   | ❌ missing                           |
+| 4   | QC Call Register  | `qcdashboard`     | `renderQCDashboard` L4126      | —                   | ❌ missing                           |
+| 5   | TPI Inspection    | `tpi`             | `renderTPI`?                   | —                   | ❌ missing                           |
+| 6   | QC Process Master | `qcprocessmaster` | `renderQCProcessMaster` L23446 | `/qc-processes`     | ✅ exists (verify)                   |
+| 7   | Report Master     | `reportmaster`    | `renderReportMaster`           | —                   | ⚠️ likely Reports module             |
+| 8   | QC Dashboard      | `qcengineer`      | `renderQCEngineerDash` L3963   | `/qc-dashboard`     | ✅ exists (verify + chrome refactor) |
+| 9   | QC Command Center | `qccommand`       | `renderQCCommandCenter` L18613 | —                   | ❌ missing                           |
+| 10  | SO QC Status      | `soqcstatus`      | `renderSOQCStatus` L18347      | —                   | ❌ missing                           |
+| 11  | QC History        | `qchistory`       | `renderQCHistory` L23531       | —                   | ❌ missing                           |
+| 12  | QC Documents      | `qcdocs`          | `renderQCDocuments` L23039     | —                   | ❌ missing                           |
+| 13  | QC Reports        | `rpt_qc`          | (grouped reports)              | `/reports?group=QC` | ⚠️ Reports module                    |
 
 > Note: React `/qc-dashboard` = legacy **qcengineer** ("QC Dashboard", `_pageTitles` L2219), NOT `qcdashboard` ("QC Call Register"). The Call Register is a distinct unbuilt page.
 
@@ -56,6 +56,7 @@ Built: Incoming QC · CAPA · QC Call Register · TPI · Report Master · QC Das
 Documented partials (not blockers): QC Command Center FPY/Rework tabs (need per-op QC-attempt index) + Pick-Up/Assign (qc_assignments table); SO QC Status GRN-QC + Docs stages.
 
 ### ⚠️ Concurrent-migration blocker (2026-05-23)
+
 All Wave 3-4 pages are migration-bearing or depend on migration-bearing infra
 (`capa_records`, `tpi_records`, qc-doc storage). A **parallel session is
 actively editing `schema.ts` + adding migrations for the Design module** (landed
@@ -64,5 +65,6 @@ actively editing `schema.ts` + adding migrations for the Design module** (landed
 The 4 migration-free QC pages (Waves 1-2) are complete.
 
 ## Cross-cutting
+
 - Reuse the existing `qc-dashboard` service aggregation pattern before adding new endpoints.
 - QC Reports + Report Master likely fold into the existing `reports` module rather than new pages.

@@ -226,7 +226,10 @@ test('A219C1-00 — guard: this is the TEST stack', async ({ page }) => {
     'innovic-erp.pages.dev',
   );
   const s = readState();
-  writeState({ apiBase: api!, stamp: s.stamp ?? new Date().toISOString().slice(5, 16).replace(/[-:T]/g, '') });
+  writeState({
+    apiBase: api!,
+    stamp: s.stamp ?? new Date().toISOString().slice(5, 16).replace(/[-:T]/g, ''),
+  });
   log(`web ${page.url()} · api ${api}`);
 });
 
@@ -246,7 +249,9 @@ test('A219C1-10 — build: item + Route Card with ONE outsource op', async ({ pa
     await page.locator('#code').waitFor({ timeout: 60_000 });
     await page.locator('#code').fill(code);
     await page.locator('#name').fill(`${TAG}ADR-219 Case 1 test part`);
-    await page.locator('#description').fill(`${TAG}created by the ADR-219 Case 1 e2e run — safe to delete`);
+    await page
+      .locator('#description')
+      .fill(`${TAG}created by the ADR-219 Case 1 e2e run — safe to delete`);
     await page.locator('#material').fill(`${TAG}EN24`);
     await page.locator('#uom').selectOption('NOS');
     await page.locator('#itemType').selectOption('component');
@@ -315,7 +320,10 @@ test('A219C1-11 — build: SO 10 → Plan → Production Order → Job Card', as
     const client = page.getByPlaceholder(/Type customer code or name/i);
     await client.click();
     await client.fill(CLIENT_SEARCH);
-    const copt = page.locator('[role="option"], li').filter({ hasText: new RegExp(CLIENT_SEARCH) }).first();
+    const copt = page
+      .locator('[role="option"], li')
+      .filter({ hasText: new RegExp(CLIENT_SEARCH) })
+      .first();
     await copt.waitFor({ timeout: 45_000 });
     await copt.click();
     await page.locator('#clientPoNo').fill(`${TAG}CPO-${stamp}`);
@@ -327,7 +335,11 @@ test('A219C1-11 — build: SO 10 → Plan → Production Order → Job Card', as
     await iopt.click();
     await page.getByPlaceholder('Qty', { exact: true }).first().fill(String(QTY));
     await page.getByLabel('Drawing Rev, line 1', { exact: true }).fill('A');
-    await page.getByPlaceholder('₹ Rate', { exact: true }).first().fill('10').catch(() => {});
+    await page
+      .getByPlaceholder('₹ Rate', { exact: true })
+      .first()
+      .fill('10')
+      .catch(() => {});
     await page.locator('#internalSoNo').fill(internal);
     await page.waitForTimeout(500);
     await shot(page, '11a-so-form');
@@ -355,7 +367,10 @@ test('A219C1-11 — build: SO 10 → Plan → Production Order → Job Card', as
     await clickRowMenuItem(page, row!, /^Plan \d/);
     await page.locator('#create-plan-qty').waitFor({ state: 'visible', timeout: 60_000 });
     await page.locator('#create-plan-qty').fill(String(QTY));
-    await page.locator('#create-plan-remark').fill(`${TAG}ADR-219 Case 1 plan`).catch(() => {});
+    await page
+      .locator('#create-plan-remark')
+      .fill(`${TAG}ADR-219 Case 1 plan`)
+      .catch(() => {});
     await page.waitForTimeout(400);
     await shot(page, '11b-create-plan');
     await page.getByRole('button', { name: /^Save Plan$/ }).click();
@@ -384,7 +399,10 @@ test('A219C1-11 — build: SO 10 → Plan → Production Order → Job Card', as
     await page.waitForTimeout(1500);
     await page.locator('#po-order-qty').fill(String(QTY));
     await page.locator('#po-target-date').fill(today());
-    await page.locator('#po-remarks').fill(`${TAG}ADR-219 Case 1 production order`).catch(() => {});
+    await page
+      .locator('#po-remarks')
+      .fill(`${TAG}ADR-219 Case 1 production order`)
+      .catch(() => {});
     const rm = page.locator('#po-rm-available');
     if (!(await rm.isChecked())) await rm.check();
     await page.waitForTimeout(600);
@@ -414,7 +432,10 @@ test('A219C1-11 — build: SO 10 → Plan → Production Order → Job Card', as
   if (!s.jcUrl) {
     await page.goto('/job-cards', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2500);
-    await page.getByPlaceholder(/Search JC no\./i).first().fill(s.jcCode!);
+    await page
+      .getByPlaceholder(/Search JC no\./i)
+      .first()
+      .fill(s.jcCode!);
     await page.waitForTimeout(2500);
     const cell = page.getByText(s.jcCode!, { exact: true }).first();
     await cell.waitFor({ timeout: 60_000 });
@@ -485,7 +506,9 @@ test('A219C1-12 — build: JW PO → outward DC (all 10) → GRN 10', async ({ p
         timeout: 90_000,
       });
     }
-    log('job-work PO status: ' + (await page.locator('.panel-hdr .badge').first().innerText()).trim());
+    log(
+      'job-work PO status: ' + (await page.locator('.panel-hdr .badge').first().innerText()).trim(),
+    );
   }
 
   // ── the outward challan: ALL TEN pieces, so the order owes nothing fresh ──
@@ -545,8 +568,9 @@ test('A219C1-12 — build: JW PO → outward DC (all 10) → GRN 10', async ({ p
 
   // The order has now sent everything it ordered — the precondition the whole
   // case rests on.
-  const po = (await apiGet<{ items: PoListItem[] }>(page, '/purchase-orders?limit=200&offset=0'))
-    .items.find((p) => p.code === s.jwpoCode);
+  const po = (
+    await apiGet<{ items: PoListItem[] }>(page, '/purchase-orders?limit=200&offset=0')
+  ).items.find((p) => p.code === s.jwpoCode);
   expect(po, 'the job-work PO is in the list the picker reads').toBeTruthy();
   log(
     `${po!.code}: type=${po!.poType} status=${po!.status} sent ${po!.dcSentQty}/${po!.totalQty} ` +
@@ -576,7 +600,9 @@ test('A219C1-13 — build: Incoming QC 6 ok / 4 failed → deviation → Return 
       .filter({ has: page.getByText('QC Pending', { exact: true }) })
       .first();
     const row = pending.locator('tbody tr').filter({ hasText: s.grnCode! }).first();
-    await expect(row, 'a pending Incoming QC row for ' + s.grnCode).toBeVisible({ timeout: 90_000 });
+    await expect(row, 'a pending Incoming QC row for ' + s.grnCode).toBeVisible({
+      timeout: 90_000,
+    });
     await clickRowMenuItem(page, row, /^Inspect/);
     await expect(page).toHaveURL(/qc-call-register\?line=/, { timeout: 90_000 });
     await page.waitForTimeout(4000);
@@ -587,20 +613,38 @@ test('A219C1-13 — build: Incoming QC 6 ok / 4 failed → deviation → Return 
     const qcBy = page.getByPlaceholder(/Select QC person/);
     if (!(await qcBy.inputValue()).trim()) {
       await qcBy.click();
-      const opt = page.locator('[role="option"]').filter({ hasNotText: /Loading/i }).first();
+      const opt = page
+        .locator('[role="option"]')
+        .filter({ hasNotText: /Loading/i })
+        .first();
       await opt.waitFor({ state: 'visible', timeout: 45_000 });
       await opt.click();
       await page.waitForTimeout(400);
     }
-    await page.locator('.form-grp').filter({ hasText: /Accept Qty/ }).locator('input').fill(String(ACC));
-    await page.locator('.form-grp').filter({ hasText: /Reject Qty/ }).locator('input').fill(String(REJ));
-    await page.getByPlaceholder(/Observations/).fill(`${TAG}ADR-219 Case 1 — ${REJ} fail, to go back`);
+    await page
+      .locator('.form-grp')
+      .filter({ hasText: /Accept Qty/ })
+      .locator('input')
+      .fill(String(ACC));
+    await page
+      .locator('.form-grp')
+      .filter({ hasText: /Reject Qty/ })
+      .locator('input')
+      .fill(String(REJ));
+    await page
+      .getByPlaceholder(/Observations/)
+      .fill(`${TAG}ADR-219 Case 1 — ${REJ} fail, to go back`);
     await shot(page, '13a-incoming-qc');
     await page.getByRole('button', { name: /Submit Inspection/i }).click();
     await page.waitForTimeout(2500);
     const alerts = page.getByRole('alert');
     if (await alerts.count()) {
-      const t = (await alerts.first().innerText().catch(() => '')).trim();
+      const t = (
+        await alerts
+          .first()
+          .innerText()
+          .catch(() => '')
+      ).trim();
       if (t) throw new Error('Incoming QC refused: ' + t);
     }
     await expect(header).toBeHidden({ timeout: 180_000 });
@@ -645,7 +689,9 @@ test('A219C1-13 — build: Incoming QC 6 ok / 4 failed → deviation → Return 
     log('Dispose offers: [' + offered.join(', ') + ']');
     await page.locator('#dispAction').selectOption('return_to_vendor');
     await page.locator('#dispQty').fill(String(REJ));
-    await page.locator('#dispRemarks').fill(`${TAG}ADR-219 Case 1 — send ${REJ} back to the vendor`);
+    await page
+      .locator('#dispRemarks')
+      .fill(`${TAG}ADR-219 Case 1 — send ${REJ} back to the vendor`);
     await shot(page, '13b-dispose');
     await page.getByRole('button', { name: /^Save Disposition$/ }).click();
     for (let i = 0; i < 30; i += 1) {
@@ -668,8 +714,9 @@ test('A219C1-13 — build: Incoming QC 6 ok / 4 failed → deviation → Return 
   expect(nc.deliveryChallanId, 'no return challan has been raised yet').toBeFalsy();
 
   // And the picker's own figures, at header grain.
-  const po = (await apiGet<{ items: PoListItem[] }>(page, '/purchase-orders?limit=200&offset=0'))
-    .items.find((p) => p.code === s.jwpoCode)!;
+  const po = (
+    await apiGet<{ items: PoListItem[] }>(page, '/purchase-orders?limit=200&offset=0')
+  ).items.find((p) => p.code === s.jwpoCode)!;
   log(
     `END STATE ${po.code}: sent ${po.dcSentQty}/${po.totalQty} · ` +
       `Return Challan Pending ${po.rtvAwaitingChallanQty ?? 0}`,
@@ -688,7 +735,9 @@ test('A219C1-20 — PROOF 1: fully-sent order with pieces waiting is STILL liste
   const s = readState();
   await page.goto('/delivery-challans/new', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('#dc-source')).toBeVisible({ timeout: 90_000 });
-  expect(await page.locator('#dc-source').inputValue(), 'Against PO is the default source').toBe('po');
+  expect(await page.locator('#dc-source').inputValue(), 'Against PO is the default source').toBe(
+    'po',
+  );
   await page.locator('#dc-po-search').fill(s.jwpoCode!);
   await page.waitForTimeout(2500);
 
@@ -720,8 +769,16 @@ test('A219C1-20 — PROOF 1: fully-sent order with pieces waiting is STILL liste
       `"Sent / Order Qty" cell="${sentCell}"; note above the table shown=${noteShown}`
     : `row for ${s.jwpoCode} is NOT in the picker — the defect ADR-219 set out to fix`;
   const ok =
-    listed && rowClass.includes('row-pending') && pendingCell === String(REJ) && sentCell === `${SENT} / ${QTY}`;
-  proof('PROOF 1', 'the order is still in the picker, marked, Return Challan Pending = 4', ok, actual);
+    listed &&
+    rowClass.includes('row-pending') &&
+    pendingCell === String(REJ) &&
+    sentCell === `${SENT} / ${QTY}`;
+  proof(
+    'PROOF 1',
+    'the order is still in the picker, marked, Return Challan Pending = 4',
+    ok,
+    actual,
+  );
 
   expect(listed, 'the fully-sent order with pieces waiting is listed').toBeTruthy();
   expect(headerPresent, 'the picker has a "Return Challan Pending" column').toBeTruthy();
@@ -804,7 +861,10 @@ test('A219C1-22 — PROOF 3: the orange panel states 4 pcs and sends the user to
   await shot(page, '22-form-as-opened');
 
   const wantTitle = `${REJ} pcs on this PO must go back to the vendor — send them separately`;
-  const panel = page.getByRole('alert').filter({ hasText: /must go back to the vendor/i }).first();
+  const panel = page
+    .getByRole('alert')
+    .filter({ hasText: /must go back to the vendor/i })
+    .first();
   const shownOnOpen = (await panel.count()) > 0;
 
   // DIAGNOSTIC ONLY (never an assertion, never saved): if the panel is not
@@ -828,8 +888,7 @@ test('A219C1-22 — PROOF 3: the orange panel states 4 pcs and sends the user to
     /not\s*part of what this screen offers: Against PO sends fresh pieces only/i.test(panelText);
   const listsDeviation = panelText.includes(s.ncCode!) && new RegExp(`${REJ} pcs`).test(panelText);
   const buttonName = `Send the ${REJ} back → Against NC`;
-  const hasButton =
-    (await page.getByRole('button', { name: buttonName }).count()) > 0;
+  const hasButton = (await page.getByRole('button', { name: buttonName }).count()) > 0;
   const mentionsJwpoDc = /Against JW PO \/ DC/i.test(panelText);
 
   const ok =
@@ -852,7 +911,10 @@ test('A219C1-22 — PROOF 3: the orange panel states 4 pcs and sends the user to
 
   expect(shownOnOpen, 'the warning panel is shown as soon as the order is opened').toBeTruthy();
   expect(panelText, 'panel title').toContain(wantTitle);
-  expect(hasNotPartLine, 'the panel says those pieces are not part of what this screen offers').toBeTruthy();
+  expect(
+    hasNotPartLine,
+    'the panel says those pieces are not part of what this screen offers',
+  ).toBeTruthy();
   expect(listsDeviation, `the panel lists ${s.ncCode} with ${REJ} pcs`).toBeTruthy();
   expect(hasButton, `the panel has a "${buttonName}" button`).toBeTruthy();
   expect(mentionsJwpoDc, '"Against JW PO / DC" must NOT appear in the panel').toBeFalsy();
@@ -917,7 +979,10 @@ test('A219C1-23 — PROOF 4: a fully-finished job-work order is NOT in the picke
     `control order ${finished.code} (sent ${finished.dcSentQty}/${finished.totalQty}, nothing waiting): ` +
       `rows matching it in the picker = ${count}; "no PO open for dispatch" message shown = ${empty}`,
   );
-  expect(count, finished.code + ' must NOT be offered — it owes nothing and has nothing waiting').toBe(0);
+  expect(
+    count,
+    finished.code + ' must NOT be offered — it owes nothing and has nothing waiting',
+  ).toBe(0);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1018,7 +1083,9 @@ test('A219C1-25 — PROOF 6: Against NC fills in JW PO No., Sent on DC No. and a
       .filter({ has: page.getByText(label, { exact: true }) })
       .last();
     const t = (await cell.innerText()).replace(/\s+/g, ' ').trim();
-    return t.replace(new RegExp('^' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*'), '').trim();
+    return t
+      .replace(new RegExp('^' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*'), '')
+      .trim();
   };
   const jwpo = await fact('JW PO No.');
   const sentOn = await fact('Sent on DC No.');

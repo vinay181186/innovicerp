@@ -4,7 +4,13 @@ export const DashboardCounts = () => (
   <StatStrip
     items={[
       { key: 'open', label: 'Open SOs', count: 42, color: 'var(--blue)' },
-      { key: 'due', label: 'Due This Week', count: 9, color: 'var(--amber)', sub: 'next on 07-11-2026' },
+      {
+        key: 'due',
+        label: 'Due This Week',
+        count: 9,
+        color: 'var(--amber)',
+        sub: 'next on 07-11-2026',
+      },
       {
         key: 'late',
         label: 'Overdue',
@@ -22,7 +28,14 @@ export const ReportFilterOn = () => (
   <StatStrip
     items={[
       { key: 'all', label: 'All Dispatches', count: 180, onClick: () => {} },
-      { key: 'ontime', label: 'On Time', count: 142, color: 'var(--green)', active: true, onClick: () => {} },
+      {
+        key: 'ontime',
+        label: 'On Time',
+        count: 142,
+        color: 'var(--green)',
+        active: true,
+        onClick: () => {},
+      },
       { key: 'late', label: 'Late', count: 28, color: 'var(--red)', onClick: () => {} },
       { key: 'short', label: 'Short Closed', count: 10, onClick: () => {} },
     ]}
