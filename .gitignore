@@ -35,6 +35,8 @@ _*
 # four agents read at runtime, and a bare `_*` would keep ignoring it.
 !.claude/agents/
 !.claude/agents/_*.md
+# Master copy of the agent-loop locks (hooks, tests, guides) — live copy is ~/.claude.
+!.claude/agent-loop/
 # But drizzle-kit's _journal.json is required state — override the rule:
 !**/meta/_journal.json
 # TanStack Router conventions: pathless layout routes are prefixed with `_`
