@@ -127,7 +127,7 @@ function checkReplacement(
  * §20.4: written with `WHERE id = ? AND updated_at = <locked value>` and the
  * row count checked. The new file goes into item_revision_drawings ('replaced',
  * with the reason; the earlier rows keep the old file); the SO / JWSO line
- * copies (drawing_file_path / drawing_no) follow, and every SO line whose copy
+ * copies follow (drawing_file_path always; drawing_no only where the line's is blank — ADR-323), and every SO line whose copy
  * changes gets its so_line_drawing_revisions row, as a line save writes it.
  */
 async function applyDrawingReplacement(
@@ -195,7 +195,7 @@ async function applyDrawingReplacement(
                       WHERE r.so_line_id = l.id), -1) + 1,
            l.revision,
            CASE WHEN NULLIF(btrim(l.drawing_file_path), '') IS NULL THEN 'added' ELSE 'replaced' END,
-           ${newPath}, ${newNo}, ${row.itemCode}, ${user.id}
+           ${newPath}, COALESCE(NULLIF(btrim(l.drawing_no), ''), ${newNo}), ${row.itemCode}, ${user.id}
       FROM public.sales_order_lines l
      WHERE l.company_id = ${companyId}::uuid
        AND l.item_revision_id = ${id}::uuid
@@ -204,12 +204,18 @@ async function applyDrawingReplacement(
 
   const so = (await tx.execute(sql`
     UPDATE public.sales_order_lines
-       SET drawing_file_path = ${newPath}, drawing_no = ${newNo}, updated_by = ${user.id}
+       SET drawing_file_path = ${newPath},
+           -- ADR-323: a line keeps its own typed Drawing No.; the register's only fills a blank.
+           drawing_no = COALESCE(NULLIF(btrim(drawing_no), ''), ${newNo}),
+           updated_by = ${user.id}
      WHERE company_id = ${companyId}::uuid AND item_revision_id = ${id}::uuid AND deleted_at IS NULL
     RETURNING id`)) as unknown as { id: string }[];
   const jw = (await tx.execute(sql`
     UPDATE public.job_work_order_lines
-       SET drawing_file_path = ${newPath}, drawing_no = ${newNo}, updated_by = ${user.id}
+       SET drawing_file_path = ${newPath},
+           -- ADR-323: a line keeps its own typed Drawing No.; the register's only fills a blank.
+           drawing_no = COALESCE(NULLIF(btrim(drawing_no), ''), ${newNo}),
+           updated_by = ${user.id}
      WHERE company_id = ${companyId}::uuid AND item_revision_id = ${id}::uuid AND deleted_at IS NULL
     RETURNING id`)) as unknown as { id: string }[];
 

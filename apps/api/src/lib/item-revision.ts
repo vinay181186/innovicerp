@@ -227,7 +227,12 @@ export async function findItemRevision(
   companyId: string,
   itemId: string,
   rev: string,
-): Promise<{ id: string; drawingFilePath: string | null; drawingNo: string | null } | null> {
+): Promise<{
+  id: string;
+  drawingFilePath: string | null;
+  drawingNo: string | null;
+  releaseStatus: string;
+} | null> {
   const r = normalizeRevision(rev);
   if (r === '') return null;
   const [row] = await tx
@@ -235,6 +240,7 @@ export async function findItemRevision(
       id: itemRevisions.id,
       drawingFilePath: itemRevisions.drawingFilePath,
       drawingNo: itemRevisions.drawingNo,
+      releaseStatus: itemRevisions.releaseStatus,
     })
     .from(itemRevisions)
     .where(

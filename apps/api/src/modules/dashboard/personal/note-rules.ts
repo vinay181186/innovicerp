@@ -563,7 +563,9 @@ export function raiserNameSql(me: string, alias = 'a'): SQL {
       SELECT CASE WHEN ${col} <> ${me}::uuid
                THEN COALESCE(NULLIF(btrim(ru.full_name), ''), ru.email) END
       FROM ${sql.raw(ro.table)} rd LEFT JOIN public.users ru ON ru.id = ${col}
-      WHERE rd.id = ${id} LIMIT 1)`;
+      WHERE rd.id = ${id}
+      -- A Drawing Rev has one row per line raiser: prefer the caller (no name).
+      ORDER BY (${col} = ${me}::uuid) DESC LIMIT 1)`;
   });
   return sql`(CASE ${ent} ${sql.join(whens, sql` `)} END)`;
 }

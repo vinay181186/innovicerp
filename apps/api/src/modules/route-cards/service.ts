@@ -59,6 +59,8 @@ import {
   isRouteCardLocked,
   itemRevLabel,
   normalizeRevision,
+  normalizeRevStatus,
+  revNotReleasedMessage,
   type JcRouteCardWriteBack,
   opSrNo,
   ROUTE_CARD_APPROVAL_LABEL,
@@ -1099,6 +1101,9 @@ export async function createRouteCard(
         const revLabel = itemRevLabel(item.code, revText);
         const reg = await findItemRevision(tx, companyId, input.itemId, revText);
         if (!reg) throw new ValidationError(routeCardRevMissingMessage(revLabel));
+        if (normalizeRevStatus(reg.releaseStatus) === 'obsolete') {
+          throw new ValidationError(revNotReleasedMessage(revLabel, 'obsolete'));
+        }
         if (!reg.drawingFilePath?.trim()) {
           throw new ValidationError(routeCardDrawingMissingMessage(revLabel));
         }

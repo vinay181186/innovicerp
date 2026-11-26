@@ -340,7 +340,7 @@ function DrawingPage(): React.JSX.Element {
       {acting ? (
         <RevActionDialog target={target} action={acting} onClose={() => setActing(null)} />
       ) : null}
-      {replacing ? (
+      {replacing && uploadLabel ? (
         <ReplaceDrawingDialog
           revision={rev}
           firstFile={!path}

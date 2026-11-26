@@ -132,10 +132,14 @@ function branches(companyId: string, s: ApproverScope): SQL[] {
   }
   if (s.drawings) {
     out.push(sql`
-      SELECT 'rev', al.id::text, 'rev', COALESCE(al.ref_id, ''), al.entity_id::text, al.entity,
-        NULL::text, 'Drawing to verify'::text, 'approved'::text,
-        COALESCE(NULLIF(btrim(al.user_full_name), ''), ${nameOf('u')}, al.user_name),
-        al.ts, al.reason
+      -- Every column aliased: this branch is the FIRST one for a caller whose
+      -- only approve right is the Drawing Register Approve tick (ADR-323).
+      SELECT 'rev' AS kind, al.id::text AS id, 'rev' AS type_key,
+        COALESCE(al.ref_id, '') AS doc_code, al.entity_id::text AS doc_id, al.entity AS entity,
+        NULL::text AS doc_type, 'Drawing to verify'::text AS request, 'approved'::text AS decision,
+        COALESCE(NULLIF(btrim(al.user_full_name), ''), ${nameOf('u')}, al.user_name)
+          AS decided_by_name,
+        al.ts AS decided_at, al.reason AS reason
       FROM public.activity_log al
       LEFT JOIN public.users u ON u.id = al.user_id
       WHERE al.company_id = ${companyId}::uuid

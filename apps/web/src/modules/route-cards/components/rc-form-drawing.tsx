@@ -78,7 +78,12 @@ export function useRcItemRev(args: {
   });
   const cleaned = cleanDrawingRev(drawingRev);
   // Only an answer for the Rev now typed counts (the look-up is debounced).
-  const answered = Boolean(isMake && cleaned && lookup.data);
+  // A found Rev must be the one now typed: during the debounce the previous
+  // answer is still in hand and must not switch Save on.
+  const found = lookup.data?.revision ?? null;
+  const answered = Boolean(
+    isMake && cleaned && lookup.data && (!found || found.drawingRev.toUpperCase() === cleaned),
+  );
   const rev = answered ? (lookup.data?.revision ?? null) : null;
   const blockingCard =
     isMake && rev?.routeCardId && rev.routeCardId !== routeCard?.id
