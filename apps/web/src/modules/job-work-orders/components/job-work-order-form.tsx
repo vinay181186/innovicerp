@@ -51,8 +51,11 @@ import { QuickAddClient } from '@/modules/clients/components/quick-add-client';
 import { useItemsList } from '@/modules/items/api';
 import {
   drawingRevChanged,
+  isRevChangeReasonError,
+  REV_CHANGED_INPUT_STYLE,
   revChangeReasonError,
-  RevChangeReasonInput,
+  RevChangeReasonRow,
+  RevReasonGoToButton,
 } from '@/modules/item-revisions/components/rev-change-reason';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
@@ -987,13 +990,15 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const errorBanners = (
     <>
       {lineError ? (
-        <Banner tone="error" role="alert" flush={standalone}>
+        <Banner key={lineError} tone="error" role="alert" flush={standalone}>
           {lineError}
+          {isRevChangeReasonError(lineError) ? <RevReasonGoToButton /> : null}
         </Banner>
       ) : null}
       {props.submitError ? (
-        <Banner tone="error" role="alert" flush={standalone}>
+        <Banner key={props.submitError} tone="error" role="alert" flush={standalone}>
           {props.submitError}
+          {isRevChangeReasonError(props.submitError) ? <RevReasonGoToButton /> : null}
         </Banner>
       ) : null}
     </>
@@ -1525,6 +1530,12 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                   wl?.sourceBomMasterId,
                   wl?.remarks,
                 ].filter((v) => typeof v === 'string' && v.trim() !== '').length;
+                // ADR-289: a saved line whose Drawing Rev was changed opens the
+                // orange "Reason for Rev change" strip row under it.
+                const savedLine = wl?.id ? savedLineById.get(wl.id) : undefined;
+                const revChanged = Boolean(
+                  savedLine?.revision && drawingRevChanged(savedLine.revision, wl?.revision),
+                );
                 return (
                   <Fragment key={field.id}>
                     <tr>
@@ -1595,7 +1606,10 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                           autoComplete="off"
                           placeholder="Drawing Rev"
                           maxLength={32}
-                          style={{ textTransform: 'uppercase' }}
+                          style={{
+                            textTransform: 'uppercase',
+                            ...(revChanged ? REV_CHANGED_INPUT_STYLE : {}),
+                          }}
                           pattern={REV_INPUT_PATTERN}
                           title={REV_INPUT_TITLE}
                           {...upperCaseRevField(register(`lines.${idx}.revision` as const))}
@@ -1606,16 +1620,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                           itemId={wl?.itemId}
                           rev={watch(`lines.${idx}.revision` as const)}
                         />
-                        {(() => {
-                          const savedRev = wl?.id ? savedLineById.get(wl.id)?.revision : undefined;
-                          return savedRev && drawingRevChanged(savedRev, wl?.revision) ? (
-                            <RevChangeReasonInput
-                              lineNo={idx + 1}
-                              savedRev={savedRev}
-                              {...register(`lines.${idx}.revChangeReason` as const)}
-                            />
-                          ) : null;
-                        })()}
                       </td>
                       <td className="td-ctr" title={inUse ? IN_USE_TITLE : undefined}>
                         {/* onValid sends the SAVED UOM for a line in use, so the
@@ -1701,6 +1705,16 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                         </span>
                       </td>
                     </tr>
+                    {revChanged && savedLine ? (
+                      <RevChangeReasonRow
+                        colSpan={colCount}
+                        lineNo={savedLine.lineNo}
+                        savedRev={savedLine.revision}
+                        newRev={String(wl?.revision ?? '')}
+                        reason={wl?.revChangeReason}
+                        registration={register(`lines.${idx}.revChangeReason` as const)}
+                      />
+                    ) : null}
                     {isOpen ? (
                       <tr>
                         <td colSpan={colCount} style={{ background: 'var(--bg2)' }}>

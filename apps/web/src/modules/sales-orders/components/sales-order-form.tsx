@@ -88,8 +88,11 @@ import { QuickAddClient } from '@/modules/clients/components/quick-add-client';
 import { useItemsList } from '@/modules/items/api';
 import {
   drawingRevChanged,
+  isRevChangeReasonError,
+  REV_CHANGED_INPUT_STYLE,
   revChangeReasonError,
-  RevChangeReasonInput,
+  RevChangeReasonRow,
+  RevReasonGoToButton,
 } from '@/modules/item-revisions/components/rev-change-reason';
 import { useNextSoCode, useSoNoCheck } from '../api';
 import { parseSoLineFile } from '../lib/import-export';
@@ -1546,6 +1549,15 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                       const ln = watchedLines?.[idx];
                       const amt = lineBasicValue(ln?.orderQty, ln?.rate);
                       const open = openLines.has(field.id);
+                      // ADR-289: a saved line whose Drawing Rev was changed opens
+                      // the orange "Reason for Rev change" strip row under it.
+                      const savedRev =
+                        props.mode === 'edit' && ln?.id
+                          ? props.detail.lines.find((d) => d.id === ln.id)?.revision
+                          : undefined;
+                      const revChanged = Boolean(
+                        savedRev && drawingRevChanged(savedRev, ln?.revision),
+                      );
                       return (
                         <Fragment key={field.id}>
                           <tr>
@@ -1586,7 +1598,10 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                                   autoComplete="off"
                                   aria-label={`Drawing Rev, line ${idx + 1}`}
                                   maxLength={32}
-                                  style={{ textTransform: 'uppercase' }}
+                                  style={{
+                                    textTransform: 'uppercase',
+                                    ...(revChanged ? REV_CHANGED_INPUT_STYLE : {}),
+                                  }}
                                   pattern={REV_INPUT_PATTERN}
                                   title={REV_INPUT_TITLE}
                                   {...upperCaseRevField(register(`lines.${idx}.revision` as const))}
@@ -1598,19 +1613,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                                   rev={watch(`lines.${idx}.revision` as const)}
                                 />
                               </div>
-                              {(() => {
-                                const savedRev =
-                                  props.mode === 'edit' && ln?.id
-                                    ? props.detail.lines.find((d) => d.id === ln.id)?.revision
-                                    : undefined;
-                                return savedRev && drawingRevChanged(savedRev, ln?.revision) ? (
-                                  <RevChangeReasonInput
-                                    lineNo={idx + 1}
-                                    savedRev={savedRev}
-                                    {...register(`lines.${idx}.revChangeReason` as const)}
-                                  />
-                                ) : null;
-                              })()}
                             </td>
                             {/* Auto-filled from the item master — read-only (set by pickItem). */}
                             <td>
@@ -1710,6 +1712,16 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                               </div>
                             </td>
                           </tr>
+                          {revChanged && savedRev ? (
+                            <RevChangeReasonRow
+                              colSpan={10}
+                              lineNo={idx + 1}
+                              savedRev={savedRev}
+                              newRev={String(ln?.revision ?? '')}
+                              reason={ln?.revChangeReason}
+                              registration={register(`lines.${idx}.revChangeReason` as const)}
+                            />
+                          ) : null}
                           {open ? (
                             <tr>
                               <td colSpan={10} style={{ background: 'var(--bg3)' }}>
@@ -1927,7 +1939,10 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           summaryErrors.length > 0 || hasFieldErrors ? (
             <Banner tone="error" role="alert" flush>
               {summaryErrors.map((m) => (
-                <div key={m}>{m}</div>
+                <div key={m}>
+                  {m}
+                  {isRevChangeReasonError(m) ? <RevReasonGoToButton /> : null}
+                </div>
               ))}
               {hasFieldErrors ? (
                 <div>Some fields are missing or wrong — see the red notes above.</div>
