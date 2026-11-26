@@ -18,7 +18,7 @@ import { Icon } from '@/ui/core';
 import { createRoute, useRouter } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
-import { fileNameFromPath } from '@/components/shared/file-preview-modal';
+import { fileNameFromPath, useFullscreen } from '@/components/shared/file-preview-modal';
 import {
   canDownloadDrawings,
   canPrintDrawings,
@@ -85,6 +85,8 @@ function DrawingPage(): React.JSX.Element {
   const mayRelease = canReleaseDrawings(eff, me?.role);
   const [acting, setActing] = useState<RevStatusAction | null>(null);
   const [replacing, setReplacing] = useState(false);
+  const fs = useFullscreen<HTMLDivElement>();
+  const [showDetails, setShowDetails] = useState(false);
 
   if (isLoading) return <PageState state="loading" message="Loading drawing…" />;
   if (!rev || hardError(query)) {
@@ -107,6 +109,14 @@ function DrawingPage(): React.JSX.Element {
   const corrections = rev.corrections ?? [];
   // ADR-319 — also on a Rev with no file: "Upload drawing…" gives it its first file.
   const mayReplace = rights.replace && rev.releaseStatus !== 'obsolete';
+  const fileKind = path ? drawingFileKind(path) : 'none';
+  const fullScreenOff = !path
+    ? 'This Drawing Rev has no drawing file'
+    : fileKind === 'none'
+      ? 'This drawing cannot be shown in the page'
+      : tab !== 'drawing'
+        ? 'Open the Drawing tab to use full screen'
+        : undefined;
 
   const onPrint = async (): Promise<void> => {
     setNotice(null);
@@ -123,7 +133,7 @@ function DrawingPage(): React.JSX.Element {
       revision: rev,
       company,
       fileUrl: view.url,
-      fileKind: path ? drawingFileKind(path) : 'none',
+      fileKind,
     });
     if (!ok) setNotice('Allow popups to print.');
   };
@@ -207,6 +217,15 @@ function DrawingPage(): React.JSX.Element {
             <Icon name="download" size={13} /> {saving ? 'Downloading…' : 'Download'}
           </button>
         ) : null}
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={fs.enter}
+          disabled={Boolean(fullScreenOff)}
+          title={fullScreenOff}
+        >
+          ⛶ Full screen
+        </button>
       </div>
 
       {notice ? (
@@ -222,34 +241,45 @@ function DrawingPage(): React.JSX.Element {
           <IdentCode>{rev.label}</IdentCode>
           <span>{rev.itemName ?? '— unknown item —'}</span>
           <IdentSep />
-          <span className="text3">Drawing No.</span>
-          <span className="mono fw-700">{rev.drawingNo ?? '—'}</span>
+          <span className="text3">Drawing Rev Status</span>
+          <RevStatusBadge status={rev.releaseStatus} />
           <IdentSep />
           <span className="text3">Route Card</span>
           <span className="mono fw-700">{rev.routeCardCode ?? '—'}</span>
           <IdentSep />
-          <span className="text3">Drawing Rev Status</span>
-          <RevStatusBadge status={rev.releaseStatus} />
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            aria-expanded={showDetails}
+            onClick={() => setShowDetails((v) => !v)}
+          >
+            {showDetails ? '▾ Details' : '▸ Details'}
+          </button>
         </DocIdent>
-        <DocIdent>
-          <span className="text3">Released On</span>
-          <span className="mono">{fmtDateTime(rev.releasedAt)}</span>
-          <IdentSep />
-          <span className="text3">Released By</span>
-          <span>{rev.releasedByName ?? '—'}</span>
-          <IdentSep />
-          <span className="text3">File check</span>
-          <span className="mono" title={rev.fileHash ?? undefined}>
-            {rev.fileHash ? rev.fileHash.slice(0, 12) : '—'}
-          </span>
-          {rev.changeNote ? (
-            <>
-              <IdentSep />
-              <span className="text3">Change Note</span>
-              <span title={rev.changeNote}>{rev.changeNote}</span>
-            </>
-          ) : null}
-        </DocIdent>
+        {showDetails ? (
+          <DocIdent>
+            <span className="text3">Drawing No.</span>
+            <span className="mono fw-700">{rev.drawingNo ?? '—'}</span>
+            <IdentSep />
+            <span className="text3">Released On</span>
+            <span className="mono">{fmtDateTime(rev.releasedAt)}</span>
+            <IdentSep />
+            <span className="text3">Released By</span>
+            <span>{rev.releasedByName ?? '—'}</span>
+            <IdentSep />
+            <span className="text3">File check</span>
+            <span className="mono" title={rev.fileHash ?? undefined}>
+              {rev.fileHash ? rev.fileHash.slice(0, 12) : '—'}
+            </span>
+            {rev.changeNote ? (
+              <>
+                <IdentSep />
+                <span className="text3">Change Note</span>
+                <span title={rev.changeNote}>{rev.changeNote}</span>
+              </>
+            ) : null}
+          </DocIdent>
+        ) : null}
       </Panel>
 
       <TabStrip
@@ -267,7 +297,14 @@ function DrawingPage(): React.JSX.Element {
       <Panel fill bodyPadding={tab === 'drawing' ? undefined : 'none'}>
         {tab === 'drawing' ? (
           path ? (
-            <DrawingViewer path={path} url={view.url} error={view.error} label={rev.label} />
+            <DrawingViewer
+              path={path}
+              url={view.url}
+              error={view.error}
+              label={rev.label}
+              boxRef={fs.ref}
+              fullscreen={fs.isFull}
+            />
           ) : (
             <div className="empty-state">Not uploaded — no drawing on file for {rev.label}.</div>
           )

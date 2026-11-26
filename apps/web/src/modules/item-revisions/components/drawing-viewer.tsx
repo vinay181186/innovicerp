@@ -5,7 +5,7 @@
 
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { fileNameFromPath } from '@/components/shared/file-preview-modal';
+import { fileNameFromPath, pdfFitUrl } from '@/components/shared/file-preview-modal';
 import { drawingViewUrl } from '@/lib/drawing-url';
 
 export type DrawingFileKind = 'pdf' | 'image' | 'none';
@@ -49,47 +49,66 @@ export function DrawingViewer({
   url,
   error,
   label,
+  boxRef,
+  fullscreen,
 }: {
   path: string;
   url: string | null;
   error: string | null;
   label: string;
+  /** The box the page's ⛶ Full screen button puts into full screen. */
+  boxRef?: React.RefObject<HTMLDivElement>;
+  fullscreen?: boolean;
 }): React.JSX.Element {
   const kind = drawingFileKind(path);
-  if (error) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--red2)' }}>
-        {error}
-      </div>
-    );
-  }
-  if (kind === 'none') {
-    return (
-      <div className="empty-state">
-        {fileNameFromPath(path)} cannot be shown in the page.
-      </div>
-    );
-  }
-  if (!url) {
-    return (
-      <div className="empty-state">
-        <Loader2 size={14} className="inline animate-spin" /> Opening drawing…
-      </div>
-    );
-  }
-  return kind === 'pdf' ? (
+  // The frame fills the panel (flex 1, no fixed minimum) so the page itself
+  // never scrolls to reach the bottom of the drawing.
+  const inner = error ? (
+    <div className="empty-state" style={{ color: 'var(--red2)' }}>
+      {error}
+    </div>
+  ) : kind === 'none' ? (
+    <div className="empty-state">{fileNameFromPath(path)} cannot be shown in the page.</div>
+  ) : !url ? (
+    <div className="empty-state">
+      <Loader2 size={14} className="inline animate-spin" /> Opening drawing…
+    </div>
+  ) : kind === 'pdf' ? (
     <iframe
       title={`Drawing ${label}`}
-      src={url}
-      style={{ width: '100%', height: '100%', minHeight: 480, border: 0 }}
+      src={pdfFitUrl(url)}
+      style={{ flex: 1, width: '100%', minHeight: 0, border: 0, display: 'block' }}
     />
   ) : (
-    <div style={{ textAlign: 'center', height: '100%', overflow: 'auto' }}>
+    <div
+      style={{
+        flex: 1,
+        minHeight: 0,
+        overflow: 'auto',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
       <img
         src={url}
         alt={`Drawing ${label}`}
         style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
       />
+    </div>
+  );
+  return (
+    <div
+      ref={boxRef}
+      style={{
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        ...(fullscreen ? { width: '100%', height: '100%', background: 'var(--text)' } : {}),
+      }}
+    >
+      {inner}
     </div>
   );
 }
