@@ -28,7 +28,6 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { drawingFileRequiredMessage } from '@innovic/shared';
 import { ConflictError, ValidationError } from '../../lib/errors';
 import { replaceItemRevisionDrawing } from '../../lib/item-revision';
 import { getWaitingApprovals } from '../approvals/waiting';
@@ -386,17 +385,14 @@ describe('ADR-290 Drawing Register fixes', () => {
       }),
     );
 
-  it('8. ADR-311: a new JWSO line of a make item without a drawing file is refused; a buy item saves', async () => {
+  it('8. ADR-321: a new JWSO line of a make item saves without a drawing file (Rev Draft); a buy item has no Rev', async () => {
     const make = await mkItem(`${P}F311`);
-    await expect(newLine(make, '1', null, 'jw')).rejects.toThrow(
-      drawingFileRequiredMessage(1, `${P}F311/1`),
-    );
-    // Refused inside the transaction → no register record was left behind.
-    const left = await db.select().from(itemRevisions).where(eq(itemRevisions.itemId, make));
-    expect(left).toHaveLength(0);
+    const res = await newLine(make, '1', null, 'jw');
+    expect(res.itemRevisionId).not.toBeNull();
+    expect((await revRow(res.itemRevisionId!)).releaseStatus).toBe('draft');
     const buy = await mkItem(`${P}B311`, 'buy');
-    const res = await newLine(buy, '1', null, 'jw');
-    expect(res.itemRevisionId).toBeNull();
+    const res2 = await newLine(buy, '1', null, 'jw');
+    expect(res2.itemRevisionId).toBeNull();
   });
 
   it('ADR-321: a new SO line of a make item saves without a drawing file; its Rev stays Draft', async () => {

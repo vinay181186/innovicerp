@@ -67,7 +67,6 @@ import {
   useRevConfirmGate,
 } from '@/modules/item-revisions/components/rev-confirm-gate';
 import { JwLineDrawingCell } from './jw-line-drawing-cell';
-import { useDrawingFileCheck } from '@/modules/item-revisions/components/drawing-rev-field';
 import {
   CustomerAddressField,
   OrderSupplyFormFields,
@@ -576,7 +575,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   // ADR-290 — "Confirmed" ticks for lines on an older Rev than the latest released.
   const revConfirm = useRevConfirmGate();
   // ADR-311 — drawing file compulsory on new / Item-or-Rev-changed lines.
-  const checkDrawingFiles = useDrawingFileCheck();
 
   // The Excel Template is built by the API (GET /import-templates/jw-lines.xlsx)
   // so its columns can carry real Excel dropdowns — SheetJS, still used here
@@ -810,34 +808,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           setLineError(msg);
           return;
         }
-      }
-    }
-    // ADR-311: drawing file compulsory on a new line (make item) and on a saved
-    // line whose Item or Rev changed — also refuses clearing the file on such a
-    // line. Saved lines where only other fields changed pass.
-    {
-      const fileMsg = await checkDrawingFiles(
-        values.lines.map((l, i) => {
-          const saved = l.id ? savedLineById.get(l.id) : undefined;
-          return {
-            lineNo: l.lineNo ?? i + 1,
-            itemId: l.itemId,
-            itemCode: l.itemCodeText,
-            rev: String(l.revision ?? ''),
-            drawingFilePath: l.drawingFilePath,
-            saved: saved
-              ? {
-                  itemId: saved.itemId,
-                  rev: saved.revision,
-                  drawingFilePath: saved.drawingFilePath,
-                }
-              : undefined,
-          };
-        }),
-      );
-      if (fileMsg) {
-        setLineError(fileMsg);
-        return;
       }
     }
     // ADR-236: POL (the customer's PO line number) is compulsory on every line,
