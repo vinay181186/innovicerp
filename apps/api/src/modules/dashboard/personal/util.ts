@@ -108,8 +108,10 @@ export function entityHref(entity: string, id: string | null, code: string | nul
       // page is /route-cards/<id>, the same path the approvals inbox links.
       return `/route-cards/${id}`;
     case 'ItemRevision':
+      // ADR-323 — the Drawing Rev page (web route drawings/$itemRevisionId).
+      return `/drawings/${id}`;
     case 'DrawingCorrection':
-      // ADR-290 — the Drawing Register opens on a search for "ABC/1".
+      // ADR-290 (old rows only) — the Drawing Register opens on a search for "ABC/1".
       return code ? `/drawing-register?search=${encodeURIComponent(code)}` : '/drawing-register';
     case 'EngineeringChange':
       // ADR-291 — the ECR detail page.

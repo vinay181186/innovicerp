@@ -1,6 +1,7 @@
 // Item + Drawing Rev register (0232) — the race and refusal rules:
 //   • two first-namers of ABC/1 at the same moment share ONE row;
-//   • a second Route Card for the same Item + Rev → 409;
+//   • a second Route Card for the same Item + Rev → 409 (ADR-323: a new card
+//     needs the Rev in the register WITH its PDF);
 //   • a different file for an ABC/1 that has one → 400;
 //   • Replace drawing with a stale updatedAt → 409 (§20.4);
 //   • D1: Rev change on a line whose Job Cards are ALL closed → 400;
@@ -161,6 +162,8 @@ describe('Item + Drawing Rev register', () => {
     await expect(rc.createRouteCard({ itemId, ops } as never, admin)).rejects.toBeInstanceOf(
       ValidationError,
     );
+    // ADR-323 — ABC/2 must be in the Drawing Register with its PDF first.
+    await resolve('2', `${P}d2.pdf`);
     const first = await rc.createRouteCard({ itemId, drawingRev: '2', ops } as never, admin);
     expect(first.drawingRev).toBe('2');
     await expect(
@@ -238,10 +241,10 @@ describe('Item + Drawing Rev register', () => {
       ),
     ).rejects.toThrow(/All Job Cards are closed/);
 
-    // ADR-290 — the target Rev must be released before open work moves to it.
+    // ADR-323 — the target Rev must not be Obsolete (Verified here).
     await db
       .update(itemRevisions)
-      .set({ releaseStatus: 'released' })
+      .set({ releaseStatus: 'verified' })
       .where(eq(itemRevisions.id, r3!.id));
 
     // One OPEN Job Card beside the closed one → it moves, the closed one stays.
@@ -339,11 +342,16 @@ describe('Item + Drawing Rev register', () => {
   it('0234: open PRO moves by plan linkage and takes the APPROVED Route Card of the new Rev', async () => {
     const r2 = await resolve('2');
     const r3 = await resolve('3');
-    // ADR-290 — the PRO moves between Revs; both must be released.
+    // ADR-323 — the PRO moves between Revs; both Verified. ABC/3 gets a PDF
+    // so a new Route Card may be made for it.
     await db
       .update(itemRevisions)
-      .set({ releaseStatus: 'released' })
+      .set({ releaseStatus: 'verified' })
       .where(inArray(itemRevisions.id, [r2!.id, r3!.id]));
+    await db
+      .update(itemRevisions)
+      .set({ drawingFilePath: `${P}d3.pdf` })
+      .where(eq(itemRevisions.id, r3!.id));
     const ops = [
       { operation: 'Turning', opType: 'process' as const, machineCodeText: 'CNC', cycleTimeMin: 5 },
     ];
@@ -456,7 +464,7 @@ describe('Item + Drawing Rev register', () => {
     const two = list.items.find((r) => r.drawingRev === '2')!;
     expect(two.routeCardCode).toBeTruthy();
     const look = await svc.lookupItemRevision({ itemId, rev: '9' }, admin);
-    // ADR-290 — Rev 9 does not exist; the item's highest released Rev is 3.
+    // ADR-323 — Rev 9 does not exist; the item's highest Verified Rev is 3.
     expect(look).toEqual({
       revision: null,
       revRequired: true,

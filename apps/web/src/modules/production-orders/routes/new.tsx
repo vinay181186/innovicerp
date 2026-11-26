@@ -70,6 +70,7 @@ import {
   usePreselectedPlan,
 } from '../api';
 import { PlanPicker } from '../components/plan-picker';
+import { RevUnverifiedNote } from '@/modules/item-revisions/components/rev-unverified-note';
 import { PoCreateOpsPanel } from '../components/po-create-ops-panel';
 import '../components/po-create.css';
 
@@ -413,6 +414,8 @@ function ProductionOrderNewPage(): React.JSX.Element {
           </>
         }
       >
+        {/* ADR-323 — orange, never blocks. */}
+        {plan ? <RevUnverifiedNote itemRevisionId={plan.itemRevisionId} /> : null}
         {/* What stops Save, under the header. */}
         {noRouteCard ? (
           <Banner tone="warn" role="alert">

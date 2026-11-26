@@ -1,19 +1,23 @@
-// ADR-290 — Drawing Register (release status) and the Released-only rule.
+// ADR-323 — Drawing Register: Unverified / Verified / Obsolete, one Verify.
 // Positive asserts on TEST:
-//   • a Rev first named on an SO line is draft ("Not released");
-//   • submit without a drawing file is refused;
-//   • Plan / PRO on a draft Rev are refused with the standard sentence; a PRO
-//     on an old (unverified) Rev is allowed;
-//   • submit → approve → release stores the file's SHA-256 and supersedes the
-//     lower released Rev of the item;
-//   • two approves at the same moment → exactly one wins, the other is 409
+//   • a Rev first named on an SO line is Unverified; its first file keeps it
+//     Unverified (no automatic step);
+//   • Verify without a drawing file is refused; Verify stores the file's
+//     SHA-256 and Verified On / By; a file replaced since the screen loaded
+//     (expectedDrawingFilePath) → 409 "The drawing changed";
+//   • two Verifies at the same moment → exactly one wins, the other is 409
 //     (CLAUDE.md §20.2);
-//   • release without the "Can release drawings" switch → 403;
-//   • Replace drawing on a released Rev files ONE correction; the file changes
-//     only when the correction is approved (new hash stored);
+//   • Replace drawing on a Verified Rev: a DIFFERENT file → Unverified (hash
+//     and Verified On / By cleared); the SAME file (same hash) → stays Verified;
+//   • Unverify / Obsolete need a reason; PRO on an Obsolete Rev is refused with
+//     the standard sentence, on an Unverified Rev it is allowed;
+//   • Home › Approvals lists an Unverified Rev WITH a PDF on an open SO line
+//     ("Drawing to verify") and drops it once Verified;
+//   • a NEW Route Card needs the Rev in the register (else refused) WITH a PDF
+//     (else refused);
 //   • drawing history refuses UPDATE (append-only trigger, 0248);
-//   • the register list and its Sort & Filter;
-//   • the BOM cascade on a draft child Rev still runs (exempt).
+//   • the register list, its status / PDF filters and Sort & Filter;
+//   • the BOM cascade on an Unverified child Rev still runs.
 // Runs on TEST only, on its own (no global setup): prefix TDRG-. Uploads three
 // small files to the drawings bucket and removes them afterwards.
 
@@ -26,7 +30,6 @@ import {
   bomMasterLines,
   bomMasterRevisions,
   bomMasters,
-  drawingCorrections,
   itemRevisionDrawings,
   itemRevisions,
   items,
@@ -41,16 +44,16 @@ import {
   salesOrders,
   users,
 } from '../../db/schema';
+import type { RevStatusAction } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { AuthorizationError, ConflictError, ValidationError } from '../../lib/errors';
+import { ConflictError, ValidationError } from '../../lib/errors';
 import { replaceItemRevisionDrawing, resolveItemRevision } from '../../lib/item-revision';
 import { supabaseAdmin } from '../../lib/supabase-admin';
-import { asAccess } from '../../lib/test-access';
 import { cascadeBomToSoLine } from '../bom-master/cascade';
+import { getWaitingApprovals } from '../approvals/waiting';
 import * as bomService from '../bom-master/service';
-import * as planService from '../plans/service';
 import * as proService from '../production-orders/service';
-import { decideDrawingCorrection } from './corrections';
+import * as rcService from '../route-cards/service';
 import { listDrawingRegister } from './register';
 import { revStatusAction } from './release';
 import * as service from './service';
@@ -123,7 +126,6 @@ async function cleanup(): Promise<void> {
     .where(inArray(itemRevisions.itemId, ids));
   const revIds = revs.map((r) => r.id);
   if (revIds.length > 0) {
-    await db.delete(drawingCorrections).where(inArray(drawingCorrections.itemRevisionId, revIds));
     await db.delete(activityLog).where(inArray(activityLog.entityId, revIds));
     // No user claims on this session → the append-only trigger lets a purge through.
     await db
@@ -151,13 +153,30 @@ async function revRow(id: string) {
 
 async function act(
   id: string,
-  action: 'submit' | 'approve' | 'reject' | 'release' | 'obsolete',
+  action: RevStatusAction,
   note?: string,
-  user: AuthContext = admin,
+  expectedDrawingFilePath?: string,
 ): Promise<void> {
   const r = await revRow(id);
-  await revStatusAction(id, action, { expectedUpdatedAt: r.updatedAt.toISOString(), note }, user);
+  await revStatusAction(
+    id,
+    action,
+    { expectedUpdatedAt: r.updatedAt.toISOString(), note, expectedDrawingFilePath },
+    admin,
+  );
 }
+
+/** Replace drawing the way the route does it (new file hashed first). */
+const replaceVia = async (id: string, file: string, reason = 'customer sent a new scan') =>
+  service.replaceDrawing(
+    id,
+    {
+      drawingFilePath: file,
+      reason,
+      expectedUpdatedAt: (await revRow(id)).updatedAt.toISOString(),
+    },
+    admin,
+  );
 
 async function makeCard(key: string, revId: string): Promise<string> {
   const [rc] = await db
@@ -301,43 +320,27 @@ afterAll(async () => {
   await supabaseAdmin.storage.from(BUCKET).remove([path1, path2, path3]);
 }, 120_000);
 
-describe('ADR-290 Drawing Register', () => {
+describe('ADR-323 Drawing Register', () => {
   let r1: string;
   let r2: string;
 
-  it('a new Rev named on an SO line is draft', async () => {
+  it('a new Rev named on an SO line is Unverified; its first file keeps it Unverified', async () => {
     r1 = (await newRev('1', null))!.id;
-    expect((await revRow(r1)).releaseStatus).toBe('draft');
+    expect((await revRow(r1)).releaseStatus).toBe('unverified');
+    r2 = (await newRev('2', path2))!.id;
+    expect((await revRow(r2)).releaseStatus).toBe('unverified');
+    expect((await revRow(r2)).drawingFilePath).toBe(path2);
   });
 
-  it('submit without a drawing file is refused', async () => {
-    await expect(act(r1, 'submit')).rejects.toThrow(
-      'Upload the drawing before sending it for review',
-    );
+  it('Verify without a drawing file is refused', async () => {
+    await expect(act(r1, 'verify')).rejects.toThrow('Upload the drawing PDF before verifying it');
+    expect((await revRow(r1)).releaseStatus).toBe('unverified');
   });
 
-  it('Plan and PRO on a draft Rev are refused with the standard sentence', async () => {
-    const line = await makeSoLine('D', itemId, r1);
-    const plan = planService.createPlan(
-      {
-        planDate: '2026-11-14',
-        planType: 'manufacture',
-        soLineId: line,
-        itemId,
-        orderQty: 2,
-        planQty: 2,
-        opsSource: 'route_card',
-      } as never,
-      admin,
-    );
-    await expect(plan).rejects.toBeInstanceOf(ValidationError);
-    await expect(plan).rejects.toThrow(`${P}X/1 is Not released — Design must release it`);
-    const pro = raisePro(await makePlan('D', r1), await makeCard('D', r1));
-    await expect(pro).rejects.toThrow(`${P}X/1 is Not released`);
-  });
-
-  it('a PRO on an old (unverified) Rev is allowed', async () => {
-    const [u] = await db
+  it('a PRO on an Unverified Rev is allowed; on an Obsolete Rev it is refused', async () => {
+    const pro = await raisePro(await makePlan('U', r1), await makeCard('U', r1));
+    expect(pro.id).toBeTruthy();
+    const [o] = await db
       .insert(itemRevisions)
       .values({
         companyId,
@@ -349,104 +352,151 @@ describe('ADR-290 Drawing Register', () => {
         updatedBy: admin.id,
       })
       .returning({ id: itemRevisions.id });
-    expect((await revRow(u!.id)).releaseStatus).toBe('unverified');
-    const pro = await raisePro(await makePlan('U', u!.id), await makeCard('U', u!.id));
-    expect(pro.id).toBeTruthy();
-  });
-
-  it('submit → approve → release stores the file hash', async () => {
-    await withUserContext(admin, (tx) =>
-      replaceItemRevisionDrawing(tx, admin, companyId, r1, {
-        drawingFilePath: path1,
-        reason: 'first file',
-      }),
+    const plan = await makePlan('O', o!.id);
+    const card = await makeCard('O', o!.id);
+    await expect(act(o!.id, 'obsolete', 'no')).rejects.toThrow('Reason is required');
+    await act(o!.id, 'obsolete', 'customer withdrew it');
+    expect((await revRow(o!.id)).releaseStatus).toBe('obsolete');
+    await expect(raisePro(plan, card)).rejects.toThrow(
+      `${P}X/9 is Obsolete — pick another Drawing Rev for Plan, PRO or Job Card.`,
     );
-    // ADR-311 — the first file moves the Rev straight to Under Review (no submit).
-    expect((await revRow(r1)).releaseStatus).toBe('under_review');
-    await act(r1, 'approve');
-    await act(r1, 'release');
-    const row = await revRow(r1);
-    expect(row.releaseStatus).toBe('released');
-    expect(row.fileHash).toBe(sha(FILE1));
-    expect(row.releasedBy).toBe(admin.id);
   });
 
-  it('releasing Rev 2 supersedes released Rev 1; lookup names the latest', async () => {
-    r2 = (await newRev('2', path2))!.id;
-    expect((await revRow(r2)).releaseStatus).toBe('under_review'); // ADR-311
-    await act(r2, 'approve');
-    await act(r2, 'release');
-    expect((await revRow(r2)).releaseStatus).toBe('released');
-    expect((await revRow(r1)).releaseStatus).toBe('superseded');
+  it('Verify refused when the drawing changed since it was opened (expectedDrawingFilePath)', async () => {
+    const err = await act(r2, 'verify', undefined, path1).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ConflictError);
+    expect((err as Error).message).toBe('The drawing changed — open it again before verifying.');
+    expect((await revRow(r2)).releaseStatus).toBe('unverified');
+  });
+
+  it('Verify stores the file hash and Verified On / By', async () => {
+    await act(r2, 'verify', undefined, path2);
+    const row = await revRow(r2);
+    expect(row.releaseStatus).toBe('verified');
+    expect(row.fileHash).toBe(sha(FILE2));
+    expect(row.releasedBy).toBe(admin.id);
+    expect(row.releasedAt).not.toBeNull();
     const look = await service.lookupItemRevision({ itemId, rev: '1' }, admin);
     expect(look.release?.latestReleasedLabel).toBe(`${P}X/2`);
+    const detail = await service.getItemRevision(r2, admin);
+    expect(detail.verifiedBy).toBe(admin.id);
+    expect(detail.releaseStatus).toBe('verified');
   });
 
-  it('two approves at the same moment → exactly one wins, the other is 409 (§20.2)', async () => {
-    const r = (await newRev('3', path3))!.id; // born with a file → Under Review (ADR-311)
-    const res = await Promise.allSettled([act(r, 'approve'), act(r, 'approve')]);
+  it('two Verifies at the same moment → exactly one wins, the other is 409 (§20.2)', async () => {
+    const r = (await newRev('3', path1))!.id;
+    const res = await Promise.allSettled([act(r, 'verify'), act(r, 'verify')]);
     expect(res.filter((x) => x.status === 'fulfilled')).toHaveLength(1);
     const lost = res.find((x) => x.status === 'rejected') as PromiseRejectedResult;
     expect(lost.reason).toBeInstanceOf(ConflictError);
-    expect(String((lost.reason as Error).message)).toMatch(/is Approved/);
-    expect((await revRow(r)).releaseStatus).toBe('approved');
+    expect(String((lost.reason as Error).message)).toMatch(/is Verified/);
+    expect((await revRow(r)).releaseStatus).toBe('verified');
   });
 
-  it('release without the "Can release drawings" switch → 403', async () => {
-    const r = (await newRev('4', path3))!.id; // born with a file → Under Review (ADR-311)
-    await act(r, 'approve');
-    const designer = asAccess(admin, { departments: { design: 'L5' } }, 'manager');
-    await expect(act(r, 'release', undefined, designer)).rejects.toBeInstanceOf(AuthorizationError);
-    expect((await revRow(r)).releaseStatus).toBe('approved');
+  it('Replace on a Verified Rev with the SAME file (same hash) keeps it Verified', async () => {
+    // path3 holds the same bytes as path2 (FILE2).
+    await replaceVia(r2, path3);
+    const row = await revRow(r2);
+    expect(row.drawingFilePath).toBe(path3);
+    expect(row.releaseStatus).toBe('verified');
+    expect(row.fileHash).toBe(sha(FILE2));
   });
 
-  it('Replace drawing on a released Rev files ONE correction; the file changes only on approve', async () => {
-    const before = await revRow(r2);
-    await withUserContext(admin, (tx) =>
-      replaceItemRevisionDrawing(tx, admin, companyId, r2, {
-        drawingFilePath: path1,
-        reason: 'hole moved',
-      }),
+  it('Replace on a Verified Rev with a DIFFERENT file → Unverified, hash and Verified On / By cleared', async () => {
+    await replaceVia(r2, path1, 'hole moved 2 mm');
+    const row = await revRow(r2);
+    expect(row.drawingFilePath).toBe(path1);
+    expect(row.releaseStatus).toBe('unverified');
+    expect(row.fileHash).toBeNull();
+    expect(row.releasedAt).toBeNull();
+    expect(row.releasedBy).toBeNull();
+    const logs = await db
+      .select({ changes: activityLog.changes })
+      .from(activityLog)
+      .where(eq(activityLog.entityId, r2));
+    expect(
+      logs.some((l) =>
+        (l.changes ?? []).some(
+          (c) => c.field === 'releaseStatus' && c.before === 'Verified' && c.after === 'Unverified',
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('Unverify needs a reason and moves Verified → Unverified', async () => {
+    const r = (await newRev('5', path1))!.id;
+    await act(r, 'verify');
+    await expect(act(r, 'unverify')).rejects.toBeInstanceOf(ValidationError);
+    await act(r, 'unverify', 'wrong scan verified');
+    const row = await revRow(r);
+    expect(row.releaseStatus).toBe('unverified');
+    expect(row.releasedAt).toBeNull();
+  });
+
+  it('Approvals: an Unverified Rev WITH a PDF on an open SO line is "Drawing to verify"; gone once Verified', async () => {
+    const r = (await newRev('6', path1))!.id;
+    await makeSoLine('A6', itemId, r);
+    let waiting = await getWaitingApprovals(admin);
+    const row = waiting.rows.find((w) => w.kind === 'rev' && w.id === r);
+    expect(row?.request).toBe('Drawing to verify');
+    expect(row?.docHref).toBe(`/drawings/${r}`);
+    await act(r, 'verify');
+    waiting = await getWaitingApprovals(admin);
+    expect(waiting.rows.some((w) => w.kind === 'rev' && w.id === r)).toBe(false);
+  });
+
+  it('a NEW Route Card needs the Rev in the register, with its PDF', async () => {
+    const ops = [
+      { operation: 'Turning', opType: 'process' as const, machineCodeText: 'CNC', cycleTimeMin: 5 },
+    ];
+    await expect(
+      rcService.createRouteCard({ itemId, drawingRev: '77', ops } as never, admin),
+    ).rejects.toThrow(
+      `${P}X/77 is not in the Drawing Register. Add it there with its drawing PDF first.`,
     );
-    expect((await revRow(r2)).drawingFilePath).toBe(before.drawingFilePath);
-    const again = withUserContext(admin, (tx) =>
-      replaceItemRevisionDrawing(tx, admin, companyId, r2, {
-        drawingFilePath: path3,
-        reason: 'second try',
-      }),
-    );
-    await expect(again).rejects.toThrow(`A correction for ${P}X/2 is already waiting`);
-    const detail = await service.getItemRevision(r2, admin);
-    expect(detail.corrections).toHaveLength(1);
-    expect(detail.corrections[0]!.status).toBe('pending');
-    // ADR-311 — self-approval allowed: the requester approves their own correction.
-    await decideDrawingCorrection(detail.corrections[0]!.id, { decision: 'approve' }, admin);
-    const after = await revRow(r2);
-    expect(after.drawingFilePath).toBe(path1);
-    expect(after.fileHash).toBe(sha(FILE1));
-    expect(after.releaseStatus).toBe('released');
+    await newRev('78', null);
+    await expect(
+      rcService.createRouteCard(
+        { itemId, drawingRev: '78', drawingFilePath: path1, ops } as never,
+        admin,
+      ),
+    ).rejects.toThrow(`No drawing file for ${P}X/78. Upload it in the Drawing Register first.`);
   });
 
   it('drawing history refuses UPDATE (append-only trigger)', async () => {
     await expect(
       db.execute(
-        sql`UPDATE public.item_revision_drawings SET reason = 'x' WHERE item_revision_id = ${r1}::uuid`,
+        sql`UPDATE public.item_revision_drawings SET reason = 'x' WHERE item_revision_id = ${r2}::uuid`,
       ),
     ).rejects.toThrow(/history — rows are never changed/);
   });
 
-  it('register list: status, open lines, Sort & Filter', async () => {
+  it('register list: status / PDF filters, open lines, Sort & Filter', async () => {
     const reg = await listDrawingRegister({ search: `${P}X`, limit: 25, offset: 0 }, admin);
     const one = reg.items.find((x) => x.id === r1);
-    expect(one?.releaseStatus).toBe('superseded');
-    expect(one?.openLines).toBe(1);
+    expect(one?.releaseStatus).toBe('unverified');
+    expect(one?.hasFile).toBe(false);
+    expect(one?.openLines).toBe(0);
+    const verified = await listDrawingRegister(
+      { search: `${P}X`, status: 'verified', limit: 25, offset: 0 },
+      admin,
+    );
+    expect(verified.items.every((x) => x.releaseStatus === 'verified')).toBe(true);
+    expect(verified.items.some((x) => x.drawingRev === '3')).toBe(true);
+    const noPdf = await listDrawingRegister(
+      { search: `${P}X`, pdf: 'no', limit: 25, offset: 0 },
+      admin,
+    );
+    expect(noPdf.items.every((x) => !x.hasFile)).toBe(true);
+    expect(noPdf.items.some((x) => x.id === r1)).toBe(true);
     // ADR-315 — SO No.: the order on that line, and the search finds the Rev by it.
-    expect(one?.orders).toHaveLength(1);
-    const soCode = one!.orders[0]!.code;
-    expect(one!.orders[0]!.kind).toBe('so');
-    const bySo = await listDrawingRegister({ search: soCode, limit: 25, offset: 0 }, admin);
-    expect(bySo.items.some((x) => x.id === r1)).toBe(true);
-    expect(reg.items.find((x) => x.id === r2)?.releaseStatus).toBe('released');
+    const six = reg.items.find((x) => x.drawingRev === '6')!;
+    expect(six.orders).toHaveLength(1);
+    const bySo = await listDrawingRegister(
+      { search: six.orders[0]!.code, limit: 25, offset: 0 },
+      admin,
+    );
+    expect(bySo.items.some((x) => x.id === six.id)).toBe(true);
     const sorted = await listDrawingRegister(
       {
         search: `${P}X`,
@@ -460,7 +510,7 @@ describe('ADR-290 Drawing Register', () => {
     expect(sorted.items[0]!.openLines).toBeGreaterThanOrEqual(1);
   });
 
-  it('the BOM cascade on a draft child Rev still runs (exempt)', async () => {
+  it('the BOM cascade on an Unverified child Rev still runs', async () => {
     const bom = await bomService.createBomMaster(
       {
         bomName: `${P}BOM`,
@@ -472,7 +522,7 @@ describe('ADR-290 Drawing Register', () => {
       admin,
     );
     const childRev = bom.lines[0]!.childItemRevisionId!;
-    expect((await revRow(childRev)).releaseStatus).toBe('draft');
+    expect((await revRow(childRev)).releaseStatus).toBe('unverified');
     const line = await makeSoLine('B', parentId, null, bom.id);
     const res = await withUserContext(admin, (tx) => cascadeBomToSoLine(tx, line, admin));
     expect(res.fired).toBe(true);
@@ -481,11 +531,11 @@ describe('ADR-290 Drawing Register', () => {
 });
 
 describe('ADR-319 Upload drawing — first file of a Rev that has none', () => {
-  it('no reason needed; file reaches the SO line; Rev goes to Under Review; history says adopted', async () => {
+  it('no reason needed; file reaches the SO line; Rev stays Unverified; history says adopted', async () => {
     const rev = (await newRev('U9', null))!.id;
     const lineId = await makeSoLine('U9', itemId, rev);
-    expect((await revRow(rev)).releaseStatus).toBe('draft');
-    const res = await service.replaceDrawing(
+    expect((await revRow(rev)).releaseStatus).toBe('unverified');
+    await service.replaceDrawing(
       rev,
       {
         drawingFilePath: path2,
@@ -494,10 +544,9 @@ describe('ADR-319 Upload drawing — first file of a Rev that has none', () => {
       },
       admin,
     );
-    expect('correction' in res).toBe(false);
     const after = await revRow(rev);
     expect(after.drawingFilePath).toBe(path2);
-    expect(after.releaseStatus).toBe('under_review');
+    expect(after.releaseStatus).toBe('unverified');
     const [line] = await db
       .select({ path: salesOrderLines.drawingFilePath })
       .from(salesOrderLines)

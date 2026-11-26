@@ -17,7 +17,7 @@ import type { OpFlowRow } from '@/modules/flow-views/types';
 import { useJcOpsBoard } from '@/modules/jc-ops/api';
 import { RowMenu } from '@/ui/data';
 import { OP_STATUS } from '../lib/jc-op-labels';
-import { OpHoldBadge, RevNotReleasedBadge } from './jc-op-hold';
+import { OpHoldBadge } from './jc-op-hold';
 import { opActions, type OpAction, type OpActionTarget } from './jc-ops-table-actions';
 import { JcOpPopup } from './jc-op-popup';
 import { checkText, doneLabel } from './jc-ops-table-notes';
@@ -300,11 +300,9 @@ export function OpRow({
         </td>
         <td className="td-ctr">
           {statusBadge}
-          {held ? (
-            <OpHoldBadge reason={holdReason} ecrCode={holdEcrCode} />
-          ) : holdReason ? (
-            <RevNotReleasedBadge reason={holdReason} />
-          ) : null}
+          {/* ADR-323: no "Rev not released" badge — a drawing status never
+              stops a running op. Only a stored (ECR) hold shows. */}
+          {held ? <OpHoldBadge reason={holdReason} ecrCode={holdEcrCode} /> : null}
         </td>
         <td className="td-ctr">{nextStep}</td>
         <td className="td-ctr">

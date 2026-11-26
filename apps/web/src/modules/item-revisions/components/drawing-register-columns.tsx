@@ -16,6 +16,7 @@ import { ItemRevLink } from './item-rev-link';
 import { RevStatusBadge } from './rev-status-badge';
 import {
   revActionsFor,
+  revUploadChoice,
   type RevActionChoice,
   type RevActionRights,
   type RevActionTarget,
@@ -95,19 +96,20 @@ export function drawingRegisterColumns(firstRowNo: number): DataTableColumn<Draw
       render: (r) => r.drawingNo ?? dash,
     },
     {
-      id: 'drawing_file',
-      header: 'Drawing File',
+      // ADR-323 — PDF Available / Missing (the page's PDF filter narrows it).
+      id: 'pdf',
+      header: 'PDF',
       kind: 'badge',
       nowrap: true,
       filterable: false,
       render: (r) =>
         r.hasFile ? (
-          <span className="green fw-700" title="Drawing on file">
-            ✓
+          <span className="green fw-700" title="Drawing PDF on file">
+            ✓ Available
           </span>
         ) : (
-          <span className="text3" title="Not uploaded">
-            —
+          <span className="red fw-700" title="No drawing PDF yet">
+            ✕ Missing
           </span>
         ),
     },
@@ -123,22 +125,22 @@ export function drawingRegisterColumns(firstRowNo: number): DataTableColumn<Draw
       render: (r) => <RevStatusBadge status={r.releaseStatus} />,
     },
     {
-      id: 'released_on',
-      header: 'Released On',
+      id: 'verified_on',
+      header: 'Verified On',
       kind: 'date',
       className: 'mono',
       nowrap: true,
-      sortFilterField: 'releasedAt',
-      render: (r) => fmtDate(r.releasedAt),
+      sortFilterField: 'verifiedAt',
+      render: (r) => fmtDate(r.verifiedAt),
     },
     {
-      id: 'released_by',
-      header: 'Released By',
+      id: 'verified_by',
+      header: 'Verified By',
       kind: 'text',
       ellipsis: true,
-      sortFilterField: 'releasedByName',
-      title: (r) => r.releasedByName ?? '',
-      render: (r) => r.releasedByName ?? dash,
+      sortFilterField: 'verifiedByName',
+      title: (r) => r.verifiedByName ?? '',
+      render: (r) => r.verifiedByName ?? dash,
     },
     {
       id: 'open_lines',
@@ -160,21 +162,6 @@ export function drawingRegisterColumns(firstRowNo: number): DataTableColumn<Draw
       filterType: 'num',
       render: (r) => r.openJobCards,
     },
-    {
-      id: 'pending_correction',
-      header: 'Correction Waiting',
-      kind: 'badge',
-      nowrap: true,
-      filterable: false,
-      render: (r) =>
-        r.pendingCorrection ? (
-          <span className="amber fw-700" title="A drawing correction waits for approval">
-            ● Waiting
-          </span>
-        ) : (
-          dash
-        ),
-    },
     createdByColumn<DrawingRegisterRow>({
       createdByName: (r) => r.createdByName,
       overrides: { sortFilterField: 'createdBy' },
@@ -192,7 +179,9 @@ export function registerRowTarget(r: DrawingRegisterRow): RevActionTarget {
   };
 }
 
-/** The row's ⋯ menu — only what this user may do and the status allows. */
+/** The row's ⋯ menu — only what this user may do and the status allows:
+ *  Open drawing · ✓ Verify… · ⬆ Upload / Replace drawing… · ↺ Undo verify… ·
+ *  Mark Obsolete…. */
 export function drawingRegisterRowMenu(
   r: DrawingRegisterRow,
   opts: {
@@ -202,24 +191,26 @@ export function drawingRegisterRowMenu(
   },
 ): RowMenuItem[] {
   const { rights, onAction, onReplace } = opts;
-  const danger = (c: RevActionChoice): boolean => c.action === 'reject' || c.action === 'obsolete';
+  const target = registerRowTarget(r);
+  const choices = revActionsFor(target, rights);
+  const uploadLabel = revUploadChoice(target, rights);
+  const item = (c: RevActionChoice): RowMenuItem => ({
+    key: c.action,
+    label: c.label,
+    group: c.action === 'obsolete' ? 'danger' : 'workflow',
+    disabledReason: c.disabledReason,
+    onSelect: () => onAction(r, c),
+  });
   return [
-    { key: 'open', label: 'Open drawing page', icon: 'eye', to: `/drawings/${r.id}` },
-    ...revActionsFor(registerRowTarget(r), rights).map<RowMenuItem>((c) => ({
-      key: c.action,
-      label: c.label,
-      group: danger(c) ? 'danger' : 'workflow',
-      disabledReason: c.disabledReason,
-      onSelect: () => onAction(r, c),
-    })),
-    // ADR-319 — a Rev with no file gets "Upload drawing…" (its first file);
-    // one with a file keeps "Replace drawing…". Same right, same server call.
+    { key: 'open', label: 'Open drawing', icon: 'eye', to: `/drawings/${r.id}` },
+    ...choices.filter((c) => c.action === 'verify').map(item),
     {
       key: 'replace',
-      label: r.hasFile ? 'Replace drawing…' : 'Upload drawing…',
+      label: uploadLabel ?? '⬆ Upload drawing…',
       icon: 'upload',
-      hidden: !rights.replace || r.releaseStatus === 'obsolete',
+      hidden: !uploadLabel,
       onSelect: () => onReplace(r),
     },
+    ...choices.filter((c) => c.action !== 'verify').map(item),
   ];
 }

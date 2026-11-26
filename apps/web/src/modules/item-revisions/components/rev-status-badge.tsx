@@ -1,21 +1,14 @@
-// ADR-290 — the "Drawing Rev Status" chip of an Item + Drawing Rev. Words from
-// the shared REV_RELEASE_STATUS_LABELS (draft reads "Not released"). Colours
-// from the theme: Released green; Rejected / Obsolete red; every other state
-// (Not released, Under Review, Approved, Unverified, Superseded) orange — work
-// either waits for Design or goes ahead with a warning.
+// ADR-323 — the "Drawing Rev Status" chip of an Item + Drawing Rev. Words from
+// the shared REV_RELEASE_STATUS_LABELS. Colours from the theme: Unverified
+// orange (Design has not checked the PDF yet), Verified green, Obsolete red.
 
 import { REV_RELEASE_STATUS_LABELS, type RevReleaseStatus } from '@innovic/shared';
 import { Badge, type BadgeTone } from '@/ui/core';
 
 const TONE: Record<RevReleaseStatus, BadgeTone> = {
   unverified: 'amber',
-  draft: 'amber',
-  under_review: 'amber',
-  approved: 'amber',
-  released: 'green',
-  superseded: 'amber',
+  verified: 'green',
   obsolete: 'red',
-  rejected: 'red',
 };
 
 export function RevStatusBadge({
@@ -25,7 +18,7 @@ export function RevStatusBadge({
 }: {
   status: RevReleaseStatus;
   title?: string | undefined;
-  /** Replaces the plain label (the SO / JWSO line chip spells out the wait). */
+  /** Replaces the plain label. */
   text?: string | undefined;
 }): React.JSX.Element {
   return (

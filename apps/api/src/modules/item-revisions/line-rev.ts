@@ -26,17 +26,18 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { ValidationError } from '../../lib/errors';
 import {
   assertRevReleasedForWork,
-  findItemRevision,
+  fillRevDrawingNo,
   resolveItemRevision,
 } from '../../lib/item-revision';
 import { emitActivityLog } from '../activity-log/service';
 
 export type LineKind = 'so' | 'jw';
 
-/** ADR-321 (owner 24-Nov-2026, JWSO 26-Nov-2026) — the drawing file is
- *  optional on every SO and JWSO line. A line saved with no file leaves its Rev
- *  as Draft until Design uploads one in the Drawing Register; the release gate
- *  before Plan / PRO / Job Card is unchanged. */
+/** ADR-323 (owner 26-Nov-2026) — SO and JWSO lines take NO drawing file: the
+ *  PDF is uploaded only in the Drawing Register. A sent drawingFilePath is
+ *  ignored (kept optional in the input so old screens do not 400); the line's
+ *  copy follows the register. A line Drawing No. fills a blank register
+ *  Drawing No. (never overwrites one). */
 
 export interface StoredLineRev {
   id: string;
@@ -95,14 +96,15 @@ export async function resolveLineRevision(
   };
   const sourceType = input.kind === 'so' ? 'so_line' : 'jw_line';
   const sourceRef = `${input.docCode} ln ${input.lineNo}`;
-  const sent = input.sentFile === undefined ? undefined : norm(input.sentFile);
+  // ADR-323 — the line's own file (input.sentFile) is never offered to the
+  // register: the register is the only place a drawing PDF is uploaded.
   const st = input.stored;
+  const lineDrawingNo = norm(input.sentDrawingNo);
 
   if (!st) {
     const r = await resolveItemRevision(tx, user, companyId, {
       itemId: input.itemId,
       rev: input.rev,
-      drawingFilePath: sent ?? undefined,
       drawingNo: input.sentDrawingNo,
       sourceType,
       sourceRef,
@@ -114,11 +116,12 @@ export async function resolveLineRevision(
         drawingFilePath: undefined,
         registerDrawingNo: null,
       };
+    await fillRevDrawingNo(tx, companyId, r.id, lineDrawingNo);
     return {
       touched: true,
       itemRevisionId: r.id,
-      // A line offered no file gets the register's file (auto-fill).
-      drawingFilePath: sent ?? r.drawingFilePath,
+      // The line's copy is the register's file (or none).
+      drawingFilePath: r.drawingFilePath,
       registerDrawingNo: r.drawingNo,
     };
   }
@@ -128,8 +131,10 @@ export async function resolveLineRevision(
     input.rev !== undefined &&
     normalizeRevision(input.rev ?? '') !== normalizeRevision(st.revision ?? '');
   const storedFile = norm(st.drawingFilePath);
-  const fileChanged = sent !== undefined && sent !== storedFile;
-  if (!itemChanged && !revChanged && !fileChanged) return untouched;
+  if (!itemChanged && !revChanged) {
+    await fillRevDrawingNo(tx, companyId, st.itemRevisionId, lineDrawingNo);
+    return untouched;
+  }
 
   // A JWSO line raised by a server path stores the DB default '0' — nobody
   // typed it, so when this save does not send a Rev it is not registered.
@@ -139,36 +144,12 @@ export async function resolveLineRevision(
       : input.kind === 'jw' && normalizeRevision(st.revision ?? '') === '0'
         ? null
         : st.revision;
-  let offered: string | undefined;
-  let copied = false;
-  if (fileChanged) {
-    offered = sent ?? undefined;
-  } else if ((revChanged || itemChanged) && sent && input.itemId) {
-    // The form resent the line's current file with a new Rev. If ABC/<new>
-    // already holds a file, the line takes that one; if not, this is "Use as
-    // is" — the old Rev's file is carried to the new Rev ('copied').
-    const target = await findItemRevision(tx, companyId, input.itemId, rev ?? '');
-    if (!target?.drawingFilePath) {
-      offered = sent;
-      if (st.itemRevisionId) {
-        const [old] = await tx
-          .select({ drawingFilePath: itemRevisions.drawingFilePath })
-          .from(itemRevisions)
-          .where(inArray(itemRevisions.id, [st.itemRevisionId]))
-          .limit(1);
-        copied = old?.drawingFilePath === sent;
-      }
-    }
-  }
-
   const r = await resolveItemRevision(tx, user, companyId, {
     itemId: input.itemId,
     rev,
-    drawingFilePath: offered,
     drawingNo: input.sentDrawingNo,
     sourceType,
     sourceRef,
-    copiedFromOtherRev: copied,
   });
   if (!r && st.itemRevisionId) {
     // 0234 fix — a Rev cannot be blanked under live work: the Job Cards carry
@@ -194,14 +175,9 @@ export async function resolveLineRevision(
       registerDrawingNo: null,
     };
 
-  // A file the user cleared on purpose stays cleared on the line; otherwise
-  // the line's copy follows the register (or what the user sent / nothing).
-  let copy: string | null;
-  if (fileChanged && sent === null) copy = null;
-  else
-    copy =
-      r.drawingFilePath ??
-      (sent !== undefined ? sent : revChanged || itemChanged ? null : storedFile);
+  // The line's copy follows the register; a new Item / Rev with no file
+  // leaves the line with none.
+  const copy: string | null = r.drawingFilePath ?? (revChanged || itemChanged ? null : storedFile);
 
   if (!itemChanged && st.itemRevisionId !== r.id) {
     await applyLineRevChange(tx, user, companyId, {
@@ -219,6 +195,7 @@ export async function resolveLineRevision(
       revTextChanged: normalizeRevision(rev ?? '') !== normalizeRevision(st.revision ?? ''),
     });
   }
+  await fillRevDrawingNo(tx, companyId, r.id, lineDrawingNo);
   return {
     touched: true,
     itemRevisionId: r.id,
@@ -341,17 +318,17 @@ export async function applyLineRevChange(
   if (c.revTextChanged !== false && hasWork && reason.length < REV_CHANGE_REASON_MIN) {
     throw new ValidationError(`Ln ${c.lineNo}: give a reason for changing the Drawing Rev`);
   }
-  // ADR-290 Step 3 — open Plan / PRO / Job Card work moves to the new Rev, so
-  // the new Rev must allow work (released, superseded or old unverified).
+  // ADR-323 — open Plan / PRO / Job Card work moves to the new Rev, so the
+  // new Rev must allow work (Verified or Unverified; only Obsolete refused).
   if (hasWork) {
     await assertRevReleasedForWork(
       tx,
       companyId,
       c.toId,
-      // Names the Drawing Register, where the Rev is added (POST
-      // /item-revisions) and released — the way out of a refused save.
+      // Names the Drawing Register, where a new Rev is added (POST
+      // /item-revisions) — the way out of a refused save.
       (label, status) =>
-        `${label} is ${REV_RELEASE_STATUS_LABELS[status]}. Add / release it in the Drawing Register first, then change the Rev on the line.`,
+        `${label} is ${REV_RELEASE_STATUS_LABELS[status]}. Pick another Drawing Rev, or add a new one in the Drawing Register first.`,
     );
   }
   const closedIds = closed.map((j) => j.id);

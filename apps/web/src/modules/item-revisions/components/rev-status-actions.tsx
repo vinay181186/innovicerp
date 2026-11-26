@@ -1,14 +1,14 @@
-// ADR-290 — the release actions of one Item + Drawing Rev, shared by the
+// ADR-323 — the status actions of one Item + Drawing Rev, shared by the
 // Drawing Register's row ⋯ menu and the drawing page's buttons, so both offer
 // exactly the same actions for the same status and rights.
 //
-//   (ADR-311: no Send for Review — a Rev with a drawing file goes straight to
-//   Under Review on the server when the file is saved.)
-//   Approve / Reject under_review → approved | rejected — Drawing Register Approve tick
-//   Release          approved → released — the per-person Drawing Release switch
-//   Verify & Release unverified → released (records made before release
-//                    control; needs a file) — the same switch, same endpoint
-//   Mark Obsolete    any but obsolete → obsolete — Drawing Register Approve tick
+//   ✓ Verify…        unverified → verified — Drawing Register Approve tick; needs
+//                    the PDF. The dialog names the file and sends its path, so a
+//                    file replaced meanwhile is refused (409 "The drawing changed").
+//   ↺ Undo verify…   verified → unverified — Approve tick, reason ★ (min 5)
+//   Mark Obsolete…   any but obsolete → obsolete — Approve tick, reason ★
+//   ⬆ Upload drawing… (no PDF yet) — Drawing Register Entry
+//   ⬆ Replace drawing… (has a PDF) — Drawing Register Edit
 //
 // The server checks every one again (§20.2 conditional update; 409 when
 // someone acted first — the dialog shows the message and the lists re-read).
@@ -18,12 +18,14 @@ import {
   type RevReleaseStatus,
   type RevStatusAction,
 } from '@innovic/shared';
+import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
-import { canReleaseDrawings, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { useSession } from '@/lib/session';
+import { fileNameFromPath } from '@/components/shared/file-preview-modal';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { fmtDateTime } from '@/lib/date';
 import { ConfirmDialog, useToast } from '@/ui/feedback';
-import { FormField } from '@/ui/forms';
-import { useRevStatusAction } from '../api';
+import { CheckField, FormField } from '@/ui/forms';
+import { useItemRevision, useRevStatusAction } from '../api';
 
 /** What an action needs from the Rev it acts on. */
 export interface RevActionTarget {
@@ -35,24 +37,19 @@ export interface RevActionTarget {
 }
 
 export interface RevActionRights {
-  submit: boolean;
-  approve: boolean;
-  release: boolean;
-  /** Replace drawing — Route Card Master Edit (the existing replace right). */
+  /** Verify / Undo verify / Mark Obsolete — Drawing Register Approve tick. */
+  verify: boolean;
+  /** First PDF of a Rev — Drawing Register Entry. */
+  upload: boolean;
+  /** Replace the PDF of a Rev that has one — Drawing Register Edit. */
   replace: boolean;
 }
 
-/** The current user's rights for the release actions. */
+/** The current user's rights for the Drawing Register actions. */
 export function useRevActionRights(): RevActionRights {
   const { data: eff } = useMyAccess();
-  const { data: me } = useSession();
   const perms = effectiveFormPerms(eff, 'drawingreg_create');
-  return {
-    submit: perms.entry || perms.edit,
-    approve: perms.approve,
-    release: canReleaseDrawings(eff, me?.role),
-    replace: effectiveFormPerms(eff, 'routecard_create').edit,
-  };
+  return { verify: perms.approve, upload: perms.entry, replace: perms.edit };
 }
 
 export interface RevActionChoice {
@@ -62,93 +59,65 @@ export interface RevActionChoice {
   disabledReason?: string | undefined;
 }
 
-/** The actions this user may take on this Rev in its current status. */
+/** The status actions this user may take on this Rev, in menu order. */
 export function revActionsFor(t: RevActionTarget, r: RevActionRights): RevActionChoice[] {
   const out: RevActionChoice[] = [];
+  if (!r.verify) return out;
   const s = t.releaseStatus;
-  // ADR-311 — a Rev with a file goes to Under Review by itself. Only a Rejected
-  // (or old Not released) Rev whose file is already right — e.g. only the
-  // Drawing No. was wrong — is sent back by hand, without re-uploading it.
-  if (r.submit && t.hasFile && (s === 'rejected' || s === 'draft')) {
-    out.push({ action: 'submit', label: 'Send for Review again' });
-  }
-  if (r.approve && s === 'under_review') {
-    out.push({ action: 'approve', label: 'Approve' });
-    out.push({ action: 'reject', label: 'Reject…' });
-  }
-  if (r.release && s === 'approved') out.push({ action: 'release', label: 'Release' });
-  if (r.release && s === 'unverified') {
+  if (s === 'unverified') {
     out.push({
-      action: 'release',
-      label: 'Verify & Release',
+      action: 'verify',
+      label: '✓ Verify…',
       disabledReason: t.hasFile ? undefined : 'Upload the drawing first',
     });
   }
-  if (r.approve && s !== 'obsolete') out.push({ action: 'obsolete', label: 'Mark Obsolete…' });
+  if (s === 'verified') out.push({ action: 'unverify', label: '↺ Undo verify…' });
+  if (s !== 'obsolete') out.push({ action: 'obsolete', label: 'Mark Obsolete…' });
   return out;
 }
 
-/** Release on an Unverified Rev — an old record Design checks and releases in
- *  one step. Same endpoint as Release; its own words so the dialog matches
- *  the "Verify & Release" button that opened it. */
-const VERIFY_RELEASE_TEXT = {
-  title: 'Verify & release {label}?',
-  confirm: 'Verify & Release',
-  pending: 'Releasing…',
-  message:
-    'This Rev was made before release control. Check the drawing on file is right: Plan, PRO and Job Card then use it without the Unverified warning. Older released Revs of the item become Superseded.',
-  done: 'Drawing Rev verified and released',
-};
+/** "⬆ Upload drawing…" (no PDF yet, Entry right) or "⬆ Replace drawing…"
+ *  (has a PDF, Edit right); null when this user may not, or the Rev is Obsolete. */
+export function revUploadChoice(t: RevActionTarget, r: RevActionRights): string | null {
+  if (t.releaseStatus === 'obsolete') return null;
+  if (t.hasFile) return r.replace ? '⬆ Replace drawing…' : null;
+  return r.upload ? '⬆ Upload drawing…' : null;
+}
 
 const TEXT: Record<
   RevStatusAction,
   { title: string; confirm: string; pending: string; message: string; done: string }
 > = {
-  // ADR-311: no screen offers 'submit' any more; kept only because the shared
-  // RevStatusAction type still lists it (old clients).
-  submit: {
-    title: 'Send {label} for review?',
-    confirm: 'Send for Review',
-    pending: 'Sending…',
-    message: 'The drawing goes to the Drawing Register approver.',
-    done: 'Sent for review',
+  verify: {
+    title: 'Verify {label}?',
+    confirm: '✓ Verify',
+    pending: 'Verifying…',
+    message: 'Plan, PRO and Job Card then use this drawing without the Unverified warning.',
+    done: '{label} verified',
   },
-  approve: {
-    title: 'Approve {label}?',
-    confirm: 'Approve',
-    pending: 'Approving…',
-    message: 'The drawing is checked. It still needs Release before Plan, PRO or Job Card.',
-    done: 'Drawing Rev approved',
-  },
-  reject: {
-    title: 'Reject {label}?',
-    confirm: 'Reject',
-    pending: 'Rejecting…',
-    message: 'The Rev goes back to Design with your reason.',
-    done: 'Drawing Rev rejected',
-  },
-  release: {
-    title: 'Release {label}?',
-    confirm: 'Release',
-    pending: 'Releasing…',
-    message:
-      'Plan, PRO and Job Card may then use this Rev. Older released Revs of the item become Superseded.',
-    done: 'Drawing Rev released',
+  unverify: {
+    title: 'Undo verify of {label}?',
+    confirm: '↺ Undo verify',
+    pending: 'Saving…',
+    message: 'The Rev goes back to Unverified and must be verified again.',
+    done: '{label} is Unverified again',
   },
   obsolete: {
     title: 'Mark {label} obsolete?',
     confirm: 'Mark Obsolete',
     pending: 'Saving…',
     message: 'An obsolete Rev is never used for new work.',
-    done: 'Drawing Rev marked obsolete',
+    done: '{label} marked obsolete',
   },
 };
 
-/** Reject and Mark Obsolete need a reason. */
-const NOTE: Partial<Record<RevStatusAction, { label: string; required: boolean }>> = {
-  reject: { label: 'Reject Reason', required: true },
-  obsolete: { label: 'Obsolete Reason', required: true },
+/** Undo verify and Mark Obsolete need a reason. */
+const NOTE: Partial<Record<RevStatusAction, string>> = {
+  unverify: 'Undo Reason',
+  obsolete: 'Obsolete Reason',
 };
+
+const VERIFY_TICK = 'I opened the PDF and checked the Drawing No. and Rev match this record.';
 
 export function RevActionDialog({
   target,
@@ -161,34 +130,66 @@ export function RevActionDialog({
 }): React.JSX.Element {
   const run = useRevStatusAction();
   const toast = useToast();
+  // Verify names the file the person checks — read it fresh (the register row
+  // carries only "has a PDF"), and send that path back (409 if it changed).
+  const detail = useItemRevision(action === 'verify' ? target.id : undefined);
   const [note, setNote] = useState('');
-  const t =
-    action === 'release' && target.releaseStatus === 'unverified'
-      ? VERIFY_RELEASE_TEXT
-      : TEXT[action];
-  const noteSpec = NOTE[action];
+  const [ticked, setTicked] = useState(false);
+  const t = TEXT[action];
+  const noteLabel = NOTE[action];
   const noteId = `rev-action-note-${action}`;
+  const rev = detail.data;
+  const path = rev?.drawingFilePath ?? null;
+  const uploaded =
+    path && rev
+      ? [...rev.history]
+          .filter((h) => h.drawingFilePath === path)
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+      : undefined;
   return (
     <ConfirmDialog
       title={t.title.replace('{label}', target.label)}
-      tone={action === 'reject' || action === 'obsolete' ? 'danger' : 'primary'}
+      tone={action === 'obsolete' ? 'danger' : 'primary'}
       confirmLabel={t.confirm}
       pendingLabel={t.pending}
       message={
         <div style={{ display: 'grid', gap: 'var(--sp-2)', marginTop: 'var(--sp-2)' }}>
+          {action === 'verify' ? (
+            detail.isLoading ? (
+              <span className="text3">Loading the drawing…</span>
+            ) : path ? (
+              <>
+                <span>
+                  PDF: <span className="mono fw-700">{fileNameFromPath(path)}</span>
+                </span>
+                {uploaded ? (
+                  <span className="text3">
+                    Uploaded by {uploaded.createdByName ?? '—'} on {fmtDateTime(uploaded.createdAt)}
+                  </span>
+                ) : null}
+                <Link
+                  to="/drawings/$itemRevisionId"
+                  params={{ itemRevisionId: target.id }}
+                  target="_blank"
+                  rel="noopener"
+                >
+                  Open the PDF
+                </Link>
+                <CheckField label={VERIFY_TICK} checked={ticked} onChange={setTicked} />
+              </>
+            ) : (
+              <span className="red fw-700">Upload the drawing first.</span>
+            )
+          ) : null}
           <span>{t.message}</span>
-          {noteSpec ? (
-            <FormField label={noteSpec.label} required={noteSpec.required} htmlFor={noteId}>
+          {noteLabel ? (
+            <FormField label={noteLabel} required htmlFor={noteId}>
               <textarea
                 id={noteId}
                 className="innovic-input"
                 rows={2}
                 maxLength={500}
-                placeholder={
-                  noteSpec.required
-                    ? `At least ${REV_CHANGE_REASON_MIN} characters`
-                    : 'What changed in this Rev'
-                }
+                placeholder={`At least ${REV_CHANGE_REASON_MIN} characters`}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
               />
@@ -199,21 +200,27 @@ export function RevActionDialog({
       onCancel={onClose}
       onConfirm={async () => {
         const trimmed = note.trim();
-        if (noteSpec?.required && trimmed.length < REV_CHANGE_REASON_MIN) {
+        if (noteLabel && trimmed.length < REV_CHANGE_REASON_MIN) {
           throw new Error(
-            `${noteSpec.label} is required (at least ${REV_CHANGE_REASON_MIN} characters).`,
+            `${noteLabel} is required (at least ${REV_CHANGE_REASON_MIN} characters).`,
           );
         }
-        // Thrown errors (a 409 "already approved by …") stay in the dialog.
+        if (action === 'verify') {
+          if (!path) throw new Error('Upload the drawing first.');
+          if (!ticked) throw new Error('Open the PDF, check it, then tick the box.');
+        }
+        // Thrown errors (a 409 "The drawing changed …") stay in the dialog.
         await run.mutateAsync({
           id: target.id,
           action,
           input: {
-            expectedUpdatedAt: target.updatedAt,
+            // The freshest version stamp this dialog has seen.
+            expectedUpdatedAt: rev?.updatedAt ?? target.updatedAt,
+            ...(action === 'verify' ? { expectedDrawingFilePath: path } : {}),
             ...(trimmed ? { note: trimmed } : {}),
           },
         });
-        toast.ok(t.done);
+        toast.ok(t.done.replace('{label}', target.label));
         onClose();
       }}
     />

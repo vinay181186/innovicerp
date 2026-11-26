@@ -1,6 +1,6 @@
-// ADR-291 — an operation on HOLD (Engineering Change, or a Drawing Rev that is
-// not Released). No qty may move on it until someone with the right releases
-// it: Engineering Change Approve or Job Card Approve (the server checks; the
+// ADR-291 — an operation on HOLD (Engineering Change). ADR-323: a drawing
+// status never stops a running op any more. No qty may move on a held op until
+// someone with the right releases it: Engineering Change Approve or Job Card Approve (the server checks; the
 // screen only hides the action).
 import { type EffectiveAccess, REV_CHANGE_REASON_MIN } from '@innovic/shared';
 import { useState } from 'react';
@@ -41,25 +41,6 @@ export function OpHoldBadge({
           </a>
         </>
       ) : null}
-    </span>
-  );
-}
-
-/** Orange "Rev not released" badge — the LIVE state (holdReason set, no stored
- *  hold): the op's Drawing Rev is not Released yet. Nothing to release here;
- *  the fix is releasing the Rev in the Drawing Register. */
-export function RevNotReleasedBadge({ reason }: { reason: string | null }): React.JSX.Element {
-  return (
-    <span className="badge b-orange" title={reason ?? 'Drawing Rev not released'}>
-      Rev not released
-      {' · '}
-      <a
-        href="/drawing-register"
-        title="Open Drawing Register"
-        onClick={(e) => e.stopPropagation()}
-      >
-        Drawing Register
-      </a>
     </span>
   );
 }

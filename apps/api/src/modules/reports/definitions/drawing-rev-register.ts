@@ -1,15 +1,16 @@
 // ADR-292 report 1 — Drawing Rev Register: every Item + Drawing Rev with its
-// release status, who released it and when, the change note, and how much
-// live work still uses it (open SO / JWSO lines, open Job Cards, a drawing
-// correction waiting). Same counts as the Drawing Register screen
+// status (ADR-323 Unverified / Verified / Obsolete), who verified it and when,
+// the change note, and how much live work still uses it (open SO / JWSO
+// lines, open Job Cards). Same counts as the Drawing Register screen
 // (item-revisions/register.ts).
 
 import {
+  normalizeRevStatus,
   REV_RELEASE_STATUS_LABELS,
   REV_RELEASE_STATUSES,
-  type RevReleaseStatus,
 } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
+import { revStatusWords } from '../../../lib/item-revision';
 import type { RegisteredReport } from '../registry';
 import {
   dateCell,
@@ -28,14 +29,14 @@ export const drawingRevRegisterReport: RegisteredReport = {
     slug: 'drawing-rev-register',
     title: 'Drawing Rev Register',
     description:
-      'Every Item + Drawing Rev: release status, released on / by, change note, open order lines, open Job Cards and whether a drawing correction is waiting.',
+      'Every Item + Drawing Rev: status, verified on / by, change note, open order lines and open Job Cards.',
     group: 'Design',
     dept: 'design',
     filters: [
       { key: 'item', label: 'Item', kind: 'text', placeholder: 'Item code or name' },
       {
         key: 'status',
-        label: 'Release Status',
+        label: 'Drawing Rev Status',
         kind: 'enum',
         options: [...REV_RELEASE_STATUSES],
       },
@@ -45,13 +46,12 @@ export const drawingRevRegisterReport: RegisteredReport = {
       { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'drawing_rev', label: 'Drawing Rev', type: 'text' },
       { key: 'drawing_no', label: 'Drawing No.', type: 'text' },
-      { key: 'release_status', label: 'Release Status', type: 'text' },
-      { key: 'released_on', label: 'Released On', type: 'date' },
-      { key: 'released_by', label: 'Released By', type: 'text' },
+      { key: 'release_status', label: 'Drawing Rev Status', type: 'text' },
+      { key: 'verified_on', label: 'Verified On', type: 'date' },
+      { key: 'verified_by', label: 'Verified By', type: 'text' },
       { key: 'change_note', label: 'Change Note', type: 'text' },
       { key: 'open_lines', label: 'Open Order Lines', type: 'number' },
       { key: 'open_job_cards', label: 'Open Job Cards', type: 'number' },
-      { key: 'pending_correction', label: 'Correction Waiting', type: 'text' },
     ],
   },
   async run({ tx, companyId, filters }) {
@@ -60,8 +60,8 @@ export const drawingRevRegisterReport: RegisteredReport = {
     const result = await tx.execute(sql`
       SELECT i.code AS item_code, i.name AS item_name, ir.rev AS drawing_rev,
              ir.drawing_no, ir.release_status,
-             (ir.released_at AT TIME ZONE 'Asia/Kolkata')::date::text AS released_on,
-             COALESCE(NULLIF(btrim(ru.full_name), ''), split_part(ru.email, '@', 1)) AS released_by,
+             (ir.released_at AT TIME ZONE 'Asia/Kolkata')::date::text AS verified_on,
+             COALESCE(NULLIF(btrim(ru.full_name), ''), split_part(ru.email, '@', 1)) AS verified_by,
              ir.change_note,
              ((SELECT COUNT(*) FROM public.sales_order_lines l
                  JOIN public.sales_orders h ON h.id = l.sales_order_id
@@ -74,16 +74,13 @@ export const drawingRevRegisterReport: RegisteredReport = {
              (SELECT COUNT(*) FROM public.job_cards jc
                 LEFT JOIN public.v_jc_status js ON js.job_card_id = jc.id
                WHERE jc.item_revision_id = ir.id AND jc.deleted_at IS NULL
-                 AND COALESCE(js.computed_status, 'open') NOT IN ('complete', 'closed'))::int AS open_job_cards,
-             EXISTS (SELECT 1 FROM public.drawing_corrections c
-                      WHERE c.item_revision_id = ir.id AND c.status = 'pending'
-                        AND c.deleted_at IS NULL) AS pending_correction
+                 AND COALESCE(js.computed_status, 'open') NOT IN ('complete', 'closed'))::int AS open_job_cards
         FROM public.item_revisions ir
         JOIN public.items i ON i.id = ir.item_id
         LEFT JOIN public.users ru ON ru.id = ir.released_by
        WHERE ir.company_id = ${companyId}::uuid AND ir.deleted_at IS NULL
          ${item ? sql`AND (i.code ILIKE ${item} OR i.name ILIKE ${item})` : sql``}
-         ${status ? sql`AND ir.release_status = ${status}` : sql``}
+         ${status ? sql`AND ir.release_status = ANY(${sql.param(revStatusWords(status))}::text[])` : sql``}
        ORDER BY i.code, ir.rev
        LIMIT ${REPORT_ROW_CAP}`);
     const rows = (result as unknown as SqlRow[]).map((r) => ({
@@ -91,15 +88,12 @@ export const drawingRevRegisterReport: RegisteredReport = {
       item_name: textCell(r['item_name']),
       drawing_rev: textCell(r['drawing_rev']),
       drawing_no: textCell(r['drawing_no']),
-      release_status:
-        REV_RELEASE_STATUS_LABELS[r['release_status'] as RevReleaseStatus] ??
-        textCell(r['release_status']),
-      released_on: dateCell(r['released_on']),
-      released_by: textCell(r['released_by']),
+      release_status: REV_RELEASE_STATUS_LABELS[normalizeRevStatus(String(r['release_status']))],
+      verified_on: dateCell(r['verified_on']),
+      verified_by: textCell(r['verified_by']),
       change_note: textCell(r['change_note']),
       open_lines: numCell(r['open_lines']),
       open_job_cards: numCell(r['open_job_cards']),
-      pending_correction: r['pending_correction'] === true ? 'Yes' : 'No',
     }));
     return { columns: drawingRevRegisterReport.definition.columns, rows };
   },

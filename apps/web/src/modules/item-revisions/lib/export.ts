@@ -2,8 +2,8 @@
 // Fix List (copies the JWSO pilot). One sheet each.
 //
 // Drawing Register: server-paged, so every Drawing Rev matching the search /
-// status / column filters. Item Code (a link), Drawing File (✓), the Drawing
-// Rev Status badge and "● Waiting" are components → plain values.
+// status / PDF / column filters. Item Code (a link), PDF (✓ / ✕) and the
+// Drawing Rev Status badge are components → plain values.
 // Fix List: one unpaged read; the sheet is the open tab's rows after the
 // search box. RC No. (a link), the RC Status badge and the SO No. link → plain.
 
@@ -32,9 +32,8 @@ function withValues<T>(columns: DataTableColumn<T>[], ev: Ev<T>): DataTableColum
 const REGISTER_EV: Ev<DrawingRegisterRow> = {
   item_code: (r) => r.label,
   so_no: (r) => r.orders.map((o) => o.code).join(', ') || null,
-  drawing_file: (r) => (r.hasFile ? 'Yes' : 'No'),
+  pdf: (r) => (r.hasFile ? 'Available' : 'Missing'),
   release_status: (r) => REV_RELEASE_STATUS_LABELS[r.releaseStatus],
-  pending_correction: (r) => (r.pendingCorrection ? 'Waiting' : null),
 };
 
 export const withRegisterExportValues = (
@@ -46,16 +45,19 @@ export function drawingRegisterExportSpec(a: {
   tableKey: string;
   search: string | undefined;
   status: RevReleaseStatus | undefined;
+  pdf: 'yes' | 'no' | undefined;
   sfParam: string | undefined;
 }): ListExportSpec<DrawingRegisterRow> {
   const words = [
     a.search ? `search "${a.search}"` : null,
     a.status ? `Drawing Rev Status: ${REV_RELEASE_STATUS_LABELS[a.status]}` : null,
+    a.pdf ? (a.pdf === 'yes' ? 'PDF Available' : 'PDF Missing') : null,
     a.sfParam ? 'column sort / filter applied' : null,
   ].filter((w): w is string => w !== null);
   const base: Partial<ListDrawingRegisterQuery> = {
     ...(a.search ? { search: a.search } : {}),
     ...(a.status ? { status: a.status } : {}),
+    ...(a.pdf ? { pdf: a.pdf } : {}),
     ...(a.sfParam ? { sf: a.sfParam } : {}),
   };
   return {

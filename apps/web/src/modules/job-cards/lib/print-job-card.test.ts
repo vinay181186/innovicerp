@@ -87,7 +87,7 @@ describe('printJobCard', () => {
     expect(t).toContain('Drawing No. DRG-1');
     expect(t).toContain('Drawing Rev C');
     expect(t).toContain('Remarks Handle with care');
-    expect(t.indexOf('Remarks')).toBeLessThan(t.indexOf('Use released drawing only'));
+    expect(t.indexOf('Remarks')).toBeLessThan(t.indexOf('Use verified drawing only'));
   });
 
   it('dates run JC Date, Due Date, Dispatch Date, in DD-MM-YYYY', () => {
@@ -99,7 +99,7 @@ describe('printJobCard', () => {
 
   it('Remarks always prints, blank when the card has none', () => {
     print();
-    expect(text(thead())).toMatch(/Remarks\s+Use released/);
+    expect(text(thead())).toMatch(/Remarks\s+Use verified/);
   });
 
   it('quantities are the JC screen figures; a zero is blank; Operation is the name only', () => {

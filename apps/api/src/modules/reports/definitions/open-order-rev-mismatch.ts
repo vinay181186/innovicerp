@@ -1,11 +1,11 @@
 // ADR-292 report 2 — open work on the wrong Drawing Rev.
-//   • open SO / JWSO lines whose Rev is not Released (Not released, Under
-//     Review, Approved, Rejected, Obsolete, Unverified) or is older than the
-//     item's latest Released Rev;
+//   • open SO / JWSO lines whose Rev is not Verified (Unverified, Obsolete —
+//     ADR-323) or is not the item's latest Verified Rev;
 //   • open Job Cards whose Rev differs from their order line's Rev.
 
-import { REV_RELEASE_STATUS_LABELS, type RevReleaseStatus } from '@innovic/shared';
+import { normalizeRevStatus, REV_RELEASE_STATUS_LABELS } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
+import { revStatusWords } from '../../../lib/item-revision';
 import type { RegisteredReport } from '../registry';
 import { likeFilter, REPORT_ROW_CAP, textCell, type SqlRow } from './report-helpers';
 
@@ -16,7 +16,7 @@ export const openOrderRevMismatchReport: RegisteredReport = {
     slug: 'open-order-rev-mismatch',
     title: 'Open Order Rev Mismatch',
     description:
-      'Open SO / JWSO lines whose Drawing Rev is not Released or is older than the latest Released Rev, and open Job Cards whose Drawing Rev differs from their order line.',
+      'Open SO / JWSO lines whose Drawing Rev is not Verified or is not the latest Verified Rev, and open Job Cards whose Drawing Rev differs from their order line.',
     group: 'Design',
     dept: 'design',
     filters: [{ key: 'item', label: 'Item', kind: 'text', placeholder: 'Item code or name' }],
@@ -27,7 +27,7 @@ export const openOrderRevMismatchReport: RegisteredReport = {
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'doc_rev', label: 'Document Rev', type: 'text' },
-      { key: 'doc_rev_status', label: 'Rev Release Status', type: 'text' },
+      { key: 'doc_rev_status', label: 'Drawing Rev Status', type: 'text' },
       { key: 'expected_rev', label: 'Expected Rev', type: 'text' },
       { key: 'problem', label: 'Problem', type: 'text' },
     ],
@@ -39,7 +39,8 @@ export const openOrderRevMismatchReport: RegisteredReport = {
       WITH latest AS (
         SELECT DISTINCT ON (item_id) item_id, id, rev
           FROM public.item_revisions
-         WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL AND release_status = 'released'
+         WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+           AND release_status = ANY(${sql.param(revStatusWords('verified'))}::text[])
          ORDER BY item_id, released_at DESC NULLS LAST, created_at DESC
       ), lines AS (
         SELECT 'SO line' AS found_on, h.code || ' Ln ' || l.line_no AS doc_code,
@@ -61,13 +62,13 @@ export const openOrderRevMismatchReport: RegisteredReport = {
       )
       SELECT x.found_on, x.doc_code, x.customer, i.code AS item_code, i.name AS item_name,
              ir.rev AS doc_rev, ir.release_status AS doc_rev_status, lt.rev AS expected_rev,
-             CASE WHEN ir.release_status <> 'released' THEN 'Rev not Released'
-                  ELSE 'Older than the latest Released Rev' END AS problem
+             CASE WHEN NOT (ir.release_status = ANY(${sql.param(revStatusWords('verified'))}::text[])) THEN 'Rev not Verified'
+                  ELSE 'Not the latest Verified Rev' END AS problem
         FROM lines x
         JOIN public.items i ON i.id = x.item_id
         JOIN public.item_revisions ir ON ir.id = x.item_revision_id
         LEFT JOIN latest lt ON lt.item_id = x.item_id
-       WHERE (ir.release_status <> 'released' OR (lt.id IS NOT NULL AND lt.id <> ir.id))
+       WHERE (NOT (ir.release_status = ANY(${sql.param(revStatusWords('verified'))}::text[])) OR (lt.id IS NOT NULL AND lt.id <> ir.id))
          ${itemFrag}
       UNION ALL
       SELECT 'Job Card', jc.code, COALESCE(c1.name, so.customer_name, c2.name, jwo.customer_name),
@@ -98,8 +99,7 @@ export const openOrderRevMismatchReport: RegisteredReport = {
       item_name: textCell(r['item_name']),
       doc_rev: textCell(r['doc_rev']),
       doc_rev_status: r['doc_rev_status']
-        ? (REV_RELEASE_STATUS_LABELS[r['doc_rev_status'] as RevReleaseStatus] ??
-          String(r['doc_rev_status']))
+        ? REV_RELEASE_STATUS_LABELS[normalizeRevStatus(String(r['doc_rev_status']))]
         : null,
       expected_rev: textCell(r['expected_rev']),
       problem: textCell(r['problem']),

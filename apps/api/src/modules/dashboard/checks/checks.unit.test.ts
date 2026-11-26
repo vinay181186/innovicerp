@@ -256,10 +256,8 @@ describe('phase 2 departments', () => {
       'des_issues',
       'des_dcr',
       'des_rev_review',
-      'des_rev_release',
-      'des_rev_correction',
       'des_rev_blocking',
-      'des_rev_unverified',
+      'des_rev_replaced',
     ]);
   });
 

@@ -39,12 +39,10 @@ export const DASH_CHECK_KEYS = [
   'des_tracker', // design tracker item not Approved, by Target Date
   'des_issues', // design issue Open / In Progress, by Raised Date
   'des_dcr', // DCR Submitted / Under Review, by Request Date
-  // ADR-317 — Drawing Register (same status rules as Home › Approvals, ADR-311)
-  'des_rev_review', // Drawing Rev Under Review — waiting Approve / Reject, by Sent On
-  'des_rev_release', // Drawing Rev Approved — waiting Release, by Approved On
-  'des_rev_correction', // drawing correction of a released Rev waiting, by Asked On
-  'des_rev_blocking', // open SO / JWSO LINE whose Drawing Rev blocks Plan (Not released … Rejected), by Due Date; not in the badge
-  'des_rev_unverified', // one row per Unverified Drawing Rev with an open SO / JWSO line, by its earliest Due Date
+  // ADR-323 — Drawing Register (Unverified / Verified / Obsolete)
+  'des_rev_review', // "Drawing Revs to verify": Unverified Rev WITH a PDF on an open SO / JWSO line, by earliest Due Date
+  'des_rev_blocking', // "Open lines with no drawing PDF": open SO / JWSO LINE whose Rev has no PDF, by Due Date; not in the badge
+  'des_rev_replaced', // "PDF replaced on a Verified drawing": Verified → Unverified by a replace in the last 7 days, by Replaced On
   // Production
   'prod_plans_available', // approved Route Card, Pending > 0, no Production Order (plan_to_pro rule)
   'prod_plans_overdue', // same plans, planned_start_date before today

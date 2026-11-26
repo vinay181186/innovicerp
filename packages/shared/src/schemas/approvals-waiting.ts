@@ -14,13 +14,11 @@
 //   cancel   POST /cancel-requests/:id/decide
 //   dayLog   POST /day-logs/entries/:id/approve | /reject (requestedAt = version)
 //   ecr      (Engineering Change approval)
-//   ADR-311 — Drawing Register:
-//   rev        Drawing Rev Under Review → POST /item-revisions/:id/approve | /reject
-//              (Drawing Register Approve tick; expectedUpdatedAt = version)
-//   revRelease Drawing Rev Approved     → POST /item-revisions/:id/release | /reject
-//              (Drawing Release switch; expectedUpdatedAt = version)
-//   drawingCorrection pending correction of a released file
-//              → POST /item-revisions/corrections/:id/decide (Drawing Release switch)
+//   ADR-323 — Drawing Register:
+//   rev        Drawing to verify: Unverified Rev WITH a PDF used on an open SO / JWSO
+//              line → POST /item-revisions/:id/verify (Drawing Register Approve tick;
+//              expectedUpdatedAt = version, expectedDrawingFilePath = the file shown).
+//              No Reject: a wrong drawing is replaced in the register.
 //   The raiser is NOT excluded (owner 23-Nov: self-approval allowed).
 //
 // PRs have no approval (owner rule 2026-10-31) and are never listed.
@@ -37,8 +35,6 @@ export const APPROVAL_KINDS = [
   'dayLog',
   'ecr',
   'rev',
-  'revRelease',
-  'drawingCorrection',
 ] as const;
 export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
 
@@ -79,7 +75,7 @@ export const waitingApprovalRowSchema = z.object({
    *  its captured `before` (approving it would be refused). */
   isStale: z.boolean(),
   /** The version stamp the decide endpoint checks (§20.2): Route Card
-   *  `updatedAt`, Day Log `requestedAt`, Drawing Rev (`rev` / `revRelease`)
+   *  `updatedAt`, Day Log `requestedAt`, Drawing Rev (`rev`)
    *  `updatedAt`; null for the other kinds. */
   version: z.string().nullable(),
 });

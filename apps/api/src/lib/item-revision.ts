@@ -10,24 +10,46 @@
 //   • A DIFFERENT file for a row that already has one is refused — the fix is
 //     replaceItemRevisionDrawing() with a reason (old file kept in history).
 //   • Rev only for MAKE items; Buy items / RM resolve to null.
+//   • ADR-323 — a new row is 'unverified'; getting a first file never changes
+//     the status (Design verifies it in the Drawing Register).
 
 import {
   normalizeRevision,
   REVISION_PATTERN,
   isRevWorkAllowed,
   itemRevLabel,
+  LEGACY_UNVERIFIED_STATUSES,
+  LEGACY_VERIFIED_STATUSES,
+  normalizeRevStatus,
   revNotReleasedMessage,
-  REV_AUTO_REVIEW_FROM,
-  REV_RELEASE_STATUS_LABELS,
-  ActivityAction,
   type ItemRevisionSource,
   type RevReleaseStatus,
 } from '@innovic/shared';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, type SQL, sql } from 'drizzle-orm';
 import { itemRevisionDrawings, itemRevisions, items } from '../db/schema';
 import type { AuthContext, DbTransaction } from '../db/with-user-context';
 import { ValidationError } from './errors';
-import { emitActivityLog } from '../modules/activity-log/service';
+
+// ─── Reading release_status (ADR-323) ─────────────────────────────────────
+// Until 0264 the column may still hold an ADR-290 word. Every SQL read goes
+// through revStatusSql, every filter / conditional UPDATE through
+// revStatusWords — the SQL twin of normalizeRevStatus (packages/shared).
+
+const VERIFIED_WORDS = ['verified', ...LEGACY_VERIFIED_STATUSES] as const;
+
+/** SQL: a raw release_status column → 'unverified' | 'verified' | 'obsolete'. */
+export function revStatusSql(col: SQL | string): SQL {
+  const c = typeof col === 'string' ? sql.raw(col) : col;
+  return sql`(CASE WHEN ${c} IN ('verified', 'released', 'superseded', 'approved') THEN 'verified'
+                   WHEN ${c} = 'obsolete' THEN 'obsolete' ELSE 'unverified' END)`;
+}
+
+/** Every stored word that reads as `status` (for `= ANY(...)`). */
+export function revStatusWords(status: RevReleaseStatus): string[] {
+  if (status === 'verified') return [...VERIFIED_WORDS];
+  if (status === 'obsolete') return ['obsolete'];
+  return ['unverified', ...LEGACY_UNVERIFIED_STATUSES];
+}
 
 export interface ResolveItemRevisionInput {
   itemId: string | null | undefined;
@@ -90,9 +112,8 @@ export async function resolveItemRevision(
     input.drawingFilePath === undefined ? undefined : input.drawingFilePath?.trim() || null;
   const offeredNo = input.drawingNo === undefined ? undefined : input.drawingNo?.trim() || null;
 
-  // ADR-290 — a Rev first named on a document is 'draft' ("Not released") until
-  // Design releases it in the Drawing Register. Only 'legacy' rows stay 'unverified'.
-  const releaseStatus = input.sourceType === 'legacy' ? 'unverified' : 'draft';
+  // ADR-323 — every new Rev is Unverified until Design verifies its PDF.
+  const releaseStatus = 'unverified';
   const inserted = await tx.execute<{ id: string }>(sql`
     INSERT INTO item_revisions (company_id, item_id, rev, drawing_file_path, drawing_no, source_type, source_ref, release_status, change_note, created_by, updated_by)
     VALUES (${companyId}, ${input.itemId}, ${rev}, ${offered ?? null}, ${offeredNo ?? null}, ${input.sourceType}, ${input.sourceRef}, ${releaseStatus}, ${input.changeNote?.trim() || null}, ${user.id}, ${user.id})
@@ -113,8 +134,6 @@ export async function resolveItemRevision(
         createdBy: user.id,
         updatedBy: user.id,
       });
-      // ADR-311 — born with a file → Under Review at once.
-      await autoSubmitRevIfFile(tx, user, companyId, insertedId, input.sourceRef);
     }
     return {
       id: insertedId,
@@ -167,8 +186,6 @@ export async function resolveItemRevision(
       createdBy: user.id,
       updatedBy: user.id,
     });
-    // ADR-311 — first file adopted → Under Review at once.
-    await autoSubmitRevIfFile(tx, user, companyId, row.id, input.sourceRef);
     return {
       id: row.id,
       rev,
@@ -186,62 +203,21 @@ export async function resolveItemRevision(
   };
 }
 
-/**
- * ADR-311 — a Rev that holds a drawing file is Under Review: there is no
- * "Send for Review" step. ONE conditional UPDATE (§20.2): only a live row in
- * REV_AUTO_REVIEW_FROM (draft / rejected / under_review / approved) that has a
- * file moves; every other status (unverified, released, superseded, obsolete)
- * is left alone. Clears the earlier decision stamps and the stored hash so the
- * Rev is checked again. Writes one SUBMIT activity row when a row moved.
- * Returns true when the Rev was moved.
- */
-export async function autoSubmitRevIfFile(
+/** ADR-323 — a line's Drawing No. fills the register's Drawing No. when that
+ *  is blank. Never overwrites a non-blank one (conditional UPDATE). Runs in
+ *  the line save's transaction, after its line locks (ADR-289 lock order). */
+export async function fillRevDrawingNo(
   tx: DbTransaction,
-  user: AuthContext,
   companyId: string,
-  revId: string,
-  sourceRef: string | null,
-): Promise<boolean> {
-  const moved = (await tx.execute(sql`
-    UPDATE public.item_revisions r
-       SET release_status = 'under_review', submitted_at = now(), submitted_by = ${user.id}::uuid,
-           rejected_at = NULL, rejected_by = NULL, reject_reason = NULL,
-           approved_at = NULL, approved_by = NULL, file_hash = NULL, updated_by = ${user.id}::uuid
-      FROM public.item_revisions o
-      JOIN public.items i ON i.id = o.item_id
-     WHERE r.id = ${revId}::uuid AND o.id = r.id
-       AND r.company_id = ${companyId}::uuid AND r.deleted_at IS NULL
-       AND r.release_status = ANY(${sql.param([...REV_AUTO_REVIEW_FROM])}::text[])
-       AND NULLIF(btrim(r.drawing_file_path), '') IS NOT NULL
-    RETURNING o.release_status AS before, i.code AS item_code, r.rev AS rev`)) as unknown as Array<{
-    before: RevReleaseStatus;
-    item_code: string;
-    rev: string;
-  }>;
-  const m = moved[0];
-  if (!m) return false;
-  const label = itemRevLabel(m.item_code, m.rev);
-  await emitActivityLog(
-    tx,
-    {
-      action: ActivityAction.Submit,
-      entity: 'ItemRevision',
-      entityId: revId,
-      refId: label,
-      changes: [
-        {
-          field: 'releaseStatus',
-          label: 'Release Status',
-          before: REV_RELEASE_STATUS_LABELS[m.before],
-          after: REV_RELEASE_STATUS_LABELS.under_review,
-        },
-      ],
-      detail: `${label} sent for review automatically — ${sourceRef ?? 'drawing file added'}`,
-    },
-    companyId,
-    user,
-  );
-  return true;
+  revId: string | null | undefined,
+  drawingNo: string | null | undefined,
+): Promise<void> {
+  const no = drawingNo?.trim();
+  if (!revId || !no) return;
+  await tx.execute(sql`
+    UPDATE public.item_revisions SET drawing_no = ${no}
+     WHERE id = ${revId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
+       AND NULLIF(btrim(drawing_no), '') IS NULL`);
 }
 
 /** Read-only: the live ABC/<rev> row (no lock, no write), or null. Used by the
@@ -275,17 +251,16 @@ export async function findItemRevision(
 
 // Replace drawing + drawing corrections live in item-revision-drawing.ts (size).
 export {
-  applyDrawingCorrection,
   replaceItemRevisionDrawing,
   type ReplaceItemRevisionDrawingArgs,
 } from './item-revision-drawing';
 
 /**
- * ADR-290 Step 3 — the Released-only rule, in ONE place. New Plan / PRO / Job
- * Card work (and a line Rev change that moves open work) may only use a Rev
- * whose release status allows work (REV_WORK_ALLOWED: released, superseded,
- * unverified). No Rev (Buy item, blank) is not decided here. `refusal`
- * replaces the standard sentence where a screen needs its own words.
+ * ADR-323 — the work rule, in ONE place. New Plan / PRO / Job Card work (and a
+ * line Rev change that moves open work) may use a Verified or Unverified Rev
+ * (REV_WORK_ALLOWED); only Obsolete is refused. No Rev (Buy item, blank) is
+ * not decided here. `refusal` replaces the standard sentence where a screen
+ * needs its own words.
  */
 export async function assertRevReleasedForWork(
   tx: DbTransaction,
@@ -301,7 +276,7 @@ export async function assertRevReleasedForWork(
     .where(and(eq(itemRevisions.id, itemRevisionId), eq(itemRevisions.companyId, companyId)))
     .limit(1);
   if (!row) return;
-  const status = row.status as RevReleaseStatus;
+  const status = normalizeRevStatus(row.status);
   if (isRevWorkAllowed(status)) return;
   const label = itemRevLabel(row.itemCode, row.rev);
   throw new ValidationError(

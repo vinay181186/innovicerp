@@ -29,6 +29,7 @@ import { type FormDraft, useDraftSinkFill, useFormDraft } from '@/lib/use-form-d
 import { Banner } from '@/ui/feedback';
 import { SearchableSelect } from '@/ui/forms';
 import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
+import { RevUnverifiedNote } from '@/modules/item-revisions/components/rev-unverified-note';
 import { useDefaultRouteOps } from '../api';
 import { PLAN_DEFAULT_SPAN_DAYS } from './plan-form';
 
@@ -336,6 +337,8 @@ export function PlanCreateForm({
         ) : null}
       </div>
 
+      {/* ADR-323 — orange, never blocks. */}
+      {line ? <RevUnverifiedNote itemId={line.itemId} rev={docDrawingRev(line)} /> : null}
       {blocker ? (
         <Banner tone="warn" flush>
           {blocker}{' '}

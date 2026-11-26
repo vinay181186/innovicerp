@@ -6,6 +6,7 @@
 //   edit     Approve on DOCUMENT_EDIT_FORM_KEY[entity] (decideDocumentEdit)
 //   cancel   typesWith(user, 'decide') (decideCancelRequest, cancelDeciderRight)
 //   ecr      decidableEcrRoles (decideEcr — L4 / L5 in the role's department)
+//   rev      Drawing Register Approve tick (revStatusAction verify, ADR-323)
 // Every check opens its own transaction: call these BEFORE / outside any
 // withUserContext transaction.
 
@@ -48,20 +49,32 @@ export interface ApproverScope {
   cancelTypes: CancelDocType[];
   /** ADR-291 — the ECR sign-off roles the caller may give. */
   ecrRoles: EcrApproverRole[];
+  /** ADR-323 — may verify drawings (Drawing Register Approve tick). */
+  drawings: boolean;
 }
 
 /** Every type at once (history). The waiting list reads po / rc / logEntry
  *  through readApprovalInbox instead, which answers them on the way. */
 export async function loadApproverScope(user: AuthContext): Promise<ApproverScope> {
-  const [po, rc, opApprove, qcApprove, editEntities, cancelTypes, ecrRoles] = await Promise.all([
-    loadPoInboxAccess(user),
-    loadRcInboxAccess(user),
-    hasFormAccess(user, 'op_entry', 'approve'),
-    hasFormAccess(user, 'qc_submit', 'approve'),
-    approvableEditEntities(user),
-    decidableCancelTypes(user),
-    decidableEcrRoles(user),
-  ]);
+  const [po, rc, opApprove, qcApprove, editEntities, cancelTypes, ecrRoles, drawings] =
+    await Promise.all([
+      loadPoInboxAccess(user),
+      loadRcInboxAccess(user),
+      hasFormAccess(user, 'op_entry', 'approve'),
+      hasFormAccess(user, 'qc_submit', 'approve'),
+      approvableEditEntities(user),
+      decidableCancelTypes(user),
+      decidableEcrRoles(user),
+      hasFormAccess(user, 'drawingreg_create', 'approve'),
+    ]);
   const logScope = opApprove || qcApprove ? await decidableTimeChangeScope(user) : null;
-  return { po: po.canApprove, rc: rc.canApprove, logScope, editEntities, cancelTypes, ecrRoles };
+  return {
+    po: po.canApprove,
+    rc: rc.canApprove,
+    logScope,
+    editEntities,
+    cancelTypes,
+    ecrRoles,
+    drawings,
+  };
 }

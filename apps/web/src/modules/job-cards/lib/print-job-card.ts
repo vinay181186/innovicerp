@@ -275,7 +275,7 @@ export function printJobCard(args: {
   const topBlock = `<div class="jh">
     <div class="jcols">${columns}</div>
     <div class="jrem"><span class="jl">Remarks</span><span class="jv">${esc(jc.remarks ?? '')}</span></div>
-    <div class="jnote">Use released drawing only &nbsp;·&nbsp; PRD-F-004 Rev 00</div>
+    <div class="jnote">Use verified drawing only &nbsp;·&nbsp; PRD-F-004 Rev 00</div>
   </div>`;
 
   // Each operation is its OWN body row of the sheet (a one-row table inside),

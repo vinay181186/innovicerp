@@ -16,6 +16,7 @@ import {
 import { type SQL, sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../db/with-user-context';
 import { NotFoundError } from '../../lib/errors';
+import { revStatusSql } from '../../lib/item-revision';
 
 /** The header joins (aliases e, i, fr, tr, ri, cu) — list, detail and the
  *  Sort & Filter map (sf-columns.ts) all read these. */
@@ -31,7 +32,7 @@ export const ECR_COLS = sql`
   e.id, e.code, e.status, e.item_id AS "itemId", i.code AS "itemCode", i.name AS "itemName",
   e.from_item_revision_id AS "fromItemRevisionId", fr.rev AS "fromRev",
   e.to_item_revision_id AS "toItemRevisionId", tr.rev AS "toRev",
-  tr.release_status AS "toReleaseStatus",
+  ${revStatusSql('tr.release_status')} AS "toReleaseStatus",
   e.replacement_item_id AS "replacementItemId", ri.code AS "replacementItemCode",
   e.classification, e.description, e.customer_approval AS "customerApproval",
   e.customer_approval_ref AS "customerApprovalRef",

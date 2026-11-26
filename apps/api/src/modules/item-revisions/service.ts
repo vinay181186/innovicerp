@@ -5,12 +5,13 @@
 //
 // Read access: any logged-in user of the company — the SO / JWSO / Route Card
 // Item + Rev pickers need it (ADR-237 picker pattern; RLS keeps it to the
-// company). Replace drawing: Route Card Master Edit.
+// company). Replace drawing: Drawing Register Entry (first file) / Edit
+// (replace) — checked in lib/item-revision-drawing.ts (ADR-323).
 
 import {
   compareRevision,
-  type DrawingCorrection,
   itemRevLabel,
+  normalizeRevStatus,
   type ItemRevision,
   type ItemRevisionChange,
   type ItemRevisionDetail,
@@ -24,13 +25,12 @@ import {
   type LookupItemRevisionResponse,
   type ReplaceItemRevisionDrawingInput,
   type RevReleaseInfo,
-  type RevReleaseStatus,
 } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
-import { itemNeedsRev, replaceItemRevisionDrawing } from '../../lib/item-revision';
+import { itemNeedsRev, replaceItemRevisionDrawing, revStatusWords } from '../../lib/item-revision';
+import { hashDrawingFile } from '../drawing-files/service';
 import { likeEscape } from '../../lib/list-query';
 import { newestFirst } from '../../lib/list-order';
 import { listRevCorrections } from './corrections';
@@ -52,8 +52,8 @@ const REV_SELECT = sql`
          ir.source_type AS "sourceType", ir.source_ref AS "sourceRef",
          rc.id AS "routeCardId", rc.code AS "routeCardCode",
          ir.release_status AS "releaseStatus", ir.change_note AS "changeNote",
-         ir.released_at AS "releasedAt", ir.released_by AS "releasedBy",
-         CASE WHEN ru.id IS NULL THEN NULL ELSE ${nameSql('ru')} END AS "releasedByName",
+         ir.released_at AS "verifiedAt", ir.released_by AS "verifiedBy",
+         CASE WHEN ru.id IS NULL THEN NULL ELSE ${nameSql('ru')} END AS "verifiedByName",
          ir.file_hash AS "fileHash",
          ir.created_at AS "createdAt", ir.created_by AS "createdBy",
          ir.updated_at AS "updatedAt", ir.updated_by AS "updatedBy"
@@ -79,11 +79,11 @@ function toItemRevision(r: Record<string, unknown>): ItemRevision {
     sourceRef: (r['sourceRef'] as string | null) ?? null,
     routeCardId: (r['routeCardId'] as string | null) ?? null,
     routeCardCode: (r['routeCardCode'] as string | null) ?? null,
-    releaseStatus: ((r['releaseStatus'] as string | null) ?? 'unverified') as RevReleaseStatus,
+    releaseStatus: normalizeRevStatus(r['releaseStatus'] as string | null),
     changeNote: (r['changeNote'] as string | null) ?? null,
-    releasedAt: r['releasedAt'] == null ? null : ts(r['releasedAt']),
-    releasedBy: (r['releasedBy'] as string | null) ?? null,
-    releasedByName: (r['releasedByName'] as string | null) ?? null,
+    verifiedAt: r['verifiedAt'] == null ? null : ts(r['verifiedAt']),
+    verifiedBy: (r['verifiedBy'] as string | null) ?? null,
+    verifiedByName: (r['verifiedByName'] as string | null) ?? null,
     fileHash: (r['fileHash'] as string | null) ?? null,
     createdAt: ts(r['createdAt']),
     createdBy: (r['createdBy'] as string | null) ?? null,
@@ -145,8 +145,8 @@ export async function lookupItemRevision(
   });
 }
 
-/** ADR-290 — this Rev's status and the item's highest released Rev, when that
- *  is newer than this one ("Latest released drawing is ABC/2"). */
+/** ADR-323 — this Rev's status and the item's highest VERIFIED Rev, when that
+ *  is newer than this one ("Latest verified drawing is ABC/2"). */
 async function revReleaseInfo(
   tx: DbTransaction,
   companyId: string,
@@ -157,7 +157,8 @@ async function revReleaseInfo(
     SELECT ir.id, ir.rev, i.code FROM public.item_revisions ir
       JOIN public.items i ON i.id = ir.item_id
      WHERE ir.company_id = ${companyId}::uuid AND ir.item_id = ${itemId}::uuid
-       AND ir.deleted_at IS NULL AND ir.release_status = 'released'`)) as unknown as Array<{
+       AND ir.deleted_at IS NULL
+       AND ir.release_status = ANY(${sql.param(revStatusWords('verified'))}::text[])`)) as unknown as Array<{
     id: string;
     rev: string;
     code: string;
@@ -168,13 +169,12 @@ async function revReleaseInfo(
     if (!top || (compareRevision(r.rev, top.rev) ?? 0) > 0) top = r;
   }
   // Named only when it is really newer: it compares HIGHER than this Rev, or
-  // this Rev is Superseded / Obsolete. A Rev newer than the latest released
-  // (ABC/3 typed while ABC/2 is released) gets no "latest released" note.
+  // this Rev is Obsolete. A Rev newer than the latest verified (ABC/3 typed
+  // while ABC/2 is verified) gets no "latest verified" note.
   const newer =
     top &&
     top.id !== revision?.id &&
     (!revision ||
-      revision.releaseStatus === 'superseded' ||
       revision.releaseStatus === 'obsolete' ||
       (compareRevision(top.rev, revision.drawingRev) ?? 0) > 0);
   const other = newer ? top : null;
@@ -266,24 +266,20 @@ export async function replaceDrawing(
   id: string,
   input: ReplaceItemRevisionDrawingInput,
   user: AuthContext,
-): Promise<ItemRevisionDetail | { correction: DrawingCorrection }> {
-  await requireFormAccess(user, 'routecard_create', 'edit');
+): Promise<ItemRevisionDetail> {
   const companyId = requireCompany(user);
-  const res = await withUserContext(user, (tx) =>
+  // ADR-323 — hash the NEW file before the transaction (a storage read is
+  // slow): the same file as the verified one keeps the Rev Verified.
+  const newFileHash = await hashDrawingFile(input.drawingFilePath.trim());
+  await withUserContext(user, (tx) =>
     replaceItemRevisionDrawing(tx, user, companyId, id, {
       drawingFilePath: input.drawingFilePath,
       drawingNo: input.drawingNo,
       reason: input.reason,
       expectedUpdatedAt: input.expectedUpdatedAt,
+      newFileHash,
     }),
   );
-  // ADR-290 — a Released / Superseded Rev: the file did not change; a
-  // correction waits for the release switch. The screen says so.
-  if (res.correctionId) {
-    const list = await withUserContext(user, (tx) => listRevCorrections(tx, companyId, id));
-    const correction = list.find((c) => c.id === res.correctionId);
-    if (correction) return { correction };
-  }
   return getItemRevision(id, user);
 }
 

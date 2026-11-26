@@ -1,8 +1,8 @@
-// ADR-290 — "+ New Drawing Rev" on the Drawing Register. A customer's new Rev
-// that no order names yet (ABC/2 arriving while the SO line still runs on
-// ABC/1) is added here so Design can review and release it before work moves
-// to it. With a drawing file it goes straight to Under Review (ADR-311);
-// without one it stays "Not released". Drawing Register Entry right.
+// ADR-290 / ADR-323 — "+ New Drawing Rev" on the Drawing Register. A customer's
+// new Rev that no order names yet (ABC/2 arriving while the SO line still runs
+// on ABC/1), or one a new Route Card needs, is added here as Unverified; the
+// PDF is optional and Design verifies it afterwards. Drawing Register Entry
+// right. The Route Card banner opens it prefilled (?new=1&itemId=…&rev=…).
 //
 // Built on the shared ConfirmDialog, like Replace drawing and Set Rev: a thrown
 // error stays inside the dialog, so the server's 409 ("ABC/2 already exists")
@@ -16,16 +16,21 @@ import { fileNameFromPath } from '@/components/shared/file-preview-modal';
 import { useSession } from '@/lib/session';
 import { uploadFile } from '@/lib/storage';
 import { useSaveKey } from '@/lib/use-save-key';
-import { useItemsList } from '@/modules/items/api';
+import { useItem, useItemsList } from '@/modules/items/api';
 import { ConfirmDialog, FilePreview, filePreviewKind, useToast } from '@/ui/feedback';
 import { FileField, FormField, SearchableSelect } from '@/ui/forms';
 import { cleanDrawingRev, useCreateDrawingRev } from '../api';
 import { ITEM_REVISION_DRAWING_FOLDER } from './replace-drawing-dialog';
 
 export function NewDrawingRevDialog({
+  initialItemId,
+  initialRev,
   onClose,
   onCreated,
 }: {
+  /** Prefill from the address (Route Card "Click here to add it"). */
+  initialItemId?: string | undefined;
+  initialRev?: string | undefined;
   onClose: () => void;
   /** Called with the new record once the server saved it. */
   onCreated: (rev: ItemRevision) => void;
@@ -45,9 +50,14 @@ export function NewDrawingRevDialog({
     limit: 50,
     offset: 0,
   });
-  const [itemId, setItemId] = useState<string | null>(null);
+  const [itemId, setItemId] = useState<string | null>(initialItemId ?? null);
   const [itemCode, setItemCode] = useState('');
-  const [rev, setRev] = useState('');
+  const [rev, setRev] = useState(initialRev ?? '');
+  // A prefilled item has no picked option to read its code from — read it once.
+  const { data: prefilled } = useItem(initialItemId);
+  useEffect(() => {
+    if (prefilled && itemId === prefilled.id && !itemCode) setItemCode(prefilled.code);
+  }, [prefilled, itemId, itemCode]);
   const [drawingNo, setDrawingNo] = useState('');
   const [changeNote, setChangeNote] = useState('');
   const [path, setPath] = useState<string | null>(null);
@@ -98,9 +108,8 @@ export function NewDrawingRevDialog({
         message={
           <div style={{ display: 'grid', gap: 'var(--sp-2)', marginTop: 'var(--sp-2)' }}>
             <span>
-              With a drawing file attached, the new Drawing Rev goes straight to Under Review for
-              Design to approve and release before Plan, PRO or Job Card use it. Without a file it
-              stays Not released until one is added.
+              The new Drawing Rev is added as Unverified. The drawing PDF is optional here; once it
+              is on file, Design opens it and clicks Verify.
             </span>
             <FormField label="Item Code" required htmlFor="ndr-item">
               <SearchableSelect

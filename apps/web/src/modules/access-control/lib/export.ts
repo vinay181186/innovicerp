@@ -11,7 +11,6 @@ function extrasText(u: UserAccessListItem): string {
   const words = [u.fullAccess ? 'All' : `${u.formCount}/${u.totalForms}`];
   if (u.fullAccess || u.drawingDownload) words.push('Drawings');
   if (u.fullAccess || u.drawingPrint) words.push('Drawing print');
-  if (u.fullAccess || u.drawingRelease) words.push('Drawing release');
   return words.join(' · ');
 }
 

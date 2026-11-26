@@ -9,16 +9,13 @@
 // shown inside the dialog, so a 409 "changed by someone else" or a refused
 // right never closes it. Sends the record's updatedAt as loaded (§20.4).
 //
-// ADR-290 — on a Released / Superseded Rev the file is never swapped here: the
-// server files a drawing correction for the Drawing Release approver and the
-// drawing stays as it is until that is approved (onDone gets null). On an
-// Under Review / Approved Rev the swap happens and the Rev goes back to Under
-// Review (ADR-311).
+// ADR-323 — one path: the new PDF is saved at once. On a Verified Rev it turns
+// the Rev back to Unverified (the server does that) and Design verifies again.
 //
 // ADR-319 — `firstFile`: the Rev has no file yet. The same dialog uploads its
-// FIRST drawing ("Upload drawing of ABC/1"): no reason needed, nothing goes for
-// correction approval, and the file reaches every SO / JWSO line, Route Card
-// and Job Card on that Rev.
+// FIRST drawing ("Upload drawing of ABC/1"): no reason needed, and the file
+// reaches every SO / JWSO line, Route Card and Job Card on that Rev.
+// Rights: first upload = Drawing Register Entry, replace = Drawing Register Edit.
 
 import { REV_CHANGE_REASON_MIN, type ItemRevision } from '@innovic/shared';
 import { useState } from 'react';
@@ -40,9 +37,8 @@ export function ReplaceDrawingDialog({
   revision: Pick<ItemRevision, 'id' | 'label' | 'drawingNo' | 'updatedAt' | 'releaseStatus'>;
   /** ADR-319 — the Rev has no file: upload its first drawing (no reason). */
   firstFile?: boolean;
-  /** Called with the new file path once the server swapped the file, or with
-   *  null when it filed a correction instead (the drawing has not changed). */
-  onDone: (path: string | null) => void;
+  /** Called with the new file path once the server saved it. */
+  onDone: (path: string) => void;
   onCancel: () => void;
 }): React.JSX.Element {
   const { data: me } = useSession();
@@ -53,14 +49,7 @@ export function ReplaceDrawingDialog({
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const correction =
-    !firstFile &&
-    (revision.releaseStatus === 'released' || revision.releaseStatus === 'superseded');
-  const resetsReview =
-    !firstFile &&
-    (revision.releaseStatus === 'under_review' || revision.releaseStatus === 'approved');
-  const toReview =
-    firstFile && (revision.releaseStatus === 'draft' || revision.releaseStatus === 'rejected');
+  const resetsVerify = revision.releaseStatus === 'verified';
 
   async function onPick(file: File | null): Promise<void> {
     if (!file) return;
@@ -86,32 +75,20 @@ export function ReplaceDrawingDialog({
         firstFile ? `Upload drawing of ${revision.label}` : `Replace drawing of ${revision.label}?`
       }
       tone="primary"
-      confirmLabel={
-        firstFile
-          ? 'Upload drawing'
-          : correction
-            ? 'Send correction for approval'
-            : 'Replace drawing'
-      }
-      pendingLabel={firstFile ? 'Uploading…' : correction ? 'Sending…' : 'Replacing…'}
+      confirmLabel={firstFile ? 'Upload drawing' : 'Replace drawing'}
+      pendingLabel={firstFile ? 'Uploading…' : 'Replacing…'}
       message={
         <div style={{ display: 'grid', gap: 'var(--sp-2)', marginTop: 'var(--sp-2)' }}>
-          {correction ? (
+          {resetsVerify ? (
             <span className="amber fw-700">
-              This Rev is released. Your file goes to the Drawing Release approver; the drawing does
-              not change until it is approved.
-            </span>
-          ) : null}
-          {resetsReview ? (
-            <span className="amber fw-700">
-              The Rev goes back to Under Review and must be approved again.
+              This drawing is Verified. After you save the new PDF it becomes Unverified and must be
+              verified again.
             </span>
           ) : null}
           {firstFile ? (
             <span>
               This drawing has no file yet. The file goes on every SO / JWSO line, Route Card and
-              Job Card of {revision.label}.
-              {toReview ? ' It then goes to Under Review for approval.' : ''}
+              Job Card of {revision.label}. Design then opens it and clicks Verify.
             </span>
           ) : (
             <span>
@@ -173,13 +150,8 @@ export function ReplaceDrawingDialog({
           reason: reason.trim(),
           expectedUpdatedAt: revision.updatedAt,
         });
-        if (correction) {
-          toast.ok('Correction sent for approval');
-          onDone(null);
-        } else {
-          toast.ok(firstFile ? 'Drawing uploaded' : 'Drawing replaced');
-          onDone(path);
-        }
+        toast.ok(firstFile ? 'Drawing uploaded' : 'Drawing replaced');
+        onDone(path);
       }}
     />
   );

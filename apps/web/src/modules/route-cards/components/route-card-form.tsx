@@ -69,7 +69,12 @@ import {
 } from '@/ui/forms';
 import { FormActions, useSaveShortcut } from '@/ui/layout';
 import { useFetchRouteCard, useNextRouteCardCode, useRouteCardsList } from '../api';
-import { RcBlockingLink, RcDrawingRevFields, useRcItemRev } from './rc-form-drawing';
+import {
+  RcBlockingLink,
+  RcDrawingMissingBanner,
+  RcDrawingRevFields,
+  useRcItemRev,
+} from './rc-form-drawing';
 import { RouteCardOpsEditor } from './rc-form-ops';
 import { RouteCardRmItemField } from './rc-form-rm-item';
 import { RcFormStrip } from './rc-form-strip';
@@ -384,8 +389,9 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   // instead of warned: the operations table is hidden, Save is off, and the
   // banner offers "Open IN-RC-xxxx to add a revision" — nobody types ten ops
   // only to lose them to a refusal on Save. ABC/2 may have its own card.
-  const { isMake, revLocked, blockingCard, revError } = useRcItemRev({
+  const { isMake, revLocked, blockingCard, revError, drawingFile, drawingMissing } = useRcItemRev({
     itemId: header.itemId,
+    itemCode: header.itemCodeText,
     drawingRev: header.drawingRev,
     mode,
     routeCard,
@@ -720,6 +726,8 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
           {submitError}
         </Banner>
       ) : null}
+      {/* ADR-323 — a NEW card needs its drawing PDF in the Drawing Register. */}
+      {drawingMissing && !blockingCard ? <RcDrawingMissingBanner missing={drawingMissing} /> : null}
       {blockingCard ? (
         <Banner
           tone="warn"
@@ -821,12 +829,11 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             itemId={header.itemId}
             itemCode={header.itemCodeText}
             drawingRev={header.drawingRev}
-            drawingFilePath={header.drawingFilePath}
+            drawingFile={drawingFile}
             isMake={isMake}
             revLocked={revLocked}
             mode={mode}
             onRevChange={(drawingRev) => setHeader((prev) => ({ ...prev, drawingRev }))}
-            onFileChange={(drawingFilePath) => setHeader((prev) => ({ ...prev, drawingFilePath }))}
             itemName={
               // Item Name — read-only, follows the picked item. Labelled: a bare
               // name beside the code read as unexplained text (owner 2026-11-24).
@@ -1183,15 +1190,15 @@ export function rawMaterialToInput(header: RouteCardFormHeaderDraft): {
 }
 
 // Item + Drawing Rev for the create/update payload. A blank Rev is sent as null
-// (Buy item, or an old card left without one); the file path is always sent so
-// clearing it sticks. Drawing No. is not on this form and is never sent, so an
-// existing one is left untouched.
+// (Buy item, or an old card left without one). ADR-323: no drawing file — the
+// card has no file box; the server takes the drawing from the Drawing Register.
+// Drawing No. is not on this form and is never sent, so an existing one is
+// left untouched.
 export function drawingToInput(header: RouteCardFormHeaderDraft): {
   drawingRev: string | null;
-  drawingFilePath: string | null;
 } {
   const rev = header.drawingRev.trim().toUpperCase();
-  return { drawingRev: rev || null, drawingFilePath: header.drawingFilePath };
+  return { drawingRev: rev || null };
 }
 
 export function opsToInput(ops: RouteCardFormOpDraft[]): CreateRouteCardOpInput[] {

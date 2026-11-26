@@ -16825,3 +16825,22 @@ file is now gone on both. `item-revisions/line-rev.ts` no longer refuses a line 
 form no longer runs the drawing-file check on Save. A line saved with no file leaves its Rev as Draft
 ("Not released") until Design uploads the drawing in the Drawing Register (ADR-319). The release gate
 before Plan / PRO / Job Card is unchanged.
+
+## ADR-323 — Drawing Register: Unverified / Verified only, no Release; Route Card needs the PDF (owner 26-Nov-2026)
+
+**Status:** Accepted (owner "approve" + refinements, 26-Nov-2026). Supersedes the Review/Approve/Release steps of ADR-290/311 and the drawing-correction approval.
+
+### Decision
+
+- Three statuses on `item_revisions.release_status`: `unverified` (no PDF, or not checked), `verified` (Design opened the PDF and pressed Verify — needs a PDF), `obsolete` (retired, kept). Actions: Verify, Undo verify (reason), Mark Obsolete (reason) — all on the Drawing Register **Approve** tick. The per-person "Drawing Release" switch is no longer used or shown.
+- Replacing the PDF applies at once; a different file turns a Verified Rev back to Unverified (same file hash keeps the status). Verify carries the file the person saw — a file replaced meanwhile is refused (409).
+- Plan / PRO / Job Card may use an Unverified Rev (orange warning); only Obsolete is refused. Running Job Cards are never stopped by a drawing status (jc-op-hold no longer checks it).
+- SO / JWSO take no drawing file any more (Drawing No. + Rev only, no status tag on the line). The line's Drawing No. is copied onto the register record when blank.
+- A NEW Route Card needs its Item + Rev already in the Drawing Register with a PDF; the form says so at once with "Click here to upload it" / "Click here to add it" (new tab). The Route Card has no file box. Old Route Cards are left as they are.
+- Uploading a first PDF needs Drawing Register Entry; replacing needs Drawing Register Edit.
+- Migration 0263 maps old data (released/superseded/approved → verified; draft/under_review/rejected → unverified), closes waiting corrections, copies SO/JWSO Drawing Nos., and keeps the old words allowed in the CHECK for the release window. **0264 (next release) removes the old words** after a check that none remain.
+
+### Alternatives considered
+
+- Block new Plan/PRO/JC on Unverified (D1 = B) — rejected by owner: 117 PROD SO lines (110 without PDF) would stop.
+- Keep a separate release right — rejected (D2): one right (Approve tick) is enough.
