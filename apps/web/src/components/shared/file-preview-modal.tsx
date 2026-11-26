@@ -29,7 +29,7 @@
 
 import type { DrawingSource } from '@innovic/shared';
 import { Download, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { canDownloadDrawings, useMyAccess } from '@/lib/access-control';
 import { drawingDownloadUrl, drawingViewUrl } from '@/lib/drawing-url';
 import { useSession } from '@/lib/session';
@@ -53,6 +53,38 @@ function previewKind(fileName: string, fileType?: string | null): PreviewKind {
 export function fileNameFromPath(storagePath: string): string {
   const last = storagePath.split('/').pop() ?? storagePath;
   return last.replace(/^\d{10,}-/, '');
+}
+
+/** A PDF link that opens at "Fit page". For the frame only — Download and
+ *  Print keep the server's own link untouched. */
+export function pdfFitUrl(url: string): string {
+  return `${url.split('#')[0]}#view=Fit`;
+}
+
+/** Full screen for one box: `ref` goes on the box, `enter` asks the browser,
+ *  `isFull` follows the browser (Esc leaves without asking us). */
+export function useFullscreen<T extends HTMLElement>(): {
+  ref: React.RefObject<T>;
+  isFull: boolean;
+  enter: () => void;
+} {
+  const ref = useRef<T>(null);
+  const [isFull, setIsFull] = useState(false);
+  useEffect(() => {
+    const onChange = (): void => setIsFull(document.fullscreenElement === ref.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  const enter = useCallback((): void => {
+    const el = ref.current;
+    if (!el?.requestFullscreen) return;
+    try {
+      void el.requestFullscreen().catch(() => undefined);
+    } catch {
+      // Browser refused (no gesture / not allowed) — stay in the page.
+    }
+  }, []);
+  return { ref, isFull, enter };
 }
 
 export function FilePreviewModal({
@@ -84,6 +116,7 @@ export function FilePreviewModal({
   const name = fileName ?? fileNameFromPath(storagePath);
   const preview = previewKind(name, fileType);
   const isDrawing = kind === 'drawing';
+  const fs = useFullscreen<HTMLDivElement>();
 
   // Who is asking. Only consulted for drawings; for every other file the
   // Download button is unconditional, as it has always been.
@@ -155,6 +188,56 @@ export function FilePreviewModal({
     }
   }
 
+  const body = err ? (
+    <div className="empty-state" style={{ color: 'var(--red2)' }}>
+      {err}
+    </div>
+  ) : preview === 'none' ? (
+    // Nothing the browser renders in-page (.eml, .xlsx, .docx …).
+    // Say so plainly rather than silently downloading it.
+    <div className="empty-state" style={{ padding: 40, textAlign: 'center' }}>
+      <div style={{ fontSize: 30, marginBottom: 'var(--sp-2)' }}>📁</div>
+      <div className="text2">This file type cannot be previewed in the browser.</div>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
+        {mayDownload
+          ? 'Use Download above to save it and open it on your computer.'
+          : 'You can view drawings but not save them. Ask an administrator if you need a copy.'}
+      </div>
+    </div>
+  ) : !url ? (
+    <div className="empty-state" style={{ padding: 40 }}>
+      <Loader2 className="inline animate-spin" size={16} /> Loading preview…
+    </div>
+  ) : preview === 'pdf' ? (
+    <iframe
+      src={isDrawing ? pdfFitUrl(url) : url}
+      title={name}
+      style={{
+        width: '100%',
+        height: fs.isFull ? '100%' : '78vh',
+        border: 0,
+        display: 'block',
+      }}
+    />
+  ) : (
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: fs.isFull ? undefined : '60vh',
+        height: fs.isFull ? '100%' : undefined,
+        padding: 'var(--sp-4)',
+      }}
+    >
+      <img
+        src={url}
+        alt={name}
+        style={{ maxWidth: '100%', maxHeight: fs.isFull ? '100%' : '78vh', objectFit: 'contain' }}
+      />
+    </div>
+  );
+
   return (
     <Modal
       title={`📎 ${name}`}
@@ -165,68 +248,58 @@ export function FilePreviewModal({
       elevated
       bodyStyle={{ padding: 0, background: 'var(--bg1, var(--bg3))' }}
       headerActions={
-        // Absent, not disabled. A greyed-out Download reads as "ask someone and
-        // you can have it"; the owner asked for the button simply not to exist
-        // for people who may only look.
-        mayDownload ? (
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={() => void onDownload()}
-            disabled={saving}
-          >
-            {saving ? (
-              <Loader2 size={13} className="inline animate-spin" />
-            ) : (
-              <Download size={13} />
-            )}{' '}
-            Download
-          </button>
-        ) : null
+        <>
+          {isDrawing ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={fs.enter}
+              disabled={preview === 'none' || !url || Boolean(err)}
+              title={preview === 'none' ? 'This file cannot be shown in the page' : undefined}
+            >
+              ⛶ Full screen
+            </button>
+          ) : null}
+          {/* Absent, not disabled. A greyed-out Download reads as "ask someone and
+              you can have it"; the owner asked for the button simply not to exist
+              for people who may only look. */}
+          {mayDownload ? (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => void onDownload()}
+              disabled={saving}
+            >
+              {saving ? (
+                <Loader2 size={13} className="inline animate-spin" />
+              ) : (
+                <Download size={13} />
+              )}{' '}
+              Download
+            </button>
+          ) : null}
+        </>
       }
     >
-      {err ? (
-        <div className="empty-state" style={{ color: 'var(--red2)' }}>
-          {err}
-        </div>
-      ) : preview === 'none' ? (
-        // Nothing the browser renders in-page (.eml, .xlsx, .docx …).
-        // Say so plainly rather than silently downloading it.
-        <div className="empty-state" style={{ padding: 40, textAlign: 'center' }}>
-          <div style={{ fontSize: 30, marginBottom: 'var(--sp-2)' }}>📁</div>
-          <div className="text2">This file type cannot be previewed in the browser.</div>
-          <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
-            {mayDownload
-              ? 'Use Download above to save it and open it on your computer.'
-              : 'You can view drawings but not save them. Ask an administrator if you need a copy.'}
-          </div>
-        </div>
-      ) : !url ? (
-        <div className="empty-state" style={{ padding: 40 }}>
-          <Loader2 className="inline animate-spin" size={16} /> Loading preview…
-        </div>
-      ) : preview === 'pdf' ? (
-        <iframe
-          src={url}
-          title={name}
-          style={{ width: '100%', height: '78vh', border: 0, display: 'block' }}
-        />
-      ) : (
+      {isDrawing ? (
         <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            minHeight: '60vh',
-            padding: 'var(--sp-4)',
-          }}
+          ref={fs.ref}
+          style={
+            fs.isFull
+              ? {
+                  width: '100%',
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  background: 'var(--text)',
+                }
+              : undefined
+          }
         >
-          <img
-            src={url}
-            alt={name}
-            style={{ maxWidth: '100%', maxHeight: '78vh', objectFit: 'contain' }}
-          />
+          {body}
         </div>
+      ) : (
+        body
       )}
     </Modal>
   );
