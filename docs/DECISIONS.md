@@ -16791,3 +16791,11 @@ SO Costing list (material + outsource CTEs) and SO Costing detail (material + pe
 cost) now skip cancelled POs and deleted PO lines; Dashboard Cost Summary skips cancelled POs;
 SC dashboard vendor / SO / PO summaries skip deleted PO lines. Costing still counts drafts
 (committed cost), only cancelled and deleted are left out.
+
+## ADR-322 — Drawing file optional on JWSO too (owner 26-Nov-2026)
+
+Owner: "go fix jwso — no compulsory file upload". Extends ADR-321 (SO) to JWSO; ADR-311's compulsory
+file is now gone on both. `item-revisions/line-rev.ts` no longer refuses a line without a file; the JWSO
+form no longer runs the drawing-file check on Save. A line saved with no file leaves its Rev as Draft
+("Not released") until Design uploads the drawing in the Drawing Register (ADR-319). The release gate
+before Plan / PRO / Job Card is unchanged.
