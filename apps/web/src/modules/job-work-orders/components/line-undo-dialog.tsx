@@ -101,6 +101,9 @@ export function LineUndoDialog({
   const [runError, setRunError] = useState<string | null>(null);
   const [doneNow, setDoneNow] = useState<DoneStep[]>([]);
   const inFlight = useRef(false);
+  // A call failed (e.g. timed out) — the server may still have finished it, so
+  // the next press re-reads the list before running anything.
+  const rereadFirst = useRef(false);
   const list = useJwLineUndoList(jobWorkOrderId, lineId, true);
   const saveKey = useSaveKey();
   const runStep = useRunLineUndoStep(jobWorkOrderId, lineId, saveKey);
@@ -113,6 +116,16 @@ export function LineUndoDialog({
   const trimmed = reason.trim();
   const ln = `Ln ${lineNo}`;
 
+  /** Re-read the Undo list — the ONE read per finished step (the step's
+   *  mutation does not invalidate this key). */
+  async function reread(): Promise<JwLineUndoList> {
+    const fresh = await list.refetch();
+    if (fresh.isError || !fresh.data) {
+      throw fresh.error ?? new Error('Could not re-read the Undo list. Open it again.');
+    }
+    return fresh.data;
+  }
+
   /** Run the first open step; with `all`, keep going until the list is empty,
    *  paused (waiting approval / do it on its screen) or a call fails. Steps
    *  already done stay done. */
@@ -123,6 +136,15 @@ export function LineUndoDialog({
     setRunError(null);
     try {
       let current: JwLineUndoList | undefined = data;
+      if (rereadFirst.current) {
+        // After a failed / timed-out call: what the screen shows may be stale.
+        const shownKey = current?.steps[0]?.key;
+        current = await reread();
+        rereadFirst.current = false;
+        // A row button runs only the step the user saw; if step 1 changed,
+        // show the fresh list instead of running a different step.
+        if (!all && current.steps[0]?.key !== shownKey) return;
+      }
       // A ceiling only against a server that keeps answering "done" for a step
       // it still lists; the list itself is the real stop.
       for (let guard = 0; guard < 100; guard += 1) {
@@ -137,11 +159,7 @@ export function LineUndoDialog({
         ]);
         if (res.outcome === 'requested') toast.info(res.message);
         else toast.ok(res.message);
-        const fresh = await list.refetch();
-        if (fresh.isError || !fresh.data) {
-          throw fresh.error ?? new Error('Could not re-read the Undo list. Open it again.');
-        }
-        current = fresh.data;
+        current = await reread();
         const next = current.steps[0];
         if (res.outcome === 'done' && next?.key === step.key && next.state === 'todo') {
           throw new Error(
@@ -152,7 +170,10 @@ export function LineUndoDialog({
       }
     } catch (e) {
       setRunError(e instanceof Error ? e.message : 'Could not run the step. Try again.');
-      void list.refetch();
+      // No re-read now: a timed-out step may still be running on the server.
+      // The next press re-reads first (and the kept Idempotency key replays a
+      // step the server finished instead of running it twice).
+      rereadFirst.current = true;
     } finally {
       inFlight.current = false;
       setRunning(false);

@@ -83,8 +83,12 @@ export async function getJwLineUndoList(
   await primeAccess(user);
   const canUndo = canUndoChain(await getMyAccess(user));
   return withUserContext(user, async (tx) => {
-    const line = await readJwLine(tx, companyId, jobWorkOrderId, lineId);
-    const steps = await buildJwLineUndoSteps(tx, companyId, lineId, user);
+    // Sent together — postgres-js pipelines them on this transaction.
+    const [line, steps, undoHolders] = await Promise.all([
+      readJwLine(tx, companyId, jobWorkOrderId, lineId),
+      buildJwLineUndoSteps(tx, companyId, lineId, user),
+      undoHolderNames(tx, companyId),
+    ]);
     return {
       jobWorkOrderId,
       lineId,
@@ -92,7 +96,7 @@ export async function getJwLineUndoList(
       itemCode: line.itemCode,
       orderQty: line.orderQty,
       canUndo,
-      undoHolders: await undoHolderNames(tx, companyId),
+      undoHolders,
       steps: steps.map((s) => s.step),
     };
   });
@@ -138,7 +142,11 @@ export async function runJwLineUndoStep(
   const reason = input.reason.trim();
   const first = await withUserContext(user, async (tx) => {
     await readJwLine(tx, companyId, jobWorkOrderId, lineId);
-    return firstRunnable(await buildJwLineUndoSteps(tx, companyId, lineId, user), input.stepKey);
+    // Only the first step matters here — the builder stops there.
+    return firstRunnable(
+      await buildJwLineUndoSteps(tx, companyId, lineId, user, { firstOnly: true }),
+      input.stepKey,
+    );
   });
   const code = first.step.docCode;
   const run = first.run;

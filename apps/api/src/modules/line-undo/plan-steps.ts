@@ -59,11 +59,14 @@ export async function proSteps(
   listed: ListedCodes,
   seen: Set<string>,
 ): Promise<BuiltStep[]> {
+  // Includes its own card's blockers ("<JC>: …", read once here — the card
+  // group does not read them); what the list lists itself is left out.
   const blockers = (await productionOrderCancelBlockers(tx, companyId, pro.id)).filter(
     (b) =>
-      // "<JC>: …" — a card's own blocker, already listed with that card.
-      ![...listed.jcCodes].some((c) => b.reason.startsWith(`${c}: `)) &&
-      !(b.docLabel === 'Job Card' && listed.jcCodes.has(b.docNo)),
+      b.docLabel !== 'Op Entry' &&
+      b.docLabel !== 'Customer Material Issue' &&
+      !(b.docLabel === 'Job Card' && listed.jcCodes.has(b.docNo)) &&
+      !(b.docLabel === 'JW Return' && listed.jwReturnCodes.has(b.docNo)),
   );
   const own = blockers.map((b) =>
     b.docLabel === 'Production Order' && pro.status === 'short_closed'
