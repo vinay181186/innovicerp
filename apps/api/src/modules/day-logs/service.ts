@@ -12,6 +12,7 @@
 //   day-replies.ts — replies on a blank day          pending.ts — Pending Entries
 //   holidays.ts — holidays, tab access            access.ts — who sees and manages whose day
 //   team-mates.ts — Teams Config (who sees whose Day Log, one-way: User → mate)
+//   leave.ts   — Personal Leave (own days, one date or a From–To range)
 //   person-history.ts — a person's From-To range (ADR-278)
 //   entry-facts.ts — Entry Revs and replies shared by person-day and History
 // Rules of the day itself live in packages/shared day-log.ts (summarizeDay…).
@@ -29,4 +30,5 @@ export { getDay } from './manage';
 export { getTeam } from './team';
 export { orderOptions } from './orders';
 export { addHoliday, deleteHoliday, getAccess, listHolidays } from './holidays';
+export { getMyLeave, removeLeave, setLeave } from './leave';
 export { addTeamMate, listTeamMates, listTeamPeople, removeTeamMate } from './team-mates';

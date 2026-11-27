@@ -45,7 +45,7 @@ export type DayLogStatus = (typeof DAY_LOG_STATUSES)[number];
 export const DAY_LOG_STATUS_LABELS: Record<DayLogStatus, string> = {
   open: 'Open',
   submitted: 'Submitted',
-  leave: 'Leave',
+  leave: 'Personal Leave',
 };
 
 export const DAY_LOG_ENTRY_KINDS = ['work', 'break', 'leave'] as const;
@@ -88,7 +88,7 @@ export const DAY_LOG_CURRENT_STATUS_LABELS: Record<DayLogCurrentStatus, string> 
   idle: 'Idle',
   not_started: 'Not started',
   submitted: 'Submitted',
-  leave: 'Others',
+  leave: 'Personal Leave',
 };
 
 // ── Time helpers ────────────────────────────────────────────────────────────
@@ -537,6 +537,56 @@ export const holidaySchema = z.object({
 });
 export type Holiday = z.infer<typeof holidaySchema>;
 
+// ── Personal Leave (owner 2026-11-27) ───────────────────────────────────────
+// A person marks their OWN working days as Personal Leave — one date or a
+// From–To range, past or future. Stored as the day header's day_status 'leave'
+// + leave_reason (0222 columns, no new table). A leave day is never pending (red
+// banner, Pending Entries, Not entered) and takes no entries. Sundays and company
+// holidays inside a range are skipped; a date that already has entries refuses
+// the whole save. No approval. Rules enforced in apps/api day-logs/leave.ts.
+export const DAY_LOG_LEAVE_RULES = {
+  /** Furthest future date: today + this many days. */
+  maxDaysAhead: 90,
+  /** Longest From–To range in one save (calendar days). */
+  maxRangeDays: 60,
+} as const;
+
+export const dayLogLeaveInputSchema = z
+  .object({
+    from: dateStr,
+    /** Same as `from` for one date. */
+    to: dateStr,
+    reason: z.string().trim().min(1, 'Reason is required').max(200),
+  })
+  .refine((v) => v.to >= v.from, {
+    message: 'To Date must be on or after From Date',
+    path: ['to'],
+  });
+export type DayLogLeaveInput = z.infer<typeof dayLogLeaveInputSchema>;
+
+export const dayLogLeaveDaySchema = z.object({ date: z.string(), reason: z.string() });
+export type DayLogLeaveDay = z.infer<typeof dayLogLeaveDaySchema>;
+
+/** GET /day-logs/leave/mine — the caller's own leave days, newest first. */
+export const dayLogLeaveListSchema = z.object({
+  /** IST today. */
+  today: z.string(),
+  /** Earliest date leave may be set (the person's Day Log start). */
+  earliest: z.string(),
+  /** Latest date leave may be set (today + maxDaysAhead). */
+  latest: z.string(),
+  days: z.array(dayLogLeaveDaySchema),
+});
+export type DayLogLeaveList = z.infer<typeof dayLogLeaveListSchema>;
+
+/** POST /day-logs/leave — the dates marked, and the dates skipped (Sunday /
+ *  company holiday / already Personal Leave). */
+export const dayLogLeaveSetResultSchema = z.object({
+  set: z.array(z.string()),
+  skipped: z.array(z.string()),
+});
+export type DayLogLeaveSetResult = z.infer<typeof dayLogLeaveSetResultSchema>;
+
 /** Who may open the Team Day Logs tab (drives the tab itself, §20.5). */
 export const dayLogAccessSchema = z.object({
   canSeeTeam: z.boolean(),
@@ -549,6 +599,8 @@ export const dayLogAccessSchema = z.object({
   canSeePending: z.boolean(),
   /** May open a person's History (Super Admin only, ADR-278). */
   canSeeHistory: z.boolean(),
+  /** May set their own Personal Leave (keeps a Day Log: not Super Admin / Auditor). */
+  canSetLeave: z.boolean(),
 });
 export type DayLogAccess = z.infer<typeof dayLogAccessSchema>;
 

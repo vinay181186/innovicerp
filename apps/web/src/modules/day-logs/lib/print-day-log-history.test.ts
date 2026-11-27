@@ -319,12 +319,12 @@ describe('Day Log History PDF: a range, first part', () => {
   it('bolds Not Entered only above 0, and shows Leave, Break, Others only above 0', () => {
     const none = rangeHtml(days, '2026-10-21', '2026-10-22');
     expect(none).toContain('Not Entered</span><span class="jv">0<');
-    for (const word of ['Leave', 'Break', 'Others']) {
+    for (const word of ['Personal Leave', 'Break', 'Others']) {
       expect(none).not.toContain(`>${word}<`);
     }
     const totals = { ...history([]).totals, leaveDays: 2, breakMin: 45, leaveMin: 60 };
     const some = build(history(days, { from: '2026-10-21', to: '2026-10-22', totals }));
-    expect(some).toContain('Leave</span><span class="jv">2<');
+    expect(some).toContain('Personal Leave</span><span class="jv">2<');
     expect(some).toContain('Break</span><span class="jv">0h 45m<');
     expect(some).toContain('Others</span><span class="jv">1h 00m<');
   });
@@ -357,7 +357,14 @@ describe('Day Log History PDF: a range, first part', () => {
       '2026-09-01',
       '2026-09-09',
     );
-    for (const w of ['Not counted', 'Not entered', 'Holiday · Onam', 'Sunday', 'Today', 'Leave']) {
+    for (const w of [
+      'Not counted',
+      'Not entered',
+      'Holiday · Onam',
+      'Sunday',
+      'Today',
+      'Personal Leave',
+    ]) {
       expect(html).toContain(`>${w}<`);
     }
     expect(html).toContain('>Filled<');

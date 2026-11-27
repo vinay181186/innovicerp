@@ -104,7 +104,7 @@ describe('Day Log History PDF: the calendar', () => {
     expect(cellOf(month, 4)).toContain('<div class="cd off">');
     expect(cellOf(month, 4)).toContain('>Holiday<');
     expect(cellOf(month, 4)).not.toContain('Onam');
-    expect(cellOf(month, 5)).toContain('>Leave<');
+    expect(cellOf(month, 5)).toContain('>Personal Leave<');
     expect(cellOf(month, 7)).toContain('>Not counted<');
     expect(cellOf(month, 8)).toContain('>Today<');
     expect(cellOf(month, 9)).toContain('<span class="cd-h">1h 01m</span>');

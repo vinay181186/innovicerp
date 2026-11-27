@@ -12,6 +12,9 @@ import type {
   DayLogDetail,
   DayLogHistory,
   DayLogHistoryQuery,
+  DayLogLeaveInput,
+  DayLogLeaveList,
+  DayLogLeaveSetResult,
   DayLogMyPending,
   DayLogOrderOption,
   DayLogPendingCalendar,
@@ -62,6 +65,8 @@ export const dayLogKeys = {
   teamPeople: () => [...dayLogKeys.teamMatesAll(), 'people'] as const,
   orders: (search: string) => [...dayLogKeys.all, 'order-options', search] as const,
   holidays: () => [...dayLogKeys.all, 'holidays'] as const,
+  /** The caller's own Personal Leave days (owner 2026-11-27). */
+  leaveMine: () => [...dayLogKeys.all, 'leave-mine'] as const,
   approvals: () => [...dayLogKeys.all, 'approvals'] as const,
   /** The banner on every page: the caller's days not entered. Its own root,
    *  NOT under `all`: `all` re-reads on anyone's save, and the banner is open
@@ -156,6 +161,15 @@ export function useHolidays(enabled = true) {
   return useQuery<{ holidays: Holiday[] }>({
     queryKey: dayLogKeys.holidays(),
     queryFn: () => apiFetch<{ holidays: Holiday[] }>('/day-logs/holidays'),
+    enabled,
+  });
+}
+
+/** The caller's own Personal Leave days, newest first, and the date limits. */
+export function useMyLeave(enabled = true) {
+  return useQuery<DayLogLeaveList>({
+    queryKey: dayLogKeys.leaveMine(),
+    queryFn: () => apiFetch<DayLogLeaveList>('/day-logs/leave/mine'),
     enabled,
   });
 }
@@ -344,6 +358,40 @@ export function useRemoveHoliday() {
   return useMutation<unknown, Error, string>({
     mutationFn: (id) => apiFetch(`/day-logs/holidays/${id}`, { method: 'DELETE' }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: dayLogKeys.all }),
+  });
+}
+
+/** After a Personal Leave write: every Day Log read (the day sheet, Team Day
+ *  Logs, History, the leave list), the red pending banner (its own root) and
+ *  the home figures that count pending days. */
+function useAfterLeaveWrite(): () => void {
+  const qc = useQueryClient();
+  return () => {
+    void qc.invalidateQueries({ queryKey: dayLogKeys.all });
+    void qc.invalidateQueries({ queryKey: dayLogPendingKeys.all });
+    void qc.invalidateQueries({ queryKey: dashboardKeys.widgets() });
+    void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
+  };
+}
+
+/** Mark one date (to = from) or a From–To range as Personal Leave. The server
+ *  skips Sundays / holidays / days already on leave and answers which. */
+export function useSetLeave() {
+  const after = useAfterLeaveWrite();
+  return useMutation<DayLogLeaveSetResult, Error, DayLogLeaveInput>({
+    mutationFn: (input) =>
+      apiFetch<DayLogLeaveSetResult>('/day-logs/leave', { method: 'POST', json: input }),
+    onSuccess: after,
+  });
+}
+
+/** Remove one Personal Leave day (the date, YYYY-MM-DD). */
+export function useRemoveLeave() {
+  const after = useAfterLeaveWrite();
+  return useMutation<unknown, Error, string>({
+    mutationFn: (date) => apiFetch(`/day-logs/leave/${date}`, { method: 'DELETE' }),
+    // Removed, or already gone: re-read either way.
+    onSettled: after,
   });
 }
 

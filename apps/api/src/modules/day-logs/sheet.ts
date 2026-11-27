@@ -29,7 +29,7 @@ import {
 import { dayTx, openDayLocked } from './lock';
 import { type DayLogClock, dmy, istClock } from './rules';
 import { readSnapshot } from './snapshot';
-import { guardOwnerWrite, ownerDetailAfter, requireCompany } from './writes';
+import { guardNotLeave, guardOwnerWrite, ownerDetailAfter, requireCompany } from './writes';
 
 /** A validated batch row as a line, so the rows after it are judged against it. */
 const asLine = (r: Row, i: number, reportId: string): DayLine => ({
@@ -79,6 +79,7 @@ export async function addEntries(
       tx,
     );
     guardOwnerWrite(h.date, clock.today);
+    guardNotLeave(h);
     const lines = snap.lines;
     const rows: Row[] = [];
     for (const [i, row] of input.rows.entries()) {

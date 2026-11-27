@@ -56,7 +56,7 @@ function dayLine(d: DayLogHistoryDay): [string, string, string] {
     case 'holiday':
       return [' off', 'cd-e', 'Holiday'];
     case 'leave':
-      return ['', 'cd-e', 'Leave'];
+      return ['', 'cd-e', 'Personal Leave'];
     case 'not_counted':
       return ['', 'cd-e', 'Not counted'];
   }

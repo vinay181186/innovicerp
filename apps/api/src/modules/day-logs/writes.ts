@@ -34,6 +34,15 @@ export function guardOwnerWrite(date: string, today: string): void {
   if (date > today) throw new ValidationError(`${dmy(date)} has not come yet`);
 }
 
+/** Personal Leave (owner 2026-11-27): a leave day takes no entries. Judged on
+ *  the header read under the day lock, so a leave save and an entry save on the
+ *  same day cannot both win (§20.3). */
+export function guardNotLeave(h: Pick<DayHeader, 'date' | 'status'>): void {
+  if (h.status === 'leave') {
+    throw new ValidationError(`${dmy(h.date)} is marked Personal Leave — remove the leave first`);
+  }
+}
+
 /**
  * The owner's DayLogDetail after a write, built in memory from the snapshot
  * read under the lock plus what the write returned: `lines` are the day's

@@ -58,6 +58,7 @@ export async function getTeam(
        WHERE u.company_id = ${companyId}::uuid AND u.deleted_at IS NULL AND u.is_active) AS people,
       (SELECT COALESCE(json_agg(json_build_object(
                 'id', dr.id::text, 'user_id', dr.user_id::text, 'status', dr.day_status,
+                'leave_reason', dr.leave_reason,
                 'submitted_at', ${ts('dr.submitted_at')},
                 'day_reply_count', (SELECT count(*)::int FROM public.daily_report_day_replies rp
                                     WHERE rp.daily_report_id = dr.id AND rp.deleted_at IS NULL))),
@@ -101,6 +102,7 @@ export async function getTeam(
     id: string;
     user_id: string;
     status: DayLogStatus;
+    leave_reason: string | null;
     submitted_at: string | null;
     day_reply_count: number;
   }>;
@@ -113,7 +115,11 @@ export async function getTeam(
     const lines = h ? (linesBy.get(h.id) ?? []) : [];
     const status: DayLogStatus = h?.status ?? 'open';
     const s = summaryOf(lines, nowMin, workingDay);
-    const now = currentOf(lines, isToday, s.lastStop, nowMin);
+    // Personal Leave today: "Now" says so, with the reason (a past day shows its status).
+    const now =
+      isToday && status === 'leave'
+        ? { status: 'leave' as const, text: h?.leave_reason ?? null, since: null }
+        : currentOf(lines, isToday, s.lastStop, nowMin);
     return {
       userId: p.id,
       userName: p.name,

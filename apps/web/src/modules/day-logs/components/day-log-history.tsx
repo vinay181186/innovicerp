@@ -58,6 +58,7 @@ function nothingReason(h: DayLogHistory): string {
     const name = day.holidayName ? ` (${day.holidayName})` : '';
     return `${date} is a holiday${name}. Nothing logged.`;
   }
+  if (day?.state === 'leave') return `${date} is Personal Leave. Nothing logged.`;
   return `Nothing logged on ${date}.`;
 }
 

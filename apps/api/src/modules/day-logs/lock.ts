@@ -70,6 +70,57 @@ export async function openDayLocked(
 }
 
 /**
+ * Personal Leave — openDayLocked for every WORKING date from `from` to `to`
+ * (a working weekday that is not a live company holiday; Sundays and holidays
+ * get no header). Each header is inserted or row-locked exactly as
+ * openDayLocked does, in date order, so an entry save on any of these days
+ * queues behind this transaction (§20.3). The same statement reads the
+ * caller's access and the caller as a person (pendingStart). `dates` = the
+ * working dates locked, oldest first. Nothing about the days is read here —
+ * their status and lines are read AFTER, under the lock.
+ */
+export async function lockLeaveDays(
+  tx: DbTransaction,
+  user: AuthContext,
+  companyId: string,
+  from: string,
+  to: string,
+  workingWeekdays: readonly number[],
+): Promise<{ access: unknown; person: DayPerson | null; dates: string[] }> {
+  const weekdays = sql.param([...workingWeekdays]);
+  const rows = (await tx.execute(sql`
+    WITH c AS (SELECT ${claimsOf(user)} AS cfg),
+    d AS (
+      SELECT g.d::date AS d
+      FROM c, generate_series(${from}::date::timestamp, ${to}::date::timestamp, interval '1 day') AS g(d)
+      WHERE c.cfg IS NOT NULL
+        AND EXTRACT(DOW FROM g.d)::int = ANY(${weekdays}::int[])
+        AND NOT EXISTS (
+          SELECT 1 FROM public.company_holidays ch
+          WHERE ch.company_id = ${companyId}::uuid AND ch.deleted_at IS NULL
+            AND ch.holiday_date = g.d::date)),
+    ins AS (
+      INSERT INTO public.daily_reports AS dr (company_id, user_id, report_date, created_by, updated_by)
+      SELECT ${companyId}::uuid, ${user.id}::uuid, d.d, ${user.id}::uuid, ${user.id}::uuid
+      FROM d ORDER BY d.d
+      ON CONFLICT (company_id, user_id, report_date) WHERE deleted_at IS NULL
+      DO UPDATE SET updated_at = dr.updated_at
+      RETURNING to_char(dr.report_date, 'YYYY-MM-DD') AS date)
+    SELECT c.cfg, ${accessJson(user.id, companyId)} AS access,
+      ${dayPersonJson(companyId, user.id)} AS person,
+      (SELECT COALESCE(json_agg(ins.date ORDER BY ins.date), '[]'::json) FROM ins) AS dates
+    FROM c
+  `)) as unknown as Array<Record<string, unknown>>;
+  const r = rows[0];
+  if (!r) throw new ConflictError('These days could not be opened — reload and try again');
+  return {
+    access: r['access'] ?? null,
+    person: toDayPerson(r['person']),
+    dates: (r['dates'] ?? []) as string[],
+  };
+}
+
+/**
  * Pending Entries — openDayLocked on SOMEONE ELSE's day: the Super Admin's
  * reply opens (target, date), created_by = the caller, and locks it. Also
  * returns the target person (one statement). No row = no such person in the

@@ -114,7 +114,7 @@ export function statusText(d: DayLogHistoryDay): string {
     case 'not_counted':
       return 'Not counted';
     case 'leave':
-      return 'Leave';
+      return 'Personal Leave';
     case 'sunday':
       return 'Sunday';
     case 'holiday':

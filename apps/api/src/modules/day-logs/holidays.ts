@@ -7,6 +7,7 @@ import { isUniqueViolation } from '../../lib/db-retry';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import { accessJson, canApproveAny, canSeeTeam, loadViewer, resolveAccess } from './access';
+import { canSetLeave } from './leave';
 import { dmy } from './rules';
 import { requireCompany } from './writes';
 
@@ -19,6 +20,8 @@ export async function getAccess(user: AuthContext): Promise<DayLogAccess> {
     canManageTeams: v.isSuper && !v.auditor,
     canSeePending: v.isSuper,
     canSeeHistory: v.isSuper,
+    // Personal Leave — the same rule setLeave enforces (§20.5).
+    canSetLeave: canSetLeave(v),
   };
 }
 

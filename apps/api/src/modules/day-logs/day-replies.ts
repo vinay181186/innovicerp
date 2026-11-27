@@ -53,7 +53,7 @@ export function dayReplyBlock(
   if (date > clock.today) return `${dmy(date)} has not come yet`;
   if (date < target.pendingStart) return `${dmy(date)} is before ${target.name}'s Day Log start`;
   if (!isWorkingDay(date, holidays)) return `${dmy(date)} is not a working day`;
-  if (status === 'leave') return `${dmy(date)} is marked Leave`;
+  if (status === 'leave') return `${dmy(date)} is marked Personal Leave`;
   return null;
 }
 
