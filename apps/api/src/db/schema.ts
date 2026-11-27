@@ -7264,6 +7264,10 @@ export const dailyReports = pgTable(
     reopenedBy: uuid('reopened_by').references((): AnyPgColumn => users.id),
     reopenReason: text('reopen_reason'),
     leaveReason: text('leave_reason'),
+    // Personal Leave Full Day / Half Day + the Half Day's time (0268).
+    leaveKind: text('leave_kind').notNull().default('full'),
+    leaveFrom: time('leave_from'),
+    leaveTo: time('leave_to'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()

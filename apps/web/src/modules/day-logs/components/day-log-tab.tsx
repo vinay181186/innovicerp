@@ -13,6 +13,7 @@
 // Today, the pending banner, Task Board tabs, menu links, Back) asks "Leave this
 // day?"; Cancel keeps it all. Moving within the same day (?line=) never asks.
 
+import { leaveText } from '@innovic/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { useLeaveGuard } from '@/lib/exit-guard';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
@@ -81,10 +82,12 @@ export function DayLogTab({
 
   const isToday = day.date === day.today;
   const nowMin = isToday ? liveNowMin(day.nowTime, query.dataUpdatedAt, tick) : null;
-  // A Personal Leave day takes no entries (owner 2026-11-27; the server refuses too).
+  // A Full Day Personal Leave takes no entries (owner 2026-11-27; the server
+  // refuses too). A Half Day keeps the sheet open: entries outside its time.
   const onLeave = day.status === 'leave';
+  const fullLeave = onLeave && day.leaveKind !== 'half';
   // While another day is loading the old one stays on screen — no writes then.
-  const canWrite = day.canWrite && !query.isPlaceholderData && !onLeave;
+  const canWrite = day.canWrite && !query.isPlaceholderData && !fullLeave;
 
   const goDate = (d: string): void => {
     // A cleared or future date is not a day to show.
@@ -137,7 +140,9 @@ export function DayLogTab({
         ) : null}
         {onLeave ? (
           <>
-            <span className="badge b-grey">Personal Leave</span>
+            <span className="badge b-grey">
+              {leaveText(day.leaveKind, day.leaveFrom, day.leaveTo)}
+            </span>
             {day.leaveReason ? (
               <span
                 className="text3"
@@ -176,7 +181,7 @@ export function DayLogTab({
       <DaySummaryStrip s={day.summary} />
 
       {query.isError ? <Banner tone="error">{errText(query.error)}</Banner> : null}
-      {onLeave && day.isOwner ? (
+      {fullLeave && day.isOwner ? (
         <p className="text3" style={{ margin: 'var(--sp-2) 0', fontSize: 'var(--fs-sm)' }}>
           Personal Leave — remove it to log entries.
         </p>

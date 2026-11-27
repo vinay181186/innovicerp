@@ -53,6 +53,8 @@ export function prepare(
   self: DayLine | null,
   clock: DayLogClock,
   snap: Pick<DaySnapshot, 'openOrders'>,
+  /** The locked day's Half Day leave time (day.ts halfLeaveOf), else null. */
+  leave: { fromTime: string; toTime: string } | null,
 ): Row {
   const orderType: DayLogOrderType | null = input.orderType ?? null;
   const orderId = input.orderId ?? null;
@@ -63,6 +65,7 @@ export function prepare(
     others,
     { fromTime: input.startTime, toTime: input.stopTime, description },
     clock,
+    leave,
   );
   let orderCode: string | null = null;
   if (orderType && orderId) {

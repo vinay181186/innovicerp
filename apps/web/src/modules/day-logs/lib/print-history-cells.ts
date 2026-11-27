@@ -4,6 +4,7 @@
 // (lib/print/sheet-print.ts).
 
 import type { DayLogHistoryDay, DayLogHistoryDayState, DayLogHistoryEntry } from '@innovic/shared';
+import { leaveText } from '@innovic/shared';
 import { esc } from '@/lib/print/doc-print';
 import { firstName, fmtStamp } from './format';
 
@@ -103,7 +104,16 @@ export function hasDetail(d: DayLogHistoryDay): boolean {
   return !NO_DETAIL_STATES.includes(d.state) && d.state !== 'today';
 }
 
+/** The date's state, plus "· Half Day Leave 01:00 PM – 06:00 PM" on a Half Day
+ *  (it keeps its own state: Filled / Not entered). */
 export function statusText(d: DayLogHistoryDay): string {
+  const state = stateText(d);
+  return d.leaveKind === 'half'
+    ? `${state} · ${leaveText(d.leaveKind, d.leaveFrom, d.leaveTo)}`
+    : state;
+}
+
+function stateText(d: DayLogHistoryDay): string {
   switch (d.state) {
     case 'filled':
       return 'Filled';

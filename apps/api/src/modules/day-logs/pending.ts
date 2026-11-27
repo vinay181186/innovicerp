@@ -9,7 +9,9 @@
 // rule), and not an Auditor (never writes, so could never clear a pending day).
 // Start: the later of companies.day_log_pending_from (0240) and the login's IST
 // creation date (access.ts PENDING_START_SQL).
-// Done: a live line that day (part-filled counts), or an old day_status 'leave'.
+// Done: a live line that day (part-filled counts), or a FULL Day Personal Leave
+// (day_status 'leave' AND leave_kind 'full'). A Half Day with no entry stays
+// pending — the worked half is owed (option A, owner 2026-11-27, 0268).
 
 import {
   DAY_LOG_RULES,
@@ -90,7 +92,7 @@ export function pendingColumns(companyId: string, clock: DayLogClock, only?: str
            SELECT 1 FROM public.daily_reports dr
            WHERE dr.company_id = ${companyId}::uuid AND dr.user_id = u.id
              AND dr.report_date = g.d::date AND dr.deleted_at IS NULL
-             AND (dr.day_status = 'leave' OR EXISTS (
+             AND ((dr.day_status = 'leave' AND dr.leave_kind = 'full') OR EXISTS (
                    SELECT 1 FROM public.daily_report_lines l
                    WHERE l.daily_report_id = dr.id AND l.deleted_at IS NULL)))
        GROUP BY u.id) x

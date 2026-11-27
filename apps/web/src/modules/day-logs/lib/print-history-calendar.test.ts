@@ -110,6 +110,29 @@ describe('Day Log History PDF: the calendar', () => {
     expect(cellOf(month, 9)).toContain('<span class="cd-h">1h 01m</span>');
   });
 
+  it('a Half Day keeps its own state and adds its leave time', () => {
+    const html = rangeHtml(
+      [
+        day({ date: '2026-09-01', leaveKind: 'half', leaveFrom: '13:00', leaveTo: '18:00' }),
+        day({
+          ...blank,
+          date: '2026-09-02',
+          state: 'not_entered',
+          leaveKind: 'half',
+          leaveFrom: '09:00',
+          leaveTo: '13:00',
+        }),
+      ],
+      '2026-09-01',
+      '2026-09-02',
+    );
+    const month = monthOf(html, 'September 2026');
+    expect(cellOf(month, 1)).toContain('<span class="cd-h">2h 00m</span>');
+    expect(cellOf(month, 1)).toContain('>Half Day Leave 01:00 PM – 06:00 PM<');
+    expect(cellOf(month, 2)).toContain('>N/E<');
+    expect(cellOf(month, 2)).toContain('>Half Day Leave 09:00 AM – 01:00 PM<');
+  });
+
   it('a date outside From Date to To Date is a grey number and nothing else', () => {
     const html = rangeHtml(
       [day({ date: '2026-10-21' }), day({ date: '2026-10-22' })],

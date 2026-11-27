@@ -4,23 +4,34 @@
 // table). The read side already treats a leave day as done (pending.ts, team.ts,
 // person-day.ts, person-history.ts); entry writes refuse it (writes.ts
 // guardNotLeave). Rules: DAY_LOG_LEAVE_RULES (packages/shared).
-//   - Who: anyone who keeps a Day Log — not a Super Admin, not an Auditor
-//     (pending.ts isPendingEligible; the page itself is checked by resolveAccess).
+//   - Who: anyone who opens the Day Log page, a Super Admin included (part 2,
+//     owner 2026-11-27) — never an Auditor (the page itself is checked by
+//     resolveAccess). A Super Admin is still never pending (pending.ts
+//     isPendingEligible), leave or not.
 //   - When: from the person's Day Log start (PENDING_START_SQL) to today + 90,
 //     at most 60 calendar days in one save.
 //   - Sundays / company holidays get no header and are `skipped`; so are dates
 //     already on leave (a repeated save is a no-op). A date with a live entry
 //     refuses the WHOLE save.
+//   - Part 2 (0268): Full Day (the above) or Half Day — ONE date with the
+//     person's own From–To leave time (leave_kind 'half', leave_from/leave_to).
+//     A Half Day is refused only when a live entry shares a minute with the
+//     leave time (an Open entry on today counts up to now); entries outside it
+//     stay. Later entries may not fall inside it (writes.ts validateEntry).
 // ONE transaction: the first statement sets the claims and locks every working
 // target day (lock.ts lockLeaveDays — same upsert as openDayLocked, §20.3), the
 // second reads the days under that lock, then one conditional UPDATE.
 
 import {
   DAY_LOG_LEAVE_RULES,
+  HALF_DAY_WHOLE_DAY_MSG,
+  halfCoversWholeDay,
   DAY_LOG_RULES,
+  type DayLogLeaveDay,
   type DayLogLeaveInput,
   type DayLogLeaveList,
   type DayLogLeaveSetResult,
+  fmt12,
 } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { db } from '../../db/client';
@@ -36,7 +47,8 @@ import {
   viewerOf,
 } from './access';
 import { dayTx, lockLeaveDays, lockOwnDay } from './lock';
-import { type DayLogClock, dmy, istClock } from './rules';
+import { type DayLine, linesJson, toLines } from './day';
+import { type DayLogClock, dmy, findOverlap, istClock } from './rules';
 import { requireCompany } from './writes';
 
 const DAY_MS = 86_400_000;
@@ -52,18 +64,26 @@ const datesBetween = (from: string, to: string): string[] => {
   return out;
 };
 
-/** May set Personal Leave: keeps a Day Log (not Super Admin, not Auditor). The
- *  Day Log page itself was already checked by resolveAccess. getAccess's
- *  canSetLeave is this same rule (§20.5). */
-export const canSetLeave = (v: Viewer): boolean => !v.isSuper && !v.auditor;
+/** May set Personal Leave: anyone on the Day Log page, a Super Admin included
+ *  (part 2, owner 2026-11-27) — never an Auditor. The Day Log page itself was
+ *  already checked by resolveAccess. getAccess's canSetLeave is this same rule
+ *  (§20.5). */
+export const canSetLeave = (v: Viewer): boolean => !v.auditor;
 
 function requireLeaveRight(v: Viewer): void {
   if (!canSetLeave(v)) {
-    throw new AuthorizationError(
-      'Personal Leave is only for people who keep a Day Log (not a Super Admin or Auditor).',
-    );
+    throw new AuthorizationError('Personal Leave is not available to an Auditor.');
   }
 }
+
+type LeaveSpan = { fromTime: string; toTime: string };
+
+/** "Personal Leave 05-12-2026" / "Half Day Leave 05-12-2026 01:00 PM – 06:00 PM"
+ *  — the activity text of one save. */
+const leaveLabel = (half: LeaveSpan | null, span: string): string =>
+  half
+    ? `Half Day Leave ${span} ${fmt12(half.fromTime)} – ${fmt12(half.toTime)}`
+    : `Personal Leave ${span}`;
 
 /** "05-12-2026" or "01-12-2026 – 03-12-2026". */
 const spanText = (from: string, to: string): string =>
@@ -80,7 +100,9 @@ export async function getMyLeave(
       (SELECT to_char(${PENDING_START_SQL}, 'YYYY-MM-DD') FROM public.users u
        WHERE u.id = ${user.id}::uuid AND u.company_id = ${companyId}::uuid) AS earliest,
       (SELECT COALESCE(json_agg(json_build_object(
-                'date', to_char(dr.report_date, 'YYYY-MM-DD'), 'reason', COALESCE(dr.leave_reason, ''))
+                'date', to_char(dr.report_date, 'YYYY-MM-DD'), 'reason', COALESCE(dr.leave_reason, ''),
+                'kind', dr.leave_kind,
+                'fromTime', to_char(dr.leave_from, 'HH24:MI'), 'toTime', to_char(dr.leave_to, 'HH24:MI'))
               ORDER BY dr.report_date DESC), '[]'::json)
        FROM public.daily_reports dr
        WHERE dr.company_id = ${companyId}::uuid AND dr.user_id = ${user.id}::uuid
@@ -88,14 +110,20 @@ export async function getMyLeave(
   `)) as unknown as Array<{
     access: unknown;
     earliest: string | null;
-    days: Array<{ date: string; reason: string }> | null;
+    days: DayLogLeaveDay[] | null;
   }>;
   await resolveAccess(user, r?.access);
   return {
     today: clock.today,
     earliest: r?.earliest ?? clock.today,
     latest: addDays(clock.today, DAY_LOG_LEAVE_RULES.maxDaysAhead),
-    days: r?.days ?? [],
+    days: (r?.days ?? []).map((d) => ({
+      date: d.date,
+      reason: d.reason,
+      kind: d.kind === 'half' ? ('half' as const) : ('full' as const),
+      fromTime: d.kind === 'half' ? d.fromTime : null,
+      toTime: d.kind === 'half' ? d.toTime : null,
+    })),
   };
 }
 
@@ -126,6 +154,7 @@ export async function setLeave(
   const reason = input.reason.trim();
   if (!reason) throw new ValidationError('Reason is required');
   checkInputBounds(input, clock);
+  const half = halfOf(input);
   return dayTx(async (tx) => {
     // 1. Claims + the day lock on every working target date + access (§20.3).
     const locked = await lockLeaveDays(
@@ -149,7 +178,22 @@ export async function setLeave(
     const nonWorking = datesBetween(input.from, input.to).filter((d) => !working.includes(d));
     // 2. The days, read under the lock.
     const days = await readDays(tx, companyId, user.id, working);
-    const withEntries = days.filter((d) => d.hasLines).map((d) => d.date);
+    // Half Day (one date): only an entry INSIDE the leave time refuses it; an
+    // Open entry on today runs up to now. A day already on leave is skipped below.
+    if (half) {
+      for (const d of days) {
+        if (d.status === 'leave') continue;
+        const nowMin = d.date === clock.today ? clock.nowMin : undefined;
+        const hit = findOverlap(spansOfLines(d.lines), half, nowMin);
+        if (hit) {
+          throw new ValidationError(
+            `${dmy(d.date)} has an entry ${fmt12(hit.fromTime)} – ${hit.toTime ? fmt12(hit.toTime) : 'now'} inside the leave time — Personal Leave not set`,
+          );
+        }
+      }
+    }
+    // Full Day: any live entry refuses the whole save.
+    const withEntries = half ? [] : days.filter((d) => d.lines.length > 0).map((d) => d.date);
     if (withEntries.length === 1) {
       throw new ValidationError(
         `${dmy(withEntries[0]!)} already has entries — Personal Leave not set.`,
@@ -175,6 +219,8 @@ export async function setLeave(
     const rows = (await tx.execute(sql`
       UPDATE public.daily_reports
       SET day_status = 'leave', leave_reason = ${reason},
+          leave_kind = ${half ? 'half' : 'full'},
+          leave_from = ${half?.fromTime ?? null}::time, leave_to = ${half?.toTime ?? null}::time,
           updated_at = now(), updated_by = ${user.id}::uuid
       WHERE id = ANY(${sql.param(toSet.map((d) => d.id))}::uuid[])
         AND company_id = ${companyId}::uuid AND deleted_at IS NULL AND day_status <> 'leave'
@@ -188,7 +234,7 @@ export async function setLeave(
         entity: 'Day Log',
         entityId: rows.find((x) => x.date === set[0])?.id ?? toSet[0]!.id,
         refId: input.from,
-        detail: `Personal Leave ${spanText(input.from, input.to)}: ${reason}`,
+        detail: `${leaveLabel(half, spanText(input.from, input.to))}: ${reason}`,
       },
       companyId,
       user,
@@ -197,14 +243,40 @@ export async function setLeave(
   });
 }
 
+/** The Half Day leave time of a save, else null (Full Day). The schema already
+ *  refuses a Half Day without both times or over a range; re-checked because
+ *  the service is the rule. */
+function halfOf(input: DayLogLeaveInput): LeaveSpan | null {
+  if (input.kind !== 'half') return null;
+  if (!input.fromTime || !input.toTime || input.from !== input.to) {
+    throw new ValidationError('Half Day is for one date, with its From Time and To Time');
+  }
+  if (input.toTime <= input.fromTime) throw new ValidationError('To Time must be after From Time');
+  if (halfCoversWholeDay(input)) throw new ValidationError(HALF_DAY_WHOLE_DAY_MSG);
+  return { fromTime: input.fromTime, toTime: input.toTime };
+}
+
+/** Timed lines → findOverlap's shape. */
+const spansOfLines = (lines: readonly DayLine[]) =>
+  lines
+    .filter((l) => l.fromTime)
+    .map((l) => ({
+      id: l.id,
+      kind: l.kind,
+      fromTime: l.fromTime!,
+      toTime: l.toTime,
+      description: l.description,
+    }));
+
 interface LeaveDay {
   id: string;
   date: string;
   status: string;
-  hasLines: boolean;
+  /** The day's live lines, read under the lock. */
+  lines: DayLine[];
 }
 
-/** The caller's headers on `dates` with their status and whether a live line exists. */
+/** The caller's headers on `dates` with their status and their live lines. */
 async function readDays(
   tx: DbTransaction,
   companyId: string,
@@ -213,16 +285,15 @@ async function readDays(
 ): Promise<LeaveDay[]> {
   if (dates.length === 0) return [];
   const rows = (await tx.execute(sql`
-    SELECT dr.id::text AS id, to_char(dr.report_date, 'YYYY-MM-DD') AS date,
-      dr.day_status::text AS status,
-      EXISTS (SELECT 1 FROM public.daily_report_lines l
-              WHERE l.daily_report_id = dr.id AND l.deleted_at IS NULL) AS has_lines
-    FROM public.daily_reports dr
-    WHERE dr.company_id = ${companyId}::uuid AND dr.user_id = ${userId}::uuid
-      AND dr.deleted_at IS NULL AND dr.report_date = ANY(${sql.param([...dates])}::date[])
-    ORDER BY dr.report_date
-  `)) as unknown as Array<{ id: string; date: string; status: string; has_lines: boolean }>;
-  return rows.map((r) => ({ id: r.id, date: r.date, status: r.status, hasLines: r.has_lines }));
+    SELECT d0.id::text AS id, to_char(d0.report_date, 'YYYY-MM-DD') AS date,
+      d0.day_status::text AS status,
+      ${linesJson(companyId, sql`l.daily_report_id = d0.id`)} AS lines
+    FROM public.daily_reports d0
+    WHERE d0.company_id = ${companyId}::uuid AND d0.user_id = ${userId}::uuid
+      AND d0.deleted_at IS NULL AND d0.report_date = ANY(${sql.param([...dates])}::date[])
+    ORDER BY d0.report_date
+  `)) as unknown as Array<{ id: string; date: string; status: string; lines: unknown }>;
+  return rows.map((r) => ({ id: r.id, date: r.date, status: r.status, lines: toLines(r.lines) }));
 }
 
 /** DELETE /day-logs/leave/:date — the caller's own leave day back to open.
@@ -240,6 +311,7 @@ export async function removeLeave(date: string, user: AuthContext): Promise<{ ok
     const rows = (await tx.execute(sql`
       UPDATE public.daily_reports
       SET day_status = 'open', leave_reason = NULL,
+          leave_kind = 'full', leave_from = NULL, leave_to = NULL,
           updated_at = now(), updated_by = ${user.id}::uuid
       WHERE id = ${h.id}::uuid AND deleted_at IS NULL AND day_status = 'leave'
       RETURNING id::text AS id
@@ -252,7 +324,7 @@ export async function removeLeave(date: string, user: AuthContext): Promise<{ ok
         entity: 'Day Log',
         entityId: h.id,
         refId: date,
-        detail: `Removed Personal Leave ${dmy(date)}`,
+        detail: `Removed ${h.leaveKind === 'half' ? 'Half Day Leave' : 'Personal Leave'} ${dmy(date)}`,
       },
       companyId,
       user,

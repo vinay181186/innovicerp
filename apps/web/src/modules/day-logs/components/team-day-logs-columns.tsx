@@ -4,7 +4,7 @@
 // the fact, not by the shown text.
 
 import type { TeamDayLogRow } from '@innovic/shared';
-import { DAY_LOG_STATUS_LABELS, fmt12, fmtDuration } from '@innovic/shared';
+import { DAY_LOG_STATUS_LABELS, fmt12, fmtDuration, leaveText } from '@innovic/shared';
 import type { DataTableColumn } from '@/ui/data';
 import { srNoColumn } from '@/ui/data/lead-columns';
 
@@ -29,8 +29,14 @@ export function teamColumns(): DataTableColumn<TeamDayLogRow>[] {
               {r.dayReplyCount > 0 ? 'Not entered · replied' : 'Not entered'}
             </span>
           ) : null}
+          {/* Full Day: "Personal Leave"; Half Day: "Half Day Leave 01:00 PM –
+              06:00 PM" — the rest of the row stays the normal day. */}
           {r.status === 'leave' ? (
-            <span className="badge b-grey dl-userbadge">{DAY_LOG_STATUS_LABELS.leave}</span>
+            <span className="badge b-grey dl-userbadge">
+              {r.leaveKind === 'half'
+                ? leaveText(r.leaveKind, r.leaveFrom, r.leaveTo)
+                : DAY_LOG_STATUS_LABELS.leave}
+            </span>
           ) : null}
         </>
       ),

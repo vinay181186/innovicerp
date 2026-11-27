@@ -4,7 +4,7 @@
 // is one row of the sheet's table, so the paginator moves it whole.
 
 import type { DayLogHistory, DayLogHistoryDay } from '@innovic/shared';
-import { fmtDuration } from '@innovic/shared';
+import { fmtDuration, leaveText } from '@innovic/shared';
 import { esc } from '@/lib/print/doc-print';
 import { monthLabel, shiftDate, WEEKDAYS } from './format';
 import { FIRST_KEY, GRID, td, tr } from './print-history-cells';
@@ -67,7 +67,12 @@ function dateCell(date: string, h: DayLogHistory, byDate: Map<string, DayLogHist
   const d = byDate.get(date);
   if (!d || date < h.from || date > h.to) return `<div class="cd out">${num}</div>`;
   const [cellClass, lineClass, words] = dayLine(d);
-  return `<div class="cd${cellClass}">${num}<span class="${lineClass}">${esc(words)}</span></div>`;
+  // A Half Day keeps its own state line and adds its leave time under it.
+  const half =
+    d.leaveKind === 'half'
+      ? `<span class="cd-e">${esc(leaveText(d.leaveKind, d.leaveFrom, d.leaveTo))}</span>`
+      : '';
+  return `<div class="cd${cellClass}">${num}<span class="${lineClass}">${esc(words)}</span>${half}</div>`;
 }
 
 function monthHtml(month: string, h: DayLogHistory, byDate: Map<string, DayLogHistoryDay>): string {

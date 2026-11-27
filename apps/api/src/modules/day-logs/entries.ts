@@ -35,6 +35,7 @@ import {
   spanLabel,
   writeLines,
 } from './entry-write';
+import { halfLeaveOf } from './day';
 import { dayTx, lockEntryDay, openDayLocked, requireHeader } from './lock';
 import { type DayLogClock, dmy, istClock } from './rules';
 import { readSnapshot } from './snapshot';
@@ -76,7 +77,7 @@ export async function addEntry(
     );
     guardOwnerWrite(h.date, clock.today);
     guardNotLeave(h);
-    const r = prepare(h.date, snap.lines, input, null, clock, snap);
+    const r = prepare(h.date, snap.lines, input, null, clock, snap, halfLeaveOf(h));
     const [w] = await writeLines(
       tx,
       h,
@@ -152,6 +153,7 @@ export async function updateEntry(
       self,
       clock,
       snap,
+      halfLeaveOf(h),
     );
     const same =
       r.fromTime === self.fromTime &&

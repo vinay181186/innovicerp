@@ -329,6 +329,19 @@ describe('Day Log History PDF: a range, first part', () => {
     expect(some).toContain('Others</span><span class="jv">1h 00m<');
   });
 
+  it('prints 2 Full Days + 1 Half Day as 2.5 Personal Leave, the half with its time', () => {
+    const leaveDays = [
+      day({ ...blank, date: '2026-10-19', state: 'leave', leaveKind: 'full' }),
+      day({ ...blank, date: '2026-10-20', state: 'leave', leaveKind: 'full' }),
+      day({ date: '2026-10-21', leaveKind: 'half', leaveFrom: '13:00', leaveTo: '18:00' }),
+    ];
+    const totals = { ...history([]).totals, leaveDays: 2.5 };
+    const html = build(history(leaveDays, { from: '2026-10-19', to: '2026-10-21', totals }));
+    expect(html).toContain('Personal Leave</span><span class="jv">2.5<');
+    expect(html).not.toContain('2.5.0');
+    expect(html).toContain('Filled · Half Day Leave 01:00 PM – 06:00 PM');
+  });
+
   it('carries the header onto a later page of this part, first before list', () => {
     const html = rangeHtml(days, '2026-10-21', '2026-10-22');
     expect(html).toContain('data-head-for="first"');
