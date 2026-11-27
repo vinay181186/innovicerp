@@ -47,6 +47,18 @@
   overflow-x: hidden;
 }
 
+/* `pageStickyTop` (ADR-325) — the headings freeze against the PAGE scroll.
+   `clip`, not `hidden`: it cuts the same overflow but is not a scroll box, so
+   the sticky <th> anchors to the page's scroll area (#content, a Home pane)
+   and stops under the page's sticky header at --dt-head-top. */
+.tbl-wrap.dt-fit-wrap.dt-page-head {
+  overflow: clip;
+  max-height: none;
+}
+.tbl-wrap.dt-page-head > .innovic-table > thead > tr > th {
+  top: var(--dt-head-top, 0px);
+}
+
 .innovic-table.tbl-grid.dt-fit {
   table-layout: fixed;
   width: 100%;

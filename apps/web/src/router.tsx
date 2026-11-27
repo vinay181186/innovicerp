@@ -170,6 +170,8 @@ import { designProjectDetailRoute } from './modules/design-projects/routes/detai
 import { designIssuesListRoute } from './modules/design-issues/routes/list';
 import { designWorkLogListRoute } from './modules/design-work-log/routes/list';
 import { dailyReportRoute } from './modules/daily-report/routes/list';
+import { soJwsoDaysRoute } from './modules/so-jwso-status/routes/days';
+import { soJwsoDayRoute } from './modules/so-jwso-status/routes/day';
 import { jcOpsRoute } from './modules/jc-ops/routes/list';
 import { jobQueueRoute } from './modules/job-queue/routes/list';
 import { productionScheduleRoute } from './modules/production-schedule/routes/list';
@@ -256,6 +258,8 @@ const routeTree = rootRoute.addChildren([
     designIssuesListRoute,
     designWorkLogListRoute,
     dailyReportRoute,
+    soJwsoDaysRoute,
+    soJwsoDayRoute,
     jcOpsRoute,
     jobQueueRoute,
     productionScheduleRoute,

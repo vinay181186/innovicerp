@@ -12,7 +12,8 @@ import { PageState } from '@/ui/layout';
 import { useDashChecks, useHome } from '../api';
 import '../home-rows.css';
 import '../home.css';
-import { DAY_LOG_HREF, type HomeView, isDeptView } from '../home-views';
+import { SoJwsoDaysHome } from '@/modules/so-jwso-status/components/days-view';
+import { DAY_LOG_HREF, type HomeView, isDeptView, SO_JWSO_STATUS_HREF } from '../home-views';
 import '../notifications.css';
 import { ApprovalsView } from './approvals-view';
 import { DayLogView } from './daylog-view';
@@ -46,6 +47,7 @@ export function HomePage({
   const accessKnown = access.data !== undefined || access.isError;
   // A failed access read: show it rather than hide it — the server still judges.
   const canDayLog = access.isError || canOpen(DAY_LOG_HREF);
+  const canSoJwso = access.isError || canOpen(SO_JWSO_STATUS_HREF); // ADR-325, gated like Day Log
   const h = home.data;
   const blocks = checks.data?.depts ?? [];
   const block = isDeptView(view) ? blocks.find((b) => b.dept === view) : undefined;
@@ -54,9 +56,10 @@ export function HomePage({
   // did not send) falls back to My to-do — replace, so Back skips it.
   const hiddenDayLog = view === 'daylog' && accessKnown && !canDayLog;
   const hiddenDept = isDeptView(view) && checks.data !== undefined && !block;
+  const hiddenSoJwso = view === 'so-jwso-status' && accessKnown && !canSoJwso;
   useEffect(() => {
-    if (hiddenDayLog || hiddenDept) onView('todo', true);
-  }, [hiddenDayLog, hiddenDept, onView]);
+    if (hiddenDayLog || hiddenDept || hiddenSoJwso) onView('todo', true);
+  }, [hiddenDayLog, hiddenDept, hiddenSoJwso, onView]);
 
   const showApprovals = waiting.data?.canApprove === true;
   const top: MenuItem[] = [
@@ -75,11 +78,14 @@ export function HomePage({
           },
         ]
       : []),
+    ...(canSoJwso ? [{ view: 'so-jwso-status' as const, label: 'SO / JWSO Status' }] : []),
   ];
 
   let content: React.ReactNode;
   if (view === 'daylog') {
     content = canDayLog ? <DayLogView /> : <LoadState error={false} />;
+  } else if (view === 'so-jwso-status') {
+    content = canSoJwso ? <SoJwsoDaysHome /> : <LoadState error={false} />;
   } else if (view === 'notifications') {
     content = <NotificationsView />;
   } else if (isDeptView(view)) {

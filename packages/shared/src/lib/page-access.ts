@@ -102,6 +102,8 @@ export const PAGE_ACCESS: Readonly<Record<string, PageRule>> = {
   '/sc-dashboard': OPEN,
   '/stuck-dashboard': OPEN,
   '/so-cycle-time': OPEN,
+  '/so-jwso-status': v('sojwstatus_view'), // ADR-325
+  '/so-jwso-status/$date': v('sojwstatus_view'),
   '/so-costing': OPEN,
   '/so-costing/$id': OPEN,
   '/stock-valuation': OPEN,

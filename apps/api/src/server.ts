@@ -92,6 +92,11 @@ import { salesOrdersRoutes } from './modules/sales-orders/routes';
 import { soOverviewRoutes } from './modules/so-overview/routes';
 import { soPlanningRoutes } from './modules/so-planning/routes';
 import { soStatusRoutes } from './modules/so-status/routes';
+import { soJwsoStatusRoutes } from './modules/so-jwso-status/routes';
+import {
+  startSoStatusSnapshotJob,
+  stopSoStatusSnapshotJob,
+} from './modules/so-jwso-status/snapshot-job';
 import { soTimelineRoutes } from './modules/so-timeline/routes';
 import { flowViewsRoutes } from './modules/flow-views/routes';
 import { pendingSoValueRoutes } from './modules/pending-so-value/routes';
@@ -203,6 +208,8 @@ await app.register(opEntryRoutes);
 await app.register(salesOrdersRoutes);
 await app.register(docNumbersRoutes);
 await app.register(soStatusRoutes);
+// ADR-325 — SO / JWSO status by day.
+await app.register(soJwsoStatusRoutes);
 await app.register(soOverviewRoutes);
 await app.register(soPlanningRoutes);
 await app.register(soTimelineRoutes);
@@ -337,12 +344,23 @@ if (env.NODE_ENV !== 'test') {
   }
 }
 
+// ADR-325 — the SO / JWSO status saved copy, every 10 min. Never under test;
+// SO_STATUS_SNAPSHOT_ENABLED=false switches it off.
+if (env.NODE_ENV !== 'test') {
+  try {
+    startSoStatusSnapshotJob(logger);
+  } catch (err) {
+    logger.error({ err }, 'SO / JWSO status snapshot timer failed to start; api stays up');
+  }
+}
+
 process.on('SIGTERM', () => {
   void (async () => {
     logger.info('SIGTERM received — shutting down alerts worker + http server');
     try {
       await stopAlertsWorker();
       stopPushSender();
+      stopSoStatusSnapshotJob();
       await app.close();
     } finally {
       process.exit(0);
