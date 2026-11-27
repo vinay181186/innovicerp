@@ -225,7 +225,9 @@ export async function undoPartyGrnUseAsIs(
   }>;
   const l = rows[0];
   if (!l || l.jwLineId !== jwLine.id || !l.partyMaterialId) {
-    throw new ConflictError(`${ncCode}: its Party GRN line changed a moment ago. Refresh the page.`);
+    throw new ConflictError(
+      `${ncCode}: its Party GRN line changed a moment ago. Refresh the page.`,
+    );
   }
   const at = `${l.partyGrnCode} Ln ${l.lineNo}`;
 

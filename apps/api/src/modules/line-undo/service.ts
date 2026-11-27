@@ -179,6 +179,8 @@ export async function runJwLineUndoStep(
         : { outcome: 'requested', message: `Sent for approval — ${code}` };
     }
     case 'manual':
-      throw new ConflictError(first.step.manualReason ?? `${code} cannot be undone from this list.`);
+      throw new ConflictError(
+        first.step.manualReason ?? `${code} cannot be undone from this list.`,
+      );
   }
 }

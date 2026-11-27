@@ -220,7 +220,8 @@ export async function buildJwLineUndoSteps(
            AND deleted_at IS NULL AND status::text <> 'cancelled'
          ORDER BY created_at DESC`,
   );
-  for (const r of invoices) out.push(cancelStep('jw_invoice', r.id, r.code, null, 'Cancel the JW Invoice'));
+  for (const r of invoices)
+    out.push(cancelStep('jw_invoice', r.id, r.code, null, 'Cancel the JW Invoice'));
 
   const returns = await q<{ id: string; code: string }>(
     tx,
@@ -229,7 +230,8 @@ export async function buildJwLineUndoSteps(
            AND deleted_at IS NULL AND status <> 'cancelled'
          ORDER BY created_at DESC`,
   );
-  for (const r of returns) out.push(cancelStep('jw_return', r.id, r.code, null, 'Cancel the JW Return'));
+  for (const r of returns)
+    out.push(cancelStep('jw_return', r.id, r.code, null, 'Cancel the JW Return'));
 
   const cmrs = await q<{ id: string; code: string }>(
     tx,
@@ -315,16 +317,38 @@ export async function buildJwLineUndoSteps(
   const proById = new Map(pros.map((p) => [p.id, p]));
   // Cards with no plan first (newest first), then each plan's cards + the plan.
   out.push(
-    ...(await jobCardSteps(tx, companyId, jcs.filter((j) => !j.planId), skip, pmiByJc, proById)),
+    ...(await jobCardSteps(
+      tx,
+      companyId,
+      jcs.filter((j) => !j.planId),
+      skip,
+      pmiByJc,
+      proById,
+    )),
   );
   for (const p of plans) {
     out.push(
-      ...(await jobCardSteps(tx, companyId, jcs.filter((j) => j.planId === p.id), skip, pmiByJc, proById)),
+      ...(await jobCardSteps(
+        tx,
+        companyId,
+        jcs.filter((j) => j.planId === p.id),
+        skip,
+        pmiByJc,
+        proById,
+      )),
     );
     // A Production Order on the plan with no card yet is cancelled before the plan.
     const carded = new Set(jcs.flatMap((j) => (j.productionOrderId ? [j.productionOrderId] : [])));
     for (const o of pros.filter((x) => x.planId === p.id && !carded.has(x.id))) {
-      out.push(cancelStep('production_order', o.id, o.code, `/production-orders/${o.id}`, 'Cancel the Production Order'));
+      out.push(
+        cancelStep(
+          'production_order',
+          o.id,
+          o.code,
+          `/production-orders/${o.id}`,
+          'Cancel the Production Order',
+        ),
+      );
     }
     out.push(cancelStep('plan', p.id, p.code, `/plans/${p.id}`, 'Cancel the plan'));
   }

@@ -65,7 +65,13 @@ beforeAll(async () => {
   clientId = (
     await db
       .insert(clients)
-      .values({ companyId, code: `${P}CLI`, name: 'Line undo client', createdBy: u.id, updatedBy: u.id })
+      .values({
+        companyId,
+        code: `${P}CLI`,
+        name: 'Line undo client',
+        createdBy: u.id,
+        updatedBy: u.id,
+      })
       .returning()
   )[0]!.id;
   jwId = (

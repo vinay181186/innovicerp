@@ -94,4 +94,3 @@ export function manualStep(key: string, docId: string, b: CancelBlocker): BuiltS
     run: { kind: 'manual' },
   };
 }
-

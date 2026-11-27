@@ -192,7 +192,9 @@ async function ncUndoBlockers(
         });
       }
       if (issues.length === 0 && returns.length === 0) {
-        out.push(...self(`the register holds only ${balance} ${tail} — report this to the administrator`));
+        out.push(
+          ...self(`the register holds only ${balance} ${tail} — report this to the administrator`),
+        );
       }
     }
   }

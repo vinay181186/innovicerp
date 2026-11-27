@@ -131,7 +131,9 @@ export async function stepPlansBackFromPr(
       tx,
       {
         action: ActivityAction.Edit,
-        changes: [{ field: 'planStatus', label: 'Plan Status', before: 'PR Created', after: 'Planned' }],
+        changes: [
+          { field: 'planStatus', label: 'Plan Status', before: 'PR Created', after: 'Planned' },
+        ],
         entity: 'Plan',
         entityId: p.id,
         refId: p.code,

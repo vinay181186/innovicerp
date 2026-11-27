@@ -56,14 +56,22 @@ beforeAll(async () => {
     await db
       .select({ id: items.id })
       .from(items)
-      .where(and(eq(items.companyId, companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')))
+      .where(
+        and(eq(items.companyId, companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
+      )
       .orderBy(asc(items.createdAt))
       .limit(1)
   )[0]!.id;
   clientId = (
     await db
       .insert(clients)
-      .values({ companyId, code: `${P}CLI`, name: 'Undo list client', createdBy: u.id, updatedBy: u.id })
+      .values({
+        companyId,
+        code: `${P}CLI`,
+        name: 'Undo list client',
+        createdBy: u.id,
+        updatedBy: u.id,
+      })
       .returning()
   )[0]!.id;
   jwId = (
@@ -141,9 +149,7 @@ afterAll(async () => {
         .from(partyGrnLines)
         .where(inArray(partyGrnLines.partyGrnId, grnIds))
     ).map((l) => l.id);
-    await db
-      .delete(cancelRequests)
-      .where(inArray(cancelRequests.docId, [...lineIds, ...grnIds]));
+    await db.delete(cancelRequests).where(inArray(cancelRequests.docId, [...lineIds, ...grnIds]));
     await db.delete(partyGrnLines).where(inArray(partyGrnLines.partyGrnId, grnIds));
     await db.delete(partyGrn).where(inArray(partyGrn.id, grnIds));
   }

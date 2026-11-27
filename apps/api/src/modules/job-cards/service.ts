@@ -4086,9 +4086,16 @@ export async function deleteJobCard(
       SELECT code FROM public.plans
        WHERE jc_id = ${id}::uuid AND company_id = ${companyId}::uuid
          AND deleted_at IS NULL AND plan_status <> 'cancelled'
+         AND NOT EXISTS (SELECT 1 FROM public.job_cards jc
+                          WHERE jc.id = ${id}::uuid AND jc.production_order_id IS NOT NULL)
     `)) as unknown as Array<{ code: string }>;
     for (const p of planRows) {
-      blockers.push({ docLabel: 'Plan', docNo: p.code, href: null, reason: 'made this Job Card — use Cancel; the plan goes back to Planned' });
+      blockers.push({
+        docLabel: 'Plan',
+        docNo: p.code,
+        href: null,
+        reason: 'made this Job Card — use Cancel; the plan goes back to Planned',
+      });
     }
     if (blockers.length > 0) {
       const list = blockers.map((b) => `${b.docLabel} ${b.docNo} (${b.reason})`).join('; ');

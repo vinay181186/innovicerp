@@ -47,7 +47,14 @@ async function lineQcBlockers(
   }
   const line = await cancelLineOf(tx, companyId, l);
   if (!line || isQcUntouched(line)) {
-    return [{ docLabel: 'Party GRN line', docNo: l.code, href, reason: 'nothing to reverse — no QC is recorded' }];
+    return [
+      {
+        docLabel: 'Party GRN line',
+        docNo: l.code,
+        href,
+        reason: 'nothing to reverse — no QC is recorded',
+      },
+    ];
   }
   const out: CancelBlocker[] = [];
   const decided = (await tx.execute(sql`

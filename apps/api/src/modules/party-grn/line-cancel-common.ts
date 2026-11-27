@@ -96,7 +96,12 @@ export async function lockLine(
   };
 }
 
-export async function mustLock(tx: DbTransaction, companyId: string, lineId: string, forUpdate: boolean) {
+export async function mustLock(
+  tx: DbTransaction,
+  companyId: string,
+  lineId: string,
+  forUpdate: boolean,
+) {
   const l = await lockLine(tx, companyId, lineId, forUpdate);
   if (!l) throw new NotFoundError('Party GRN line not found. Refresh the page.');
   return l;

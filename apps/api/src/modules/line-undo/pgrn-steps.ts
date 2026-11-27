@@ -81,11 +81,24 @@ export async function partyGrnSteps(
     const before = removed.get(l.grnId) ?? 0;
     if (l.liveLines - before <= 1) {
       out.push(
-        cancelStep('party_grn', l.grnId, l.grnCode, href, `Cancel the Party GRN — ${code} is its last line`),
+        cancelStep(
+          'party_grn',
+          l.grnId,
+          l.grnCode,
+          href,
+          `Cancel the Party GRN — ${code} is its last line`,
+        ),
       );
     } else {
       out.push(
-        cancelStep('party_grn_line', l.id, code, href, 'Remove the line from the Party GRN', 'Remove line'),
+        cancelStep(
+          'party_grn_line',
+          l.id,
+          code,
+          href,
+          'Remove the line from the Party GRN',
+          'Remove line',
+        ),
       );
     }
     removed.set(l.grnId, before + 1);
@@ -112,4 +125,3 @@ export function pmiStep(m: { id: string; code: string; left: number }): BuiltSte
     run: { kind: 'return_party_issue', issueId: m.id, qty: m.left },
   };
 }
-

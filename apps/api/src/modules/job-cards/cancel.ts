@@ -651,7 +651,9 @@ export async function cancelJobCardTx(
         entity: 'Plan',
         entityId: p.id,
         refId: p.code,
-        changes: [{ field: 'planStatus', label: 'Plan Status', before: 'JC Created', after: 'Planned' }],
+        changes: [
+          { field: 'planStatus', label: 'Plan Status', before: 'JC Created', after: 'Planned' },
+        ],
         detail: `${p.code} back to Planned — ${head.code} cancelled`,
       },
       companyId,
