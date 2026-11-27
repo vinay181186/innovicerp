@@ -12,7 +12,7 @@
 // The customer material of a line is the JWSO line's own `<item>-RM` party
 // material (lib/jw-rm) — it is never picked separately, so it cannot mismatch.
 
-import { type SQL, and, eq, isNull, sql } from 'drizzle-orm';
+import { type SQL, and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
   CancelBlocker,
   CancelEffect,
@@ -744,7 +744,7 @@ export async function createPartyGrn(
 /** Pieces of a JWSO line's customer material still in the register, from the
  *  documents: Σ accepted (QC'd GRN lines) − Σ issued net of returns to store −
  *  Σ good returned to the customer. A GRN cancel may not take back more. */
-async function jwLineRegisterBalance(
+export async function jwLineRegisterBalance(
   tx: DbTransaction,
   jwLineId: string,
   partyMaterialId: string,
@@ -818,8 +818,14 @@ export async function lockPartyGrnForCancel(
   return rows[0] ?? null;
 }
 
-/** The live lines a cancel reads (blockers, effects and the worker alike). */
-async function partyGrnCancelLines(tx: DbTransaction, companyId: string, id: string) {
+/** The live lines a cancel reads (blockers, effects and the worker alike).
+ *  ADR-324: `lineIds` narrows it to those lines (the line-undo handlers). */
+export async function partyGrnCancelLines(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+  lineIds?: readonly string[],
+) {
   return tx
     .select({
       id: partyGrnLines.id,
@@ -847,15 +853,16 @@ async function partyGrnCancelLines(tx: DbTransaction, companyId: string, id: str
         eq(partyGrnLines.partyGrnId, id),
         eq(partyGrnLines.companyId, companyId),
         isNull(partyGrnLines.deletedAt),
+        lineIds ? inArray(partyGrnLines.id, [...lineIds]) : undefined,
       ),
     )
     .orderBy(partyGrnLines.lineNo);
 }
 
-type PartyGrnCancelLine = Awaited<ReturnType<typeof partyGrnCancelLines>>[number];
+export type PartyGrnCancelLine = Awaited<ReturnType<typeof partyGrnCancelLines>>[number];
 
 /** Only QC'd lines put anything into the register. */
-function linesToReverse(lines: readonly PartyGrnCancelLine[]): PartyGrnCancelLine[] {
+export function linesToReverse(lines: readonly PartyGrnCancelLine[]): PartyGrnCancelLine[] {
   return lines.filter((l) => !isQcUntouched(l) && l.acceptedQty > 0 && l.partyMaterialId != null);
 }
 
@@ -895,9 +902,34 @@ export async function partyGrnCancelBlockers(
   tx: DbTransaction,
   companyId: string,
   id: string,
+  lineIds?: readonly string[],
 ): Promise<CancelBlocker[]> {
   const out: CancelBlocker[] = [];
-  const lines = await partyGrnCancelLines(tx, companyId, id);
+  const lines = await partyGrnCancelLines(tx, companyId, id, lineIds);
+
+  // ADR-324 — the whole-GRN cancel waits for a Reverse QC / Remove line
+  // request pending on one of its lines (decide that first).
+  if (!lineIds && lines.length > 0) {
+    const pendingLine = (await tx.execute(sql`
+      SELECT doc_code AS "docCode" FROM public.cancel_requests
+       WHERE company_id = ${companyId}::uuid
+         AND doc_type IN ('party_grn_line', 'party_grn_line_qc')
+         AND doc_id IN (${sql.join(
+           lines.map((l) => sql`${l.id}::uuid`),
+           sql`, `,
+         )})
+         AND status = 'pending' AND deleted_at IS NULL
+       ORDER BY doc_code
+    `)) as unknown as Array<{ docCode: string }>;
+    for (const r of pendingLine) {
+      out.push({
+        docLabel: 'Party GRN line',
+        docNo: r.docCode,
+        href: `/party-grn/${id}`,
+        reason: 'has a cancel request pending — decide it first',
+      });
+    }
+  }
 
   // 1) Deviated pieces already handed back cannot be un-received.
   const sentBack = lines.filter((l) => l.rejectedReturnedQty > 0);
@@ -1012,8 +1044,20 @@ export async function partyGrnCancelBlockers(
      WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid
   `)) as unknown as Array<{ salesOrderId: string | null }>;
   const soId = soHead[0]?.salesOrderId;
-  if (soId) out.push(...(await soGrnCancelBlockers(tx, companyId, id, soId)));
+  // ADR-324 line undo is JWSO-only (P1): the line handlers refuse an SO GRN
+  // before this, so the SO-store rule is read for the whole-GRN cancel only.
+  if (soId && !lineIds) out.push(...(await soGrnCancelBlockers(tx, companyId, id, soId)));
   return out;
+}
+
+/** ADR-324 — `AND pgl.id IN (…)` when a line filter is given (alias pgl). */
+export function lineIdsSql(lineIds?: readonly string[]): SQL {
+  if (!lineIds) return sql``;
+  if (lineIds.length === 0) return sql`AND false`;
+  return sql`AND pgl.id IN (${sql.join(
+    lineIds.map((x) => sql`${x}::uuid`),
+    sql`, `,
+  )})`;
 }
 
 /** What the cancel will do — the Cancel preview's lines. */
@@ -1021,8 +1065,9 @@ export async function partyGrnCancelEffects(
   tx: DbTransaction,
   companyId: string,
   id: string,
+  lineIds?: readonly string[],
 ): Promise<CancelEffect[]> {
-  const lines = await partyGrnCancelLines(tx, companyId, id);
+  const lines = await partyGrnCancelLines(tx, companyId, id, lineIds);
   if (lines.length === 0) return [];
   const jwIds = Array.from(new Set(lines.flatMap((l) => (l.jwLineId ? [l.jwLineId] : []))));
   const jwLines =
@@ -1045,6 +1090,7 @@ export async function partyGrnCancelEffects(
       JOIN public.party_grn_lines pgl ON pgl.id = nc.party_grn_line_id
      WHERE pgl.party_grn_id = ${id}::uuid
        AND pgl.deleted_at IS NULL
+       ${lineIdsSql(lineIds)}
        AND nc.company_id = ${companyId}::uuid
        AND nc.deleted_at IS NULL
        AND nc.status <> 'closed'
@@ -1422,6 +1468,10 @@ export async function updatePartyGrnTx(
       throw new ConflictError(`A line in this edit is not on ${head.code}. Refresh the page.`);
     }
     const at = `${head.code} Ln ${current.lineNo}`;
+    // ADR-324 — a line with a Reverse QC / Remove line request waiting is not
+    // edited under the approver (the line rows are locked above).
+    await assertNoPendingCancel(tx, 'party_grn_line_qc', current.id);
+    await assertNoPendingCancel(tx, 'party_grn_line', current.id);
     // Only a line nothing has been inspected on may be edited (a part-inspected
     // line is frozen too — its received qty is what the inspections add up to).
     if (!isQcUntouched(current)) {

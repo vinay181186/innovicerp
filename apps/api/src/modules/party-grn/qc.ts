@@ -200,6 +200,10 @@ export async function qcPartyGrn(
           .for('update')
       )[0];
       if (!locked) throw new ConflictError(`${at} was removed a moment ago. Refresh the page.`);
+      // ADR-324 — no QC on a line whose Reverse QC / Remove line request waits
+      // (checked under the line lock the reversal also takes).
+      await assertNoPendingCancel(tx, 'party_grn_line_qc', l.id);
+      await assertNoPendingCancel(tx, 'party_grn_line', l.id);
       assertFitsQcPending(at, locked, q);
       const rmItem = q.rejectedQty > 0 ? (ncItemByLine.get(l.id) ?? null) : null;
       const qcRemarks = q.qcRemarks?.trim() || null;

@@ -11,6 +11,7 @@ import {
   ACCESS_FORMS,
   type AccessAction,
   type AccessFormKey,
+  type EffectiveAccess,
   effectiveFormPerms,
 } from '@innovic/shared';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -34,8 +35,27 @@ export interface PersonAccessRow {
   role: string;
   acFullAccess: boolean | null;
   acAuditor: boolean | null;
+  /** 0266 — "Undo chain" Special Right. Optional: callers that only ask about
+   *  form rights need not select it (missing reads "no"). */
+  acUndoChain?: boolean | null;
   acDepartments: unknown;
   acForms: unknown;
+}
+
+/** This OTHER person's EffectiveAccess, built by the one toEffectiveAccess.
+ *  Carries undoChain from the row, so canUndoChain(personEffectiveAccess(r))
+ *  answers "who holds Undo chain" the same way /me does. */
+export function personEffectiveAccess(r: PersonAccessRow): EffectiveAccess {
+  return toEffectiveAccess({
+    fullAccess: r.acFullAccess,
+    auditor: r.acAuditor,
+    drawingDownload: false,
+    drawingPrint: false,
+    drawingRelease: false,
+    undoChain: r.acUndoChain ?? false,
+    departments: r.acDepartments,
+    forms: r.acForms,
+  });
 }
 
 /** Does this OTHER person hold `action` on `form`? Role admin and Full Access
@@ -47,16 +67,7 @@ export function personHolds(
   action: AccessAction,
 ): boolean {
   if (r.role === 'admin') return true;
-  const eff = toEffectiveAccess({
-    fullAccess: r.acFullAccess,
-    auditor: r.acAuditor,
-    drawingDownload: false,
-    drawingPrint: false,
-    drawingRelease: false,
-    departments: r.acDepartments,
-    forms: r.acForms,
-  });
-  return effectiveFormPerms(eff, form)[action];
+  return effectiveFormPerms(personEffectiveAccess(r), form)[action];
 }
 
 /** Active users of the company holding `action` on `form`. Their main
@@ -76,6 +87,7 @@ export async function listUsersWithRight(
       role: users.role,
       acFullAccess: userAccess.fullAccess,
       acAuditor: userAccess.auditor,
+      acUndoChain: userAccess.undoChain,
       acMainDept: userAccess.mainDept,
       acDepartments: userAccess.departments,
       acForms: userAccess.forms,

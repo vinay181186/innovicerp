@@ -173,7 +173,7 @@
     "components/shared/sheet-preview-modal.tsx": 2,
     "lib/exit-guard.tsx": 1,
     "modules/access-control/components/access-list-columns.tsx": 1,
-    "modules/access-control/components/configure-modal.tsx": 25,
+    "modules/access-control/components/configure-modal.tsx": 24,
     "modules/access-control/routes/list.tsx": 1,
     "modules/activity-log/components/activity-log-columns.tsx": 1,
     "modules/approval-config/components/approval-history-table.tsx": 2,

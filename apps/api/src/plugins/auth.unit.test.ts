@@ -45,6 +45,7 @@ const accessRow = (fullAccess: boolean) => ({
   drawingDownload: false,
   drawingPrint: false,
   drawingRelease: false,
+  undoChain: false,
   departments: {},
   forms: {},
 });

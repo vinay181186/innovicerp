@@ -8472,6 +8472,10 @@ export const userAccess = pgTable(
     // ADR-290 (0248) — "Can release drawings": approved → released in the
     // Drawing Register, and approve a correction on a released Rev.
     drawingRelease: boolean('drawing_release').notNull().default(false),
+    // 0266 — "Undo chain" Special Right: may undo everything holding an SO /
+    // JWSO line from one list. Only an L6 Super Admin may change it
+    // (saveUserAccess). Full Access implies it; no admin-role bypass.
+    undoChain: boolean('undo_chain').notNull().default(false),
     // Which department this person belongs to (0101). Picking it seeds that
     // department's tier; changing it clears the old one and seeds the new.
     // Stored rather than derived because "main" and "extra" departments look

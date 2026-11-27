@@ -4,9 +4,12 @@ import type {
   EnsureJwRmItemInput,
   EnsureJwRmItemResponse,
   JobWorkOrderDetail,
+  JwLineUndoList,
   ListJobWorkOrderLinesResponse,
   ListJobWorkOrdersQuery,
   ListJobWorkOrdersResponse,
+  RunLineUndoStepInput,
+  RunLineUndoStepResult,
   ShortCloseJobWorkOrderLineInput,
   UpdateJobWorkOrderInput,
 } from '@innovic/shared';
@@ -26,6 +29,9 @@ export const jobWorkOrdersKeys = {
   lineList: (q: ListJobWorkOrdersQuery) => [...jobWorkOrdersKeys.lists(), 'lines', q] as const,
   details: () => [...jobWorkOrdersKeys.all, 'detail'] as const,
   detail: (id: string) => [...jobWorkOrdersKeys.details(), id] as const,
+  // ADR-324 — the Undo list of one JWSO line (computed fresh on every read).
+  lineUndos: () => [...jobWorkOrdersKeys.all, 'line-undo'] as const,
+  lineUndo: (id: string, lineId: string) => [...jobWorkOrdersKeys.lineUndos(), id, lineId] as const,
 };
 
 function toQueryString(q: ListJobWorkOrdersQuery): string {
@@ -193,6 +199,48 @@ export function useSoftDeleteJobWorkOrder() {
       void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.lists() });
       qc.removeQueries({ queryKey: jobWorkOrdersKeys.detail(id) });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+    },
+  });
+}
+
+/** ADR-324 — every live step still holding one JWSO line, newest first
+ *  (GET /job-work-orders/:id/lines/:lineId/undo-list). Read only while the
+ *  Undo list dialog is open, and always fresh: a finished step simply drops
+ *  out of the list. */
+export function useJwLineUndoList(id: string, lineId: string, enabled = true) {
+  return useQuery<JwLineUndoList>({
+    queryKey: jobWorkOrdersKeys.lineUndo(id, lineId),
+    queryFn: () => apiFetch<JwLineUndoList>(`/job-work-orders/${id}/lines/${lineId}/undo-list`),
+    enabled: enabled && Boolean(id) && Boolean(lineId),
+    staleTime: 0,
+    refetchOnMount: 'always',
+    retry: false,
+  });
+}
+
+/** ADR-324 — run the FIRST open step of a line's Undo list
+ *  (POST /job-work-orders/:id/lines/:lineId/undo-step). One Idempotency key
+ *  per call (withSaveKey rotates it after an answer). The step touches other
+ *  modules' data (Op Log, Job Cards, Party GRN, NC, Approvals …): the Undo list
+ *  dialog refreshes those roots itself, so this file imports no module that
+ *  imports it back (cancel-requests, party-grn, nc-register,
+ *  party-material-issues all read jobWorkOrdersKeys). */
+export function useRunLineUndoStep(id: string, lineId: string, saveKey?: SaveKey) {
+  const qc = useQueryClient();
+  return useMutation<RunLineUndoStepResult, Error, RunLineUndoStepInput>({
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<RunLineUndoStepResult>(`/job-work-orders/${id}/lines/${lineId}/undo-step`, {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
+      void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      void qc.invalidateQueries({ queryKey: dashboardKeys.all });
     },
   });
 }

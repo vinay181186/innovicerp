@@ -67,6 +67,7 @@ import {
   useRevConfirmGate,
 } from '@/modules/item-revisions/components/rev-confirm-gate';
 import { JwLineDrawingCell } from './jw-line-drawing-cell';
+import { LineUndoDialog } from './line-undo-dialog';
 import {
   CustomerAddressField,
   OrderSupplyFormFields,
@@ -190,6 +191,9 @@ type RmState =
 /** Why a line's Item / UOM / BOM / Remove are locked (ADR-203 `inUse`). */
 const IN_USE_TITLE =
   'Used by a Job Card / Plan / Party GRN / issue / return / invoice — use Short-close on the JWSO page';
+
+/** ADR-324: an in-use saved line on JWSO edit — the trash button opens its Undo list. */
+const IN_USE_UNDO_TITLE = 'In use — click to see what holds it';
 
 /** The line's Customer RM (ADR-203): `<code>-RM ✓` in strong mono once known,
  *  with a small "new" chip when this lookup created it; a muted "…" while it is
@@ -728,6 +732,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   // BOM), keyed by the react-hook-form field id. Collapsed rows keep their
   // values: react-hook-form holds unmounted fields (shouldUnregister is off).
   const [openMore, setOpenMore] = useState<Set<string>>(() => new Set());
+  // ADR-324 — the saved in-use line whose Undo list is open (edit only).
+  const [undoLine, setUndoLine] = useState<{ lineId: string; lineNo: number } | null>(null);
   const toggleMore = (key: string): void =>
     setOpenMore((prev) => {
       const next = new Set(prev);
@@ -1680,18 +1686,35 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                       </td>
                       <td className="td-ctr">
                         {/* The wrapper carries the reason: a disabled button
-                          shows no tooltip in every browser. */}
-                        <span title={inUse ? IN_USE_TITLE : undefined}>
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-sm btn-icon"
-                            disabled={inUse}
-                            onClick={() => remove(idx)}
-                            aria-label={`Remove row ${idx + 1}`}
-                          >
-                            <Icon name="trash-2" size={12} />
-                          </button>
-                        </span>
+                          shows no tooltip in every browser. ADR-324: on an
+                          existing JWSO an in-use SAVED line opens its Undo list
+                          instead (the form value `id` is the saved line id). */}
+                        {inUse && isEdit && wl?.id && field.lineNo != null ? (
+                          <span title={IN_USE_UNDO_TITLE}>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm btn-icon"
+                              onClick={() =>
+                                setUndoLine({ lineId: wl.id ?? '', lineNo: field.lineNo ?? 0 })
+                              }
+                              aria-label={`See what holds Ln ${field.lineNo}`}
+                            >
+                              <Icon name="trash-2" size={12} />
+                            </button>
+                          </span>
+                        ) : (
+                          <span title={inUse ? IN_USE_TITLE : undefined}>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm btn-icon"
+                              disabled={inUse}
+                              onClick={() => remove(idx)}
+                              aria-label={`Remove row ${idx + 1}`}
+                            >
+                              <Icon name="trash-2" size={12} />
+                            </button>
+                          </span>
+                        )}
                       </td>
                     </tr>
                     {revChanged && savedLine ? (
@@ -1819,6 +1842,21 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           </div>
         </div>
       )}
+
+      {undoLine && isEdit ? (
+        <LineUndoDialog
+          jobWorkOrderId={props.detail.id}
+          jwCode={props.detail.code}
+          lineId={undoLine.lineId}
+          lineNo={undoLine.lineNo}
+          onRemovable={() => {
+            // Found by the saved id, not the row index the dialog opened on.
+            const at = (getValues('lines') ?? []).findIndex((l) => l.id === undoLine.lineId);
+            if (at >= 0) remove(at);
+          }}
+          onClose={() => setUndoLine(null)}
+        />
+      ) : null}
 
       {showAddClient && canAddClient ? (
         <QuickAddClient onClose={() => setShowAddClient(false)} onCreated={onClientCreated} />

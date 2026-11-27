@@ -3,7 +3,7 @@
 // One sheet "Access Control": the list's own columns as the admin sees them.
 // Departments / Extras draw ✅ and badge chips, so they get plain words.
 
-import type { ListUserAccessQuery, UserAccessListItem } from '@innovic/shared';
+import { canUndoChain, type ListUserAccessQuery, type UserAccessListItem } from '@innovic/shared';
 import type { DataTableColumn, ListExportSpec } from '@/ui/data';
 import { fetchUserAccessPage } from '../api';
 
@@ -11,6 +11,7 @@ function extrasText(u: UserAccessListItem): string {
   const words = [u.fullAccess ? 'All' : `${u.formCount}/${u.totalForms}`];
   if (u.fullAccess || u.drawingDownload) words.push('Drawings');
   if (u.fullAccess || u.drawingPrint) words.push('Drawing print');
+  if (canUndoChain(u)) words.push('Undo chain');
   return words.join(' · ');
 }
 

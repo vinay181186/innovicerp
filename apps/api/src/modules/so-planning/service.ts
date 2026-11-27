@@ -1028,6 +1028,7 @@ export async function getPlanningBom(
         bml: bomMasterLines,
         childCode: items.code,
         childName: items.name,
+        childItemType: items.itemType,
       })
       .from(bomMasterLines)
       .innerJoin(items, eq(items.id, bomMasterLines.childItemId))
@@ -1149,17 +1150,22 @@ export async function getPlanningBom(
     // ADR-307 — a party_supplied child is the customer's: its stock is what is
     // in the customer store for THIS SO, its shortfall is what the SO is still
     // short of, and it is never planned. ONE read for the whole BOM.
-    const customerParts = childRows.some((c) => c.bml.bomType === 'party_supplied')
+    // A customer (-RM) part is party_supplied whatever its BOM line says — a
+    // line saved before ADR-307 (17-Nov) may still read Buy (BOM-0001 Rev 2).
+    const typeOf = (c: (typeof childRows)[number]): PlanningBomChild['bomType'] =>
+      c.childItemType === 'party_supplied_material' ? 'party_supplied' : c.bml.bomType;
+    const customerParts = childRows.some((c) => typeOf(c) === 'party_supplied')
       ? await readSoCustomerParts(tx, companyId, row.line.salesOrderId)
       : new Map<string, SoCustomerPart>();
     const children: PlanningBomChild[] = childRows.map((c) => {
       const qtyPerSet = Number(c.bml.qtyPerSet);
       const totalNeed = qtyPerSet * orderQty;
+      const bomType = typeOf(c);
       const customerPart =
-        c.bml.bomType === 'party_supplied'
+        bomType === 'party_supplied'
           ? (customerParts.get(c.bml.childItemId)?.figures ?? null)
           : null;
-      const isCustomer = c.bml.bomType === 'party_supplied';
+      const isCustomer = bomType === 'party_supplied';
       const stockQty = isCustomer
         ? (customerPart?.inStoreQty ?? 0)
         : (stockMap.get(c.bml.childItemId) ?? 0);
@@ -1178,7 +1184,7 @@ export async function getPlanningBom(
         totalNeed,
         stockQty,
         shortfall,
-        bomType: c.bml.bomType,
+        bomType,
         existingPlan,
       };
     });

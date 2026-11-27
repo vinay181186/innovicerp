@@ -176,6 +176,7 @@ export * from './schemas/approval-config';
 export * from './schemas/approvals-waiting';
 export * from './schemas/document-edit';
 export * from './schemas/cancel-request';
+export * from './schemas/line-undo';
 export * from './schemas/osp-process';
 export * from './schemas/data-integrity';
 export * from './schemas/service-po';

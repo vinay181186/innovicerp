@@ -7,7 +7,9 @@ import {
   accessFormPermsSchema,
   canAdvanceForm,
   canDeleteRecords,
+  canUndoChain,
   cascadeFormPerms,
+  effectiveAccessSchema,
   effectiveFormPerms,
   emptyFormPerms,
   type AccessFormPerms,
@@ -21,6 +23,7 @@ function access(over: Partial<EffectiveAccess> = {}): EffectiveAccess {
     drawingDownload: false,
     drawingPrint: false,
     drawingRelease: false,
+    undoChain: false,
     departments: {},
     forms: {},
     ...over,
@@ -206,5 +209,26 @@ describe('ADR-232 auditor and delete', () => {
     expect(canDeleteRecords(access({ departments: { qc: 'L5' } }))).toBe(false);
     expect(canDeleteRecords(access({ auditor: true }))).toBe(false);
     expect(canDeleteRecords(null)).toBe(false);
+  });
+});
+
+describe('canUndoChain (migration 0266)', () => {
+  it('is false with no access row', () => {
+    expect(canUndoChain(null)).toBe(false);
+    expect(canUndoChain(undefined)).toBe(false);
+  });
+  it('is false by default, true when ticked', () => {
+    expect(canUndoChain(access())).toBe(false);
+    expect(canUndoChain(access({ undoChain: true }))).toBe(true);
+  });
+  it('L6 Full Access always holds it', () => {
+    expect(canUndoChain(access({ fullAccess: true }))).toBe(true);
+  });
+  it('L7 Auditor does not get it from the level', () => {
+    expect(canUndoChain(access({ auditor: true }))).toBe(false);
+  });
+  it('a stored payload without the field parses to false', () => {
+    const parsed = effectiveAccessSchema.parse({ fullAccess: false, departments: {}, forms: {} });
+    expect(parsed.undoChain).toBe(false);
   });
 });

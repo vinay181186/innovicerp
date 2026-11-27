@@ -68,6 +68,7 @@ import {
 } from '@innovic/shared';
 import { ChevronDown, ChevronRight, ClipboardPaste, Copy, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMyAccess } from '@/lib/access-control';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useRecordWatch } from '@/lib/use-record-watch';
 import { useUpdateUser, useUser } from '@/modules/users/api';
@@ -85,6 +86,15 @@ interface Props {
 type FormPerms = AccessFormPerms;
 type DeptTiers = Record<string, AccessTierKey>;
 type Action = 'view' | 'entry' | 'advance' | 'edit' | 'approve' | 'price';
+
+/** One row of the Special Rights section — tick + label + hint. */
+const SPECIAL_ROW: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 'var(--sp-3)',
+  padding: 'var(--sp-2) var(--sp-3)',
+  background: 'var(--bg2)',
+};
 
 // The six checkbox columns, in display order. `advance` (ADR-231 — move a
 // saved record to its next step) sits between Entry and Edit; `price`
@@ -247,6 +257,15 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   // ADR-290 — "Drawing Release button". ADR-323: no longer shown or edited;
   // kept only so a save sends back the value it loaded.
   const [drawingRelease, setDrawingRelease] = useState(false);
+  // "Undo chain" — whole-account tick: undo everything holding an SO / JWSO
+  // line from one list. Only an L6 Super Admin may tick or untick it, so for
+  // anyone else the box is read-only and a copy / paste keeps the loaded value.
+  const [undoChain, setUndoChain] = useState(false);
+  const myAccess = useMyAccess();
+  const callerIsL6 = myAccess.data?.fullAccess === true;
+  // Special Rights section fold. UI-only, never saved: opens unfolded every
+  // time the box opens.
+  const [specialOpen, setSpecialOpen] = useState(true);
   const [departments, setDepartments] = useState<DeptTiers>({});
   const [forms, setForms] = useState<Record<string, FormPerms>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -306,6 +325,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     setDrawingDownload(m.drawingDownload);
     setDrawingPrint(m.drawingPrint);
     setDrawingRelease(m.drawingRelease);
+    setUndoChain(m.undoChain);
     setMainDept(m.mainDept ?? '');
     const tiers = loadDeptTiers(m.departments);
     setDepartments(tiers);
@@ -328,6 +348,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     setDrawingDownload(src.drawingDownload);
     setDrawingPrint(src.drawingPrint);
     setDrawingRelease(src.drawingRelease);
+    if (callerIsL6) setUndoChain(src.undoChain);
     setMainDept(src.mainDept ?? '');
     const tiers = loadDeptTiers(src.departments);
     setDepartments(tiers);
@@ -336,7 +357,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     const who = userList.data?.items.find((u) => u.userId === copyFromId);
     setCopiedFrom(who?.userName ?? who?.userEmail ?? 'the selected user');
     setCopyFromId(null);
-  }, [copyFromId, copySource.data, userList.data]);
+  }, [copyFromId, copySource.data, userList.data, callerIsL6]);
 
   // "Standard" means neither of the two whole-account flags is on, so the
   // per-department tiers below are what count.
@@ -538,6 +559,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       drawingDownload,
       drawingPrint,
       drawingRelease,
+      undoChain,
       mainDept: mainDept || null,
       departments,
       forms,
@@ -585,6 +607,10 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     setDrawingDownload(m.drawingDownload);
     setDrawingPrint(m.drawingPrint);
     setDrawingRelease(m.drawingRelease);
+    // A matrix copied before 0266 has no undoChain key; the schema would
+    // default it to false and silently untick the person. Keep it then.
+    const pastedUndo = (parsed as { undoChain?: unknown } | null)?.undoChain;
+    if (callerIsL6 && typeof pastedUndo === 'boolean') setUndoChain(pastedUndo);
     setMainDept(m.mainDept ?? '');
     const tiers = loadDeptTiers(m.departments);
     setDepartments(tiers);
@@ -623,6 +649,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
           drawingDownload,
           drawingPrint,
           drawingRelease,
+          undoChain,
           mainDept: mainDept || null,
           confirmAdminChange,
           departments,
@@ -715,6 +742,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
             drawingDownload: data.drawingDownload,
             drawingPrint: data.drawingPrint,
             drawingRelease: data.drawingRelease,
+            undoChain: data.undoChain,
             departments: loadDeptTiers(data.departments),
             forms: fillForms(data.forms),
           })
@@ -731,9 +759,18 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       drawingDownload,
       drawingPrint,
       drawingRelease,
+      undoChain,
       departments,
       forms,
     }) !== loadedSnapshot;
+
+  // Special Rights head: count + folded summary. L6 holds all three.
+  const hasDownload = fullAccess || drawingDownload;
+  const hasPrint = fullAccess || drawingPrint;
+  const hasUndo = fullAccess || undoChain;
+  const specialGiven = [hasDownload, hasPrint, hasUndo].filter(Boolean).length;
+  const specialSummary = `Download ${hasDownload ? '✓' : '—'} · Print ${hasPrint ? '✓' : '—'} · Undo chain ${hasUndo ? '✓' : '—'}`;
+  const undoChainLocked = fullAccess || !callerIsL6;
 
   return (
     <Modal
@@ -1012,97 +1049,158 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               </span>
             </div>
 
-            {/* ── Drawing downloads: one whole-account tick ──
-                Ticked and locked for L6, because Full Access already grants it
+            {/* ── Special Rights: the per-person ticks, in one foldable section ──
+                Whole-account switches, not part of any department tier. Each is
+                ticked and locked for L6, because Full Access already grants it
                 and an unticked box beside "everything, everywhere" reads as a
                 contradiction. L7 Auditor is NOT implied — reading every
-                department is one decision, being allowed to keep the company's
-                drawings is another, and it has to be ticked on purpose. */}
+                department is one decision, keeping the company's drawings or
+                printing them (ADR-289) is another, and has to be ticked on
+                purpose. Undo chain can only be changed by an L6 Super Admin. */}
             <div
               style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 10,
-                marginBottom: 14,
-                padding: 'var(--sp-2) var(--sp-3)',
                 border: '1px solid var(--border)',
                 borderRadius: 'var(--radius2)',
-                background: 'var(--bg3)',
-              }}
-            >
-              <input
-                id="ac-drawing-download"
-                type="checkbox"
-                checked={fullAccess || drawingDownload}
-                disabled={fullAccess}
-                onChange={(e) => setDrawingDownload(e.target.checked)}
-                style={{ marginTop: 'var(--sp-0)' }}
-              />
-              <div>
-                <label
-                  htmlFor="ac-drawing-download"
-                  style={{
-                    fontSize: 'var(--fs-sm)',
-                    fontWeight: 700,
-                    cursor: fullAccess ? 'default' : 'pointer',
-                  }}
-                >
-                  Can download drawing files
-                </label>
-                <div
-                  className="text3"
-                  style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
-                >
-                  {fullAccess
-                    ? 'Included in L6 Super Admin — everyone at this level can save drawings.'
-                    : 'Everyone can view drawings. Only ticked users can save a copy — every view and download is logged.'}
-                </div>
-              </div>
-            </div>
-
-            {/* ── Drawing print: one whole-account tick (ADR-289) ──
-                Same shape as the download tick above: locked on for L6, never
-                implied by L7 Auditor. */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 'var(--sp-3)',
+                overflow: 'hidden',
                 marginBottom: 'var(--sp-4)',
-                padding: 'var(--sp-2) var(--sp-3)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius2)',
-                background: 'var(--bg3)',
               }}
             >
-              <input
-                id="ac-drawing-print"
-                type="checkbox"
-                checked={fullAccess || drawingPrint}
-                disabled={fullAccess}
-                onChange={(e) => setDrawingPrint(e.target.checked)}
-                style={{ marginTop: 'var(--sp-0)' }}
-              />
-              <div>
-                <label
-                  htmlFor="ac-drawing-print"
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 'var(--sp-3)',
+                  padding: '6px 12px',
+                  background: 'var(--bg3)',
+                  borderBottom: specialOpen ? '1px solid var(--border2)' : undefined,
+                }}
+              >
+                <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>Special Rights</span>
+                <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                  Ticks for this one person. Not part of any department tier.
+                </span>
+                <span
+                  className="text3"
                   style={{
-                    fontSize: 'var(--fs-sm)',
-                    fontWeight: 700,
-                    cursor: fullAccess ? 'default' : 'pointer',
+                    fontSize: 'var(--fs-xs)',
+                    marginLeft: 'auto',
+                    fontFamily: 'var(--mono)',
                   }}
                 >
-                  Drawing Print button
-                </label>
-                <div
-                  className="text3"
-                  style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
+                  {specialGiven} of 3 given
+                </span>
+                {!specialOpen ? (
+                  <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                    {specialSummary}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  aria-expanded={specialOpen}
+                  aria-controls="ac-special-rights"
+                  onClick={() => setSpecialOpen((v) => !v)}
                 >
-                  {fullAccess
-                    ? 'Included in L6 Super Admin — everyone at this level sees the Print button on the drawing page.'
-                    : "Shows the Print button on the drawing page; every print from it is logged. A PDF opened in the browser can still be printed from the browser's own viewer."}
-                </div>
+                  {specialOpen ? '▾ Hide' : '▸ Show'}
+                </button>
               </div>
+              {specialOpen ? (
+                <div id="ac-special-rights">
+                  <div style={SPECIAL_ROW}>
+                    <input
+                      id="ac-drawing-download"
+                      type="checkbox"
+                      checked={fullAccess || drawingDownload}
+                      disabled={fullAccess}
+                      onChange={(e) => setDrawingDownload(e.target.checked)}
+                      style={{ marginTop: 'var(--sp-0)' }}
+                    />
+                    <div>
+                      <label
+                        htmlFor="ac-drawing-download"
+                        style={{
+                          fontSize: 'var(--fs-sm)',
+                          fontWeight: 700,
+                          cursor: fullAccess ? 'default' : 'pointer',
+                        }}
+                      >
+                        Can download drawing files
+                      </label>
+                      <div
+                        className="text3"
+                        style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
+                      >
+                        {fullAccess
+                          ? 'Included in L6 Super Admin — everyone at this level can save drawings.'
+                          : 'Everyone can view drawings. Only ticked users can save a copy — every view and download is logged.'}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ ...SPECIAL_ROW, borderTop: '1px solid var(--border)' }}>
+                    <input
+                      id="ac-drawing-print"
+                      type="checkbox"
+                      checked={fullAccess || drawingPrint}
+                      disabled={fullAccess}
+                      onChange={(e) => setDrawingPrint(e.target.checked)}
+                      style={{ marginTop: 'var(--sp-0)' }}
+                    />
+                    <div>
+                      <label
+                        htmlFor="ac-drawing-print"
+                        style={{
+                          fontSize: 'var(--fs-sm)',
+                          fontWeight: 700,
+                          cursor: fullAccess ? 'default' : 'pointer',
+                        }}
+                      >
+                        Drawing Print button
+                      </label>
+                      <div
+                        className="text3"
+                        style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
+                      >
+                        {fullAccess
+                          ? 'Included in L6 Super Admin — everyone at this level sees the Print button on the drawing page.'
+                          : "Shows the Print button on the drawing page; every print from it is logged. A PDF opened in the browser can still be printed from the browser's own viewer."}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ ...SPECIAL_ROW, borderTop: '1px solid var(--border)' }}>
+                    <input
+                      id="ac-undo-chain"
+                      type="checkbox"
+                      checked={fullAccess || undoChain}
+                      disabled={undoChainLocked}
+                      onChange={(e) => setUndoChain(e.target.checked)}
+                      style={{ marginTop: 'var(--sp-0)' }}
+                    />
+                    <div>
+                      <label
+                        htmlFor="ac-undo-chain"
+                        style={{
+                          fontSize: 'var(--fs-sm)',
+                          fontWeight: 700,
+                          cursor: undoChainLocked ? 'default' : 'pointer',
+                        }}
+                      >
+                        Undo chain
+                      </label>
+                      <div
+                        className="text3"
+                        style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
+                      >
+                        {fullAccess
+                          ? 'Included in L6 Super Admin — everyone at this level can undo the whole chain.'
+                          : !callerIsL6
+                            ? 'Only an L6 Super Admin can tick or untick this.'
+                            : 'Lets this person undo everything holding an SO / JWSO line from one list, in one go. Every use is logged.'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             {/* ADR-323 — no Drawing Release switch any more: Verify is the

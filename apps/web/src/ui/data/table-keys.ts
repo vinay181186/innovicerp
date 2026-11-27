@@ -77,6 +77,8 @@ export const TABLE_KEYS = {
   soOverview: 'so-overview',
   assemblies: 'assemblies',
   jwInvoices: 'jw-invoices',
+  /** ADR-324 — JWSO edit › Undo list: the steps still holding one line. */
+  jwLineUndo: 'jw-line-undo',
 
   // ADR-199 conversions — Planning / Finance (batch PF)
   /** Level 1 of SO/JWSO Planning: one row per line (ADR-268). */

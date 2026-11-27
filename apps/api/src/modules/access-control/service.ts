@@ -26,6 +26,7 @@ import {
   canDownloadDrawings,
   canPrintDrawings,
   canReleaseDrawings,
+  canUndoChain,
   cascadeFormsMap,
   effectiveFormPerms,
   type EffectiveAccess,
@@ -53,7 +54,7 @@ import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { labelOf, ROLE_LABEL } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
-import { asJsonMap, toEffectiveAccess } from './my-access';
+import { asJsonMap, getMyAccess, toEffectiveAccess } from './my-access';
 import { ACCESS_SF_COLUMNS } from './sf-columns';
 import { syncTokenIdentity } from '../../lib/sync-token-identity';
 
@@ -71,6 +72,7 @@ function rowToUserAccess(r: {
   drawingDownload: boolean;
   drawingPrint: boolean;
   drawingRelease: boolean;
+  undoChain: boolean;
   mainDept: string | null;
   departments: unknown;
   forms: unknown;
@@ -91,6 +93,8 @@ function rowToUserAccess(r: {
     drawingPrint: r.drawingPrint,
     // ADR-290 — "Can release drawings", stored raw.
     drawingRelease: r.drawingRelease,
+    // 0266 — "Undo chain" Special Right, stored raw (canUndoChain decides).
+    undoChain: r.undoChain,
     mainDept: r.mainDept,
     fullAccess: r.fullAccess,
     departments: asJsonMap<AccessDeptsMap>(r.departments),
@@ -191,6 +195,7 @@ export async function listUserAccess(
         acDrawingDownload: userAccess.drawingDownload,
         acDrawingPrint: userAccess.drawingPrint,
         acDrawingRelease: userAccess.drawingRelease,
+        acUndoChain: userAccess.undoChain,
         acMainDept: userAccess.mainDept,
         acDepartments: userAccess.departments,
         acForms: userAccess.forms,
@@ -229,6 +234,7 @@ export async function listUserAccess(
         drawingDownload: r.acDrawingDownload ?? false,
         drawingPrint: r.acDrawingPrint ?? false,
         drawingRelease: r.acDrawingRelease ?? false,
+        undoChain: r.acUndoChain ?? false,
         mainDept: r.acMainDept ?? null,
         derivedRole: roleForAccess({ fullAccess, auditor, departments: normalizeDeptsMap(depts) }),
         deptCount: fullAccess || auditor ? totalDepts : countDepts(depts),
@@ -368,6 +374,7 @@ async function listDeptUserOptions(
         drawingDownload: false,
         drawingPrint: false,
         drawingRelease: false,
+        undoChain: false,
         departments: r.acDepartments,
         forms: r.acForms,
       });
@@ -549,6 +556,7 @@ export async function getUserAccess(userId: string, user: AuthContext): Promise<
       drawingDownload: false,
       drawingPrint: false,
       drawingRelease: false,
+      undoChain: false,
       mainDept: null,
       departments: {},
       forms: {},
@@ -560,13 +568,26 @@ export async function getUserAccess(userId: string, user: AuthContext): Promise<
 
 // Admin: upsert one user's matrix. Cascades on save (Edit ⇒ Entry + Advance ⇒
 // View; Entry does NOT imply Advance — ADR-231), prunes unknown dept/form keys, emits activity log.
+export interface SaveUserAccessOptions {
+  /** Did the request body actually carry a boolean `undoChain`? The input
+   *  schema defaults a missing one to false, so an old browser tab (built
+   *  before the box existed) would silently untick someone. When false the
+   *  stored value is kept. */
+  undoChainSent: boolean;
+}
+
 export async function saveUserAccess(
   userId: string,
   input: SaveUserAccessInput,
   user: AuthContext,
+  opts: SaveUserAccessOptions = { undoChainSent: true },
 ): Promise<UserAccess> {
   requireAdminRole(user);
   const companyId = requireCompany(user);
+  // 0266 — only an L6 Super Admin may change "Undo chain". The caller's own
+  // access, read once per request (ADR-229); the decision is taken inside the
+  // transaction below, against the locked stored row, before any write.
+  const callerIsL6 = (await getMyAccess(user)).fullAccess === true;
 
   const cleanDepts = pruneDeptsMap(input.departments);
   const cleanForms = cascadeFormsMap(pruneFormsMap(input.forms));
@@ -656,21 +677,9 @@ export async function saveUserAccess(
           `to keep them an admin, or confirm the change.`,
       );
     }
-    if (targetUser.role !== derivedRole) {
-      await tx
-        .update(users)
-        .set({
-          role: derivedRole as typeof users.$inferSelect.role,
-          updatedBy: user.id,
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, userId));
-      // ADR-228 — remember it for the token sync that runs after this
-      // transaction commits. Only on a real change: syncing on every save would
-      // be an HTTP round trip per matrix save for no reason.
-      roleChangedTo = derivedRole;
-    }
 
+    // Read (and lock) the stored row BEFORE any write, so every refusal below —
+    // the version check and the Undo chain rule — happens with nothing written.
     const existingRows = await tx
       .select()
       .from(userAccess)
@@ -711,6 +720,43 @@ export async function saveUserAccess(
       );
     }
 
+    // 0266 — "Undo chain". A body without the field (an old tab) keeps what is
+    // stored. The protected thing is the RIGHT (canUndoChain), not only the
+    // tick: L6 Super Admin includes it, so giving or removing L6 changes who
+    // can undo too. Any change to the right is refused unless the caller is
+    // L6 Super Admin; a save that leaves the right as it was is fine for any admin.
+    const storedUndoChain = existing?.undoChain ?? false;
+    const undoChain = opts.undoChainSent ? input.undoChain : storedUndoChain;
+    const couldUndoBefore = canUndoChain({
+      fullAccess: existing?.fullAccess ?? false,
+      undoChain: storedUndoChain,
+    });
+    const canUndoAfter = canUndoChain({ fullAccess: input.fullAccess, undoChain });
+    const undoRightChanged = couldUndoBefore !== canUndoAfter;
+    const fullAccessChanged = (existing?.fullAccess ?? false) !== input.fullAccess;
+    if ((undoRightChanged || undoChain !== storedUndoChain) && !callerIsL6) {
+      throw new AuthorizationError(
+        fullAccessChanged && undoChain === storedUndoChain
+          ? 'Only a Super Admin can give or remove L6 Super Admin, because it includes Undo chain.'
+          : 'Only a Super Admin can change Undo chain.',
+      );
+    }
+
+    if (targetUser.role !== derivedRole) {
+      await tx
+        .update(users)
+        .set({
+          role: derivedRole as typeof users.$inferSelect.role,
+          updatedBy: user.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId));
+      // ADR-228 — remember it for the token sync that runs after this
+      // transaction commits. Only on a real change: syncing on every save would
+      // be an HTTP round trip per matrix save for no reason.
+      roleChangedTo = derivedRole;
+    }
+
     let saved;
     if (existing) {
       const updated = await tx
@@ -721,6 +767,7 @@ export async function saveUserAccess(
           drawingDownload,
           drawingPrint,
           drawingRelease,
+          undoChain,
           mainDept,
           departments: cleanDepts,
           forms: cleanForms,
@@ -741,6 +788,7 @@ export async function saveUserAccess(
           drawingDownload,
           drawingPrint,
           drawingRelease,
+          undoChain,
           mainDept,
           departments: cleanDepts,
           forms: cleanForms,
@@ -786,12 +834,35 @@ export async function saveUserAccess(
               ? 'YES'
               : 'no'
           }` +
+          // 0266 — asked of canUndoChain (L6 implies it), not the raw tick.
+          `; undo chain ${canUndoChain({ fullAccess: input.fullAccess, undoChain }) ? 'YES' : 'no'}` +
           ` [role → ${labelOf(ROLE_LABEL, derivedRole)}]`,
         refId: userId,
       },
       companyId,
       user,
     );
+
+    // 0266 — a change to who can undo gets its own line, so it can be found
+    // without reading every access save. Who and when are on the log row.
+    // Asked of the right, so giving or removing L6 is logged too.
+    if (undoRightChanged) {
+      const targetName = targetUser.fullName ?? targetUser.email;
+      const via = fullAccessChanged ? ' (through L6 Super Admin)' : '';
+      await emitActivityLog(
+        tx,
+        {
+          action: 'ACCESS',
+          entity: 'Access Control',
+          detail: canUndoAfter
+            ? `Undo chain GIVEN to ${targetName}${via}`
+            : `Undo chain TAKEN from ${targetName}${via}`,
+          refId: userId,
+        },
+        companyId,
+        user,
+      );
+    }
 
     return rowToUserAccess(saved);
   });
