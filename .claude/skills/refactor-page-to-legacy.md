@@ -8,6 +8,7 @@ description: Refactor a single React page in apps/web to match the legacy HTML's
 ## When this skill activates
 
 User says any of:
+
 - "refactor /items to legacy"
 - "fix /sales-orders UI"
 - "match items list to HTML"
@@ -42,24 +43,24 @@ If ANY of files 1-3 don't exist, STOP and report the missing file to user.
 
 ## Search patterns for legacy HTML
 
-| Route | Search pattern |
-|---|---|
-| `/items` | `function renderItems(` |
-| `/clients` | `function renderClients(` |
-| `/vendors` | `function renderVendors(` |
-| `/machines` | `function renderMachines(` |
-| `/operators` | `function renderOperators(` |
-| `/job-work-orders` | `function renderJW(` or `renderJobWork(` |
-| `/purchase-requests` | `function renderPR(` |
-| `/purchase-orders` | `function renderPO(` |
-| `/goods-receipt-notes` | `function renderGRN(` |
-| `/sales-orders` | `function renderSO(` or `renderSalesOrders(` |
-| `/nc-register` | `function renderNC(` |
-| `/delivery-challans` | `function renderDC(` |
-| `/job-cards` | `function renderJC(` |
-| `/op-entry` | `function renderOpEntry(` |
-| `/route-cards` | `function renderRouteCards(` |
-| `/bom-masters` | `function renderBOM(` |
+| Route                  | Search pattern                               |
+| ---------------------- | -------------------------------------------- |
+| `/items`               | `function renderItems(`                      |
+| `/clients`             | `function renderClients(`                    |
+| `/vendors`             | `function renderVendors(`                    |
+| `/machines`            | `function renderMachines(`                   |
+| `/operators`           | `function renderOperators(`                  |
+| `/job-work-orders`     | `function renderJW(` or `renderJobWork(`     |
+| `/purchase-requests`   | `function renderPR(`                         |
+| `/purchase-orders`     | `function renderPO(`                         |
+| `/goods-receipt-notes` | `function renderGRN(`                        |
+| `/sales-orders`        | `function renderSO(` or `renderSalesOrders(` |
+| `/nc-register`         | `function renderNC(`                         |
+| `/delivery-challans`   | `function renderDC(`                         |
+| `/job-cards`           | `function renderJC(`                         |
+| `/op-entry`            | `function renderOpEntry(`                    |
+| `/route-cards`         | `function renderRouteCards(`                 |
+| `/bom-masters`         | `function renderBOM(`                        |
 
 Read the entire function body. If multiple matching functions exist, list them
 to the user and ask which one to follow.
@@ -75,6 +76,7 @@ is exactly what this document said before each of the last eight were found.** T
 example here as a hint, not an authority. Grep, then use.
 
 **The real vocabulary** (grep-verified, `innovic-theme.css`):
+
 - **Buttons:** `.btn` · `.btn-sm` · `.btn-primary` · `.btn-ghost` · `.btn-danger` · `.btn-success` · `.btn-icon`. **No `.btn-outline`.**
 - **Panels:** `.panel` · `.panel-hdr` · `.panel-title` · `.panel-body`. **No `.panel-meta`.**
 - **Tiles:** `.stat-grid` · `.stat-card` (+ `.cyan`/`.amber`/`.green`/`.red` only) · `.stat-label` · `.stat-val` · `.stat-sub`. **No `.stat-card.blue`, no `.dash-stat-card`.**
@@ -93,10 +95,11 @@ Two checks decide any class question:
    print block does nothing in legacy's app.
 
 Neither direction can be assumed:
-- *Legacy uses X* does NOT mean *legacy defines X* — legacy writes `stat-card blue` (L23608,
+
+- _Legacy uses X_ does NOT mean _legacy defines X_ — legacy writes `stat-card blue` (L23608,
   L25336, L26487) but defines only cyan/amber/green/red (L97-102). Those tiles render with no
   accent **in legacy**, so matching legacy means adding no rule.
-- *Legacy defines X* does NOT mean *X applies* — `.b-running` (L10561) is print-block only, so
+- _Legacy defines X_ does NOT mean _X applies_ — `.b-running` (L10561) is print-block only, so
   legacy's own `Running` badge is unstyled on screen.
 - **Grep patterns lie too.** `.tbl-frozen` looked undefined because legacy declares it as
   descendant selectors (`.tbl-frozen tbody td:first-child, ...`, L119-122), not a bare rule.
@@ -163,6 +166,7 @@ inline-styled flex row; mirror legacy's own inline styles.
 ```
 
 ### Table panel
+
 ```tsx
 // FROM:
 <div className="rounded-md border bg-card">
@@ -189,6 +193,7 @@ legacy does** (Job Cards L5784, SO L11970, PO L25349, GRN L26492, + L14319, L160
 the first column while the table scrolls sideways.
 
 ### Status badge
+
 ```tsx
 // FROM:
 <Badge variant="success">Closed</Badge>
@@ -198,6 +203,7 @@ the first column while the table scrolls sideways.
 ```
 
 Color mapping (use legacy HTML's actual usage if different):
+
 - `b-green`: closed, completed, qc_passed, available, dispatched, qc_accepted
 - `b-amber`: pending, in_progress, qc_pending, partial_dispatch, bom_pending
 - `b-red`: on_hold, cancelled, qc_failed, rejected, qc_rejected, overdue
@@ -235,6 +241,7 @@ Color mapping (use legacy HTML's actual usage if different):
 ```
 
 ### Form fields (if refactoring a form)
+
 ```tsx
 // FROM:
 <div className="grid gap-4">
@@ -275,6 +282,7 @@ content, so a `td-ctr` written inside a `cell:` renderer lands on a `<span>` and
 nothing (ISSUE-020). Two accepted fixes:
 
 1. **`meta.tdClass`** — keeps `useReactTable` (needed for expandable rows / `SortableHead`):
+
    ```tsx
    { header: 'Qty', accessorKey: 'qty', meta: { tdClass: 'td-ctr mono fw-700' },
      cell: ({ row }) => row.original.qty }
@@ -283,6 +291,7 @@ nothing (ISSUE-020). Two accepted fixes:
      {flexRender(cell.column.columnDef.cell, cell.getContext())}
    </td>
    ```
+
    **The `ColumnMeta.tdClass` augmentation already exists — `apps/web/src/types/tanstack-table.d.ts`.
    Just use `meta`. Do NOT add `declare module '@tanstack/react-table'` to your page.**
    It is a global augmentation; four list pages each declared their own copy before that
@@ -296,21 +305,23 @@ nothing (ISSUE-020). Two accepted fixes:
 
 ### `dateLike()` / `toISOString()` over raw `tx.execute` is SAFE. Two agents have flagged it. It is not a bug.
 
-**The recurring claim:** *"raw `tx.execute` bypasses Drizzle's string mode, so node-postgres parses DATE into a local-midnight `Date`, and `toISOString().slice(0,10)` shifts it back a day on an IST host."*
+**The recurring claim:** _"raw `tx.execute` bypasses Drizzle's string mode, so node-postgres parses DATE into a local-midnight `Date`, and `toISOString().slice(0,10)` shifts it back a day on an IST host."_
 
 **The driver is misidentified. We do not use node-postgres.**
 
 - `apps/api/src/db/client.ts:1-2` → **`drizzle-orm/postgres-js` + `postgres`** = **postgres.js**
 - postgres.js (`postgres@3.4.9/src/types.js:28-32`): `from: [1082,1114,1184]`, **`parse: x => new Date(x)`**
-- **ECMA-262: a date-ONLY ISO form (`'2026-04-29'`) parses as UTC.** (Date-*time* forms without an offset parse as local — that is the distinction that makes this look wrong.)
+- **ECMA-262: a date-ONLY ISO form (`'2026-04-29'`) parses as UTC.** (Date-_time_ forms without an offset parse as local — that is the distinction that makes this look wrong.)
 - → UTC midnight → `toISOString().slice(0,10)` returns **the same date**
 
 **Proven on a host at UTC+5:30 (IST), the exact failing condition:**
+
 ```
 new Date('2026-04-29')     -> 2026-04-29T00:00:00.000Z
 toISOString().slice(0,10)  -> 2026-04-29     SAFE
 ```
-node-postgres genuinely *does* return local midnight for dates — the concern is right for that driver and wrong for ours. **If the driver ever changes, re-open this.**
+
+node-postgres genuinely _does_ return local midnight for dates — the concern is right for that driver and wrong for ours. **If the driver ever changes, re-open this.**
 
 **This does NOT weaken the so-timeline 500 (ISSUE-142)** — that bug is `Date.prototype.localeCompare` not existing, which is timezone-independent. Both sit on the same postgres.js `parse: x => new Date(x)`; one is fatal, one is harmless. **Check the driver's actual behaviour; never assume it in either direction.**
 
@@ -322,11 +333,11 @@ node-postgres genuinely *does* return local midnight for dates — the concern i
 
 **The tell:** there is exactly **one** `className="card"` in the whole web app — consistent with an inert artifact, not a styling decision.
 
-*(The orchestrator's briefs carried "`.card` → use `.panel`" for ~30 batches. An agent caught it. **An absent class is not automatically a bug — check whether legacy defines it either.**)*
+_(The orchestrator's briefs carried "`.card` → use `.panel`" for ~30 batches. An agent caught it. **An absent class is not automatically a bug — check whether legacy defines it either.**)_
 
 ### `_mob*` functions are NOT a spec source
 
-Different shell: keyed on `_mobPage`, dispatched into `getElementById('mobBody')` (L28224), **never reachable from the desktop `render()` router**. Their `mob-*` vocabulary has **zero occurrences** in `apps/web/src/styles/`, and the screens are strict **subsets** — porting one would *delete* working fields. Confirmed independently by three agents.
+Different shell: keyed on `_mobPage`, dispatched into `getElementById('mobBody')` (L28224), **never reachable from the desktop `render()` router**. Their `mob-*` vocabulary has **zero occurrences** in `apps/web/src/styles/`, and the screens are strict **subsets** — porting one would _delete_ working fields. Confirmed independently by three agents.
 
 ### `<th className="td-ctr">` / `td-right` — inert, but CHECK WHAT LEGACY WRITES AT THAT HEADER
 
@@ -334,10 +345,10 @@ Legacy's `.panel table th` (0,1,2) and our `.innovic-table th` (0,1,1) both out-
 
 **But that only makes it PARITY when legacy also uses a class.** Decide per site:
 
-| Legacy writes | In legacy | In ours | Verdict |
-| --- | --- | --- | --- |
-| `<th class="td-ctr">` / `td-right` | **inert** | inert | **PARITY — do not touch** |
-| **`<th style="text-align:right">`** | **APPLIES** (inline beats all) | inert | **🔴 REAL DIVERGENCE — mirror legacy's inline style** |
+| Legacy writes                       | In legacy                      | In ours | Verdict                                               |
+| ----------------------------------- | ------------------------------ | ------- | ----------------------------------------------------- |
+| `<th class="td-ctr">` / `td-right`  | **inert**                      | inert   | **PARITY — do not touch**                             |
+| **`<th style="text-align:right">`** | **APPLIES** (inline beats all) | inert   | **🔴 REAL DIVERGENCE — mirror legacy's inline style** |
 
 **Real instance (ISSUE-241):** Pending SO Value had six money headers rendering **left** because ours used `className="td-right"` while **legacy used the inline form**. Fixed by mirroring the inline style.
 
@@ -349,13 +360,13 @@ Legacy's `.panel table th` (0,1,2) and our `.innovic-table th` (0,1,1) both out-
 
 `.innovic-table tbody tr:nth-child(even) td` paints **cells**, which cover any `<tr>` background. **Legacy has no zebra rule**, so its `<tr style="background:var(--bg4)">` totals row always shows; ours **vanishes on even indices**. **Put the background on the cells.**
 
-*General shape: our theme adds rules legacy didn't have, so a faithfully-ported inline style can lose to one. The inverse of the `.stat-card.blue` trap (legacy referencing a rule that doesn't exist). Both are "the cascade differs", not "the markup differs."*
+_General shape: our theme adds rules legacy didn't have, so a faithfully-ported inline style can lose to one. The inverse of the `.stat-card.blue` trap (legacy referencing a rule that doesn't exist). Both are "the cascade differs", not "the markup differs."_
 
 ## Two traps that have already shipped defects (CHECK BOTH, EVERY PAGE)
 
 ### Trap 1 — copying legacy TEXT that describes a feature the React port never got
 
-Legacy text often refers to legacy *features*. Copying the sentence without
+Legacy text often refers to legacy _features_. Copying the sentence without
 checking the feature exists leaves the page advertising something it can't do.
 
 Real example (Daily Report): the tip was copied verbatim as "Each machine panel
@@ -417,6 +428,7 @@ unrelated to the changes made, report to user before commit.
 ## Commit
 
 After verification passes:
+
 ```bash
 git add apps/web/src/modules/<module>/
 git commit -m "refactor(web): UI-<NN> <module> <type> uses legacy chrome"
@@ -462,6 +474,7 @@ Next page suggestion: <next route from order>
 ## Order for batch refactoring (when user asks "what's next")
 
 Easiest to hardest:
+
 1. /items
 2. /clients
 3. /vendors
@@ -480,6 +493,7 @@ Then forms in same order. Then detail pages.
 ## When to escalate to user
 
 Ask the user when:
+
 - Legacy `render<Name>()` function doesn't exist in HTML
 - Multiple matching legacy functions exist
 - Legacy uses backend features not yet built (defer per LEGACY_AUDIT.md)

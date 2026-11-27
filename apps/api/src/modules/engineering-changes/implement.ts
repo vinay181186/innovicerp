@@ -248,9 +248,8 @@ export async function implementEcr(
           `${e.code} is waiting for the customer's approval — record it first.`,
         );
       }
-      if (e.classification !== 'non_interchangeable') {
-        await assertRevReleasedForWork(tx, companyId, e.toItemRevisionId);
-      }
+      // ADR-323 — the To Rev may be Verified or Unverified; only Obsolete is refused.
+      await assertRevReleasedForWork(tx, companyId, e.toItemRevisionId);
       const done = (await tx.execute(sql`
         UPDATE public.engineering_changes
            SET status = 'implemented', implemented_at = now(), implemented_by = ${user.id}::uuid,

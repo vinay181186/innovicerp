@@ -20,12 +20,14 @@
 ## 1. Header — top of right pane (L4283–4310)
 
 Today's header (shipped):
+
 - ✅ SO code (cyan, 16 px) + customer + status badge.
 - ✅ SO date + Client PO no.
 - ✅ Total qty / done / overall % rollup.
 - ✅ Overall progress bar.
 
 Legacy adds:
+
 - ❌ **Line count chip** — `"<N> line(s)"` next to type label. **POLISH**
 - ❌ **Type label** (e.g. "Equipment") next to header — currently only available via the SO Overview screen. **DELTA**
 - ❌ **Due-date colour** — red when `dueDate < today()`. **POLISH** (today's chip column has the colour, header doesn't).
@@ -163,9 +165,9 @@ To ship the 5 BLOCKERs above, the wire shape needs:
 1. **`header.equipmentInfo`** (when `type === 'equipment'`):
    ```ts
    {
-     equipmentItemCode: string | null;     // partNo
-     equipmentItemName: string | null;     // partName
-     equipmentQty: number;                 // orderQty of the only equipment line
+     equipmentItemCode: string | null; // partNo
+     equipmentItemName: string | null; // partName
+     equipmentQty: number; // orderQty of the only equipment line
      bomNo: string | null;
      bomRev: number | null;
      bomName: string | null;
@@ -195,6 +197,7 @@ Migration: **none** (read-only). All data exists in the DB.
 ---
 
 **Sign-off needed before code:**
+
 - Confirm the **5 BLOCKERs** in §7 are the right scope for the first pass.
 - Approve the **4 wire-shape additions** in §8 (zero schema changes; just response-shape extensions to `GET /so-status/:soId`).
 - Tell me which legacy items you want **moved** from BLOCKER → DELTA.

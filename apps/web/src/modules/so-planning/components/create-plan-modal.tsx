@@ -30,6 +30,7 @@ import { soNoWithInternal } from '@/lib/so-number';
 import { useSaveKey } from '@/lib/use-save-key';
 import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
 import { useCreatePlan, useDefaultRouteOps, useReserveStock } from '@/modules/plans/api';
+import { RevUnverifiedNote } from '@/modules/item-revisions/components/rev-unverified-note';
 import {
   MaterialValueDisplay,
   RM_SOURCE_HELP,
@@ -247,6 +248,8 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           <IdentCode>{itemCodeWithRev(line.itemCode, docDrawingRev(line))}</IdentCode>
           {line.itemName ? <span>{line.itemName}</span> : null}
         </DocIdent>
+        {/* ADR-323 — orange, never blocks. */}
+        <RevUnverifiedNote itemId={line.itemId} rev={docDrawingRev(line)} />
 
         {/* ── The qty account, left to right, ending on its result: the order
              qty, less what plans and plan-less Job Cards already cover, is

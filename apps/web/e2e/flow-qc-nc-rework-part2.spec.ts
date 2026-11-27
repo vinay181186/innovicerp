@@ -92,18 +92,27 @@ test('QC → NC → Rework → Re-QC → Closure — part 2 (child run to closur
 
   // ── 12. Child route: recovery op + auto-appended DIR ──────────────────────
   await loadJc(page, CHILD);
-  await step(page, 'Child route (§4.3, interlock 3)', `Load ${CHILD} on Op Entry`, 'Rework polish (process) + DIR (qc, appended automatically)', async () => {
-    const body = await page.locator('body').innerText();
-    if (!/Rework polish/.test(body)) throw new Error('recovery op not listed');
-    if (!/DIR/.test(body)) throw new Error('terminal DIR not appended on the child');
-    return 'Rework polish + DIR listed on the child';
-  });
+  await step(
+    page,
+    'Child route (§4.3, interlock 3)',
+    `Load ${CHILD} on Op Entry`,
+    'Rework polish (process) + DIR (qc, appended automatically)',
+    async () => {
+      const body = await page.locator('body').innerText();
+      if (!/Rework polish/.test(body)) throw new Error('recovery op not listed');
+      if (!/DIR/.test(body)) throw new Error('terminal DIR not appended on the child');
+      return 'Rework polish + DIR listed on the child';
+    },
+  );
 
   // ── 13. Run the child op: Start, Stop with 2 ──────────────────────────────
   await clickRowMenuItem(page, opRow(page, 'Rework polish'), /^Start Operation/);
   await page.waitForTimeout(1200);
   await fillEntryHeader(page, 'E2E Operator');
-  await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: /Start Operation/i })
+    .click();
   await popupGone(page);
   await loadJc(page, CHILD);
   await clickRowMenuItem(page, opRow(page, 'Rework polish'), /^Complete/);
@@ -113,12 +122,18 @@ test('QC → NC → Rework → Re-QC → Closure — part 2 (child run to closur
   await page.locator('#opf-rej').fill('0');
   await page.getByRole('button', { name: /^Stop/ }).click();
   await popupGone(page);
-  await step(page, 'Child rework run (§7)', `Start + Stop the child op with ${REJECT_1} made`, `${REJECT_1} pcs waiting at the child's DIR (QC pending)`, async () => {
-    await loadJc(page, CHILD);
-    const row = await opRow(page, 'DIR').innerText();
-    if (!/QC/.test(row)) throw new Error('child DIR does not offer QC');
-    return `child op logged; DIR row: ${row.replace(/\s+/g, ' ').trim()}`;
-  });
+  await step(
+    page,
+    'Child rework run (§7)',
+    `Start + Stop the child op with ${REJECT_1} made`,
+    `${REJECT_1} pcs waiting at the child's DIR (QC pending)`,
+    async () => {
+      await loadJc(page, CHILD);
+      const row = await opRow(page, 'DIR').innerText();
+      if (!/QC/.test(row)) throw new Error('child DIR does not offer QC');
+      return `child op logged; DIR row: ${row.replace(/\s+/g, ' ').trim()}`;
+    },
+  );
 
   // ── 14. Re-QC after rework: accept both ───────────────────────────────────
   await clickRowMenuItem(page, opRow(page, 'DIR'), /^Inspect/);
@@ -128,26 +143,46 @@ test('QC → NC → Rework → Re-QC → Closure — part 2 (child run to closur
   await page.locator('#opf-rej').fill('0');
   await page.getByRole('button', { name: /Submit Inspection/i }).click();
   await popupGone(page);
-  await step(page, 'Re-QC after rework (§8)', `Child DIR: accept ${REJECT_1}, reject 0`, 'NC closes on its own (cleared = rejected)', async () => {
-    await page.goto(docs['NC_URL']!, { waitUntil: 'domcontentloaded' });
-    await page.getByText(/Rejected|Cleared/).first().waitFor({ timeout: 60_000 });
-    await page.waitForTimeout(1000);
-    const body = await page.locator('body').innerText();
-    if (!/Closed/i.test(body)) throw new Error('NC not closed after full clearance');
-    return 'NC status Closed';
-  });
+  await step(
+    page,
+    'Re-QC after rework (§8)',
+    `Child DIR: accept ${REJECT_1}, reject 0`,
+    'NC closes on its own (cleared = rejected)',
+    async () => {
+      await page.goto(docs['NC_URL']!, { waitUntil: 'domcontentloaded' });
+      await page
+        .getByText(/Rejected|Cleared/)
+        .first()
+        .waitFor({ timeout: 60_000 });
+      await page.waitForTimeout(1000);
+      const body = await page.locator('body').innerText();
+      if (!/Closed/i.test(body)) throw new Error('NC not closed after full clearance');
+      return 'NC status Closed';
+    },
+  );
 
   // ── 15. Parent: pieces rejoined ───────────────────────────────────────────
   await page.goto(docs['JC_URL']!, { waitUntil: 'domcontentloaded' });
-  await page.getByText(/NC closed/i).first().waitFor({ timeout: 60_000 });
+  await page
+    .getByText(/NC closed/i)
+    .first()
+    .waitFor({ timeout: 60_000 });
   await page.waitForTimeout(1000);
-  await step(page, 'Parent rejoined (§9)', 'Re-open the parent job card', `DIR shows ✓${ORDER_QTY}; strip "NC closed ${REJECT_1}"; nothing under rework`, async () => {
-    const body = await page.locator('body').innerText();
-    if (!new RegExp(`NC Closed\\s*${REJECT_1}`).test(body)) throw new Error('"NC closed 2" not shown on the parent');
-    if (/Under Rework\s*[1-9]/.test(body)) throw new Error('parent still shows pieces under rework');
-    const acc = body.match(/✓\s*\d+/g)?.join(' ') ?? '';
-    return `"NC closed ${REJECT_1}" shown; accepted markers: ${acc}`;
-  });
+  await step(
+    page,
+    'Parent rejoined (§9)',
+    'Re-open the parent job card',
+    `DIR shows ✓${ORDER_QTY}; strip "NC closed ${REJECT_1}"; nothing under rework`,
+    async () => {
+      const body = await page.locator('body').innerText();
+      if (!new RegExp(`NC Closed\\s*${REJECT_1}`).test(body))
+        throw new Error('"NC closed 2" not shown on the parent');
+      if (/Under Rework\s*[1-9]/.test(body))
+        throw new Error('parent still shows pieces under rework');
+      const acc = body.match(/✓\s*\d+/g)?.join(' ') ?? '';
+      return `"NC closed ${REJECT_1}" shown; accepted markers: ${acc}`;
+    },
+  );
 
   expect(STEPS.every((s) => s.result !== 'FAIL')).toBe(true);
 });

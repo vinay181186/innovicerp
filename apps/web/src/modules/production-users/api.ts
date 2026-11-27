@@ -25,8 +25,7 @@ export const productionUserKeys = {
 export function useProductionUserOptions() {
   return useQuery<ListProductionUserOptionsResponse>({
     queryKey: productionUserKeys.options,
-    queryFn: () =>
-      apiFetch<ListProductionUserOptionsResponse>('/access-control/production-users'),
+    queryFn: () => apiFetch<ListProductionUserOptionsResponse>('/access-control/production-users'),
     staleTime: 60_000,
   });
 }

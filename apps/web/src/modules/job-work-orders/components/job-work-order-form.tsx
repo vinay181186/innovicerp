@@ -572,9 +572,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   // so the user is told which row is wrong instead of meeting the API's raw
   // schema rejection. Mirrors the SO form.
   const [lineError, setLineError] = useState<string | null>(null);
-  // ADR-290 — "Confirmed" ticks for lines on an older Rev than the latest released.
+  // ADR-290 — "Confirmed" ticks for lines on an older Rev than the latest verified.
   const revConfirm = useRevConfirmGate();
-  // ADR-311 — drawing file compulsory on new / Item-or-Rev-changed lines.
 
   // The Excel Template is built by the API (GET /import-templates/jw-lines.xlsx)
   // so its columns can carry real Excel dropdowns — SheetJS, still used here
@@ -821,14 +820,12 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       }
     }
 
-    // ADR-290: a line naming an older Rev than the latest released one needs
-    // its "Confirmed" tick (opened for the user if collapsed).
+    // ADR-290 / ADR-323: a line naming an older Rev than the latest verified
+    // one needs its "Confirmed" tick (shown under the line's Item Code).
     const revWait = revConfirm.firstPending(fields.map((f) => f.id));
     if (revWait) {
-      const key = fields[revWait.index]?.id;
-      if (key) setOpenMore((prev) => new Set(prev).add(key));
       setLineError(
-        `${lineRef(revWait.index)}: latest released drawing is ${revWait.latestLabel} — confirm with the customer and tick Confirmed.`,
+        `${lineRef(revWait.index)}: latest verified drawing is ${revWait.latestLabel} — confirm with the customer and tick Confirmed.`,
       );
       return;
     }
@@ -880,10 +877,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         l.revChangeReason?.trim()
           ? { revChangeReason: l.revChangeReason.trim() }
           : {}),
-        // null, not undefined: JSON.stringify drops undefined keys, so clearing a
-        // drawing would send nothing at all and the server would keep the old
-        // file. An explicit null is what says the drawing was removed.
-        drawingFilePath: l.drawingFilePath || null,
+        // ADR-323: no drawingFilePath — the PDF lives in the Drawing Register
+        // only; the server takes the line's drawing from there.
         uom,
         orderQty: Number(l.orderQty),
         ...(priceVisible ? { rate: Number(l.rate) || 0 } : {}),
@@ -1420,8 +1415,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
 
         {/* Same shape as the SO line editor: one row per line in a fixed-layout
           table. Visible: Ln, Item Code, Item Name, POL, Customer RM, Drawing
-          Rev, UOM, Order Qty, [Rate, Amount], Due Date; the less-used Material,
-          Drawing No., Drawing File, Assembly BOM and Remarks open per line under
+          Rev, UOM, Order Qty, [Rate, Amount], Due Date; Drawing No. and the
+          read-only drawing link sit under Item Code (ADR-323); the less-used
+          Material, Assembly BOM and Remarks open per line under
           "▸ More", like ERPNext's grid row edit. Rate / Amount are dropped for a
           user who may not see prices. */}
         <table
@@ -1434,7 +1430,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                 Ln
               </th>
               <th style={{ width: `${W.code}%` }}>
-                Item Code<span className="req">★</span>
+                Item Code<span className="req">★</span> · Drawing No.
               </th>
               <th style={{ width: `${W.name}%` }}>Item Name</th>
               <th
@@ -1493,13 +1489,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                 const isOpen = openMore.has(field.id);
                 // How many of the folded fields hold a value — shown on the
                 // toggle so a filled Material / BOM is never hidden silently.
-                const filledMore = [
-                  wl?.material,
-                  wl?.drawingNo,
-                  wl?.drawingFilePath,
-                  wl?.sourceBomMasterId,
-                  wl?.remarks,
-                ].filter((v) => typeof v === 'string' && v.trim() !== '').length;
+                const filledMore = [wl?.material, wl?.sourceBomMasterId, wl?.remarks].filter(
+                  (v) => typeof v === 'string' && v.trim() !== '',
+                ).length;
                 // ADR-289: a saved line whose Drawing Rev was changed opens the
                 // orange "Reason for Rev change" strip row under it.
                 const savedLine = wl?.id ? savedLineById.get(wl.id) : undefined;
@@ -1529,6 +1521,33 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                           valueLabel={wl?.itemCodeText || undefined}
                           selectedLabel={(o) => o.code ?? o.name}
                         />
+                        {/* Drawing No. belongs to THIS order's line (typed as it reads
+                          on the customer's drawing). ADR-323: on the main line,
+                          beside the read-only "View drawing" link — no upload. */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            gap: 'var(--sp-1)',
+                            alignItems: 'flex-start',
+                            marginTop: 'var(--sp-1)',
+                          }}
+                        >
+                          <input
+                            className="innovic-input fw-sm"
+                            autoComplete="off"
+                            placeholder="Drawing No."
+                            aria-label={`Drawing No., row ${idx + 1}`}
+                            maxLength={64}
+                            {...register(`lines.${idx}.drawingNo` as const)}
+                          />
+                          <JwLineDrawingCell
+                            itemId={wl?.itemId}
+                            itemCode={wl?.itemCodeText}
+                            rev={watch(`lines.${idx}.revision` as const)}
+                            drawingNo={watch(`lines.${idx}.drawingNo` as const)}
+                            confirm={revConfirm.confirmFor(field.id)}
+                          />
+                        </div>
                       </td>
                       <td>
                         <input
@@ -1567,8 +1586,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                         <CustomerRmCell rm={wl?.itemId ? rmByItem[wl.itemId] : undefined} />
                       </td>
                       {/* The client's drawing revision, typed exactly as it reads on
-                        their print ('A', 'B', 'R1', '0'). Independent of the Drawing
-                        File (under ▸ More) in BOTH directions. Compulsory — onValid
+                        their print ('A', 'B', 'R1', '0'). The drawing PDF itself is
+                        in the Drawing Register (ADR-323). Compulsory — onValid
                         refuses the save when it is blank. */}
                       <td className="td-ctr">
                         <input
@@ -1654,7 +1673,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                           className="btn btn-ghost btn-sm"
                           aria-expanded={isOpen}
                           onClick={() => toggleMore(field.id)}
-                          title="Material, Drawing No., Drawing File, Assembly BOM and Remarks for this line"
+                          title="Material, Assembly BOM and Remarks for this line"
                         >
                           {isOpen ? '▾ Less' : `▸ More${filledMore ? ` (${filledMore})` : ''}`}
                         </button>
@@ -1695,40 +1714,6 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                                 className="innovic-input"
                                 autoComplete="off"
                                 {...register(`lines.${idx}.material` as const)}
-                              />
-                            </div>
-                            <div className="form-grp f-md">
-                              <label className="form-label">Drawing No.</label>
-                              <input
-                                className="innovic-input"
-                                autoComplete="off"
-                                {...register(`lines.${idx}.drawingNo` as const)}
-                              />
-                            </div>
-                            <div className="form-grp f-md">
-                              <label className="form-label">Drawing File</label>
-                              <JwLineDrawingCell
-                                value={watch(`lines.${idx}.drawingFilePath` as const)}
-                                onChange={(p) =>
-                                  setValue(`lines.${idx}.drawingFilePath` as const, p ?? null, {
-                                    shouldDirty: true,
-                                  })
-                                }
-                                // Item + Drawing Rev register: ABC/<rev> drawing fills
-                                // in; saved Rev/file drive "Use as is".
-                                itemId={wl?.itemId}
-                                itemCode={wl?.itemCodeText}
-                                rev={watch(`lines.${idx}.revision` as const)}
-                                confirm={revConfirm.confirmFor(field.id)}
-                                {...(() => {
-                                  const saved =
-                                    props.mode === 'edit' && wl?.id
-                                      ? props.detail.lines.find((d) => d.id === wl.id)
-                                      : undefined;
-                                  return saved
-                                    ? { savedRev: saved.revision, savedPath: saved.drawingFilePath }
-                                    : {};
-                                })()}
                               />
                             </div>
                             <div className="form-grp f-lg" title={inUse ? IN_USE_TITLE : undefined}>

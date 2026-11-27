@@ -187,7 +187,12 @@ export interface DocNumberEval {
 export function evaluateDocNumber(type: DocNumberType, value: string): DocNumberEval {
   const isEmpty = value.trim().length === 0;
   const formatInvalid = !isEmpty && !docNumberPattern(type).test(value.trim());
-  return { isEmpty, formatInvalid, shouldCheck: !isEmpty && !formatInvalid, padded: padDocNumber(type, value) };
+  return {
+    isEmpty,
+    formatInvalid,
+    shouldCheck: !isEmpty && !formatInvalid,
+    padded: padDocNumber(type, value),
+  };
 }
 
 /** The inline message to show, or null when the value is fine. Exact wording
@@ -203,8 +208,7 @@ export function docNumberError(
     // a job-work PO who mistypes must be told IN-JWPO-, not the retired series.
     // With no poType (a non-PO form, or an older caller) this is the legacy
     // prefix, exactly as before.
-    const prefix =
-      type === 'purchase_order' && opts.poType ? poCodePrefix(opts.poType) : f.prefix;
+    const prefix = type === 'purchase_order' && opts.poType ? poCodePrefix(opts.poType) : f.prefix;
     const rev = docNumberHasRevision(type) ? '/R1' : '';
     return `Invalid format — expected ${prefix}${'N'.repeat(f.digits)}${rev}`;
   }

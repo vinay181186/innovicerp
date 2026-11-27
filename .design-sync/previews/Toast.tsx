@@ -11,7 +11,9 @@ export const Kinds = () => (
 
 export const Dismissible = () => (
   <ToastStack inline>
-    <Toast kind="ok" onDismiss={() => {}}>✓ GRN IN-GRN-00078 received: 50 NOS</Toast>
+    <Toast kind="ok" onDismiss={() => {}}>
+      ✓ GRN IN-GRN-00078 received: 50 NOS
+    </Toast>
   </ToastStack>
 );
 

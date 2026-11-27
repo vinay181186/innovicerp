@@ -24,6 +24,7 @@ import {
   designProjectOpenSql,
   designTrackerPendingSql,
 } from '../../../lib/design-status';
+import { revStatusWords } from '../../../lib/item-revision';
 import { createdKey } from '../../../lib/list-order';
 import type { RawRow } from '../personal/list-query';
 import { bomPendingSql } from '../personal/rows-planning';
@@ -104,9 +105,10 @@ export function designDcrsSql(c: CheckCtx): SQL {
 const projectHref = (r: RawRow): string =>
   r.x1 ? docNavPage('design-project', r.x1) : '/design-projects';
 
-// ── ADR-317 — Drawing Register checks. The Drawing Rev statuses are the SAME
-// ones Home › Approvals reads (approvals/waiting-drawings.ts). A Rev row opens
-// the drawing page (/drawings/<item_revision_id>), whose buttons follow the
+// ── ADR-317 / ADR-323 — Drawing Register checks. The Drawing Rev statuses
+// are read through revStatusWords (lib/item-revision.ts), the SAME rule
+// Home › Approvals reads (approvals/waiting-drawings.ts). A Rev row opens the
+// drawing page (/drawings/<item_revision_id>), whose buttons follow the
 // reader's rights; an order row opens its SO / JWSO.
 
 /** IST date of a timestamp expression, as text. */
@@ -136,104 +138,13 @@ const firstOrderSql = sql`(
   SELECT o.code FROM (${linesOnRev}) o
    ORDER BY o.is_open DESC, o.created_at DESC, o.code LIMIT 1)`;
 
-/** One Drawing Rev per row in `status`, dated by `dateCol` (age). */
-function revRowsSql(c: CheckCtx, status: string, dateCol: string, byCol: string): SQL {
-  return sql`
-    SELECT ir.id::text AS row_key, ir.id, (i.code || '/' || ir.rev)::text AS code,
-           'item_revision'::text AS kind,
-           ${istDate(dateCol)} AS doc_date, NULL::text AS due_date,
-           ${createdKey('ir.created_at')} AS sort_key,
-           NULL::text AS party, i.code::text AS item_code, i.name::text AS item_name,
-           NULL::numeric AS qty, NULL::text AS uom, NULL::numeric AS amount,
-           (${sql.raw(byCol)})::text AS created_by, 0::int AS is_late,
-           ${firstOrderSql}::text AS x1, NULL::text AS x2, NULL::text AS x3
-    FROM public.item_revisions ir
-    JOIN public.items i ON i.id = ir.item_id
-    WHERE ir.company_id = ${c.cid}::uuid AND ir.deleted_at IS NULL
-      AND ir.release_status = ${status}`;
-}
+/** `ir.release_status` reads as Unverified (legacy words too until 0264). */
+const isUnverified = (): SQL =>
+  sql`ir.release_status = ANY(${sql.param(revStatusWords('unverified'))}::text[])`;
 
-export const revReviewSql = (c: CheckCtx): SQL =>
-  revRowsSql(
-    c,
-    'under_review',
-    'COALESCE(ir.submitted_at, ir.updated_at)',
-    'COALESCE(ir.submitted_by, ir.created_by)',
-  );
-
-export const revReleaseSql = (c: CheckCtx): SQL =>
-  revRowsSql(
-    c,
-    'approved',
-    'COALESCE(ir.approved_at, ir.updated_at)',
-    'COALESCE(ir.approved_by, ir.created_by)',
-  );
-
-/** Pending corrections — the same rows Approvals lists (no Rev deleted_at
- *  filter there either). */
-export function revCorrectionSql(c: CheckCtx): SQL {
-  return sql`
-    SELECT dc.id::text AS row_key, ir.id, (i.code || '/' || ir.rev)::text AS code,
-           'drawing_correction'::text AS kind,
-           ${istDate('dc.created_at')} AS doc_date, NULL::text AS due_date,
-           ${createdKey('dc.created_at')} AS sort_key,
-           NULL::text AS party, i.code::text AS item_code, i.name::text AS item_name,
-           NULL::numeric AS qty, NULL::text AS uom, NULL::numeric AS amount,
-           dc.requested_by::text AS created_by, 0::int AS is_late,
-           dc.reason::text AS x1, NULL::text AS x2, NULL::text AS x3
-    FROM public.drawing_corrections dc
-    JOIN public.item_revisions ir ON ir.id = dc.item_revision_id
-    JOIN public.items i ON i.id = ir.item_id
-    WHERE dc.company_id = ${c.cid}::uuid AND dc.deleted_at IS NULL AND dc.status = 'pending'`;
-}
-
-/** "Order lines blocked by drawing": one row per OPEN SO / JWSO line whose Rev
- *  blocks a new Plan / PRO / Job Card and waits on Design (Not released, Under
- *  Review, Approved, Rejected — obsolete left out: that one needs a new Rev).
- *  The order number opens the order (x2 = order id, x3 = 'so' | 'jw'); the
- *  Drawing Rev opens the drawing page (id). Kept out of the Design badge: the
- *  same Revs are already counted by the two Rev checks. */
-export function revBlockingSql(c: CheckCtx): SQL {
-  const st = sql`('draft', 'under_review', 'approved', 'rejected')`;
-  return sql`
-    SELECT x.* FROM (
-      SELECT l.id::text AS row_key, ir.id, h.code::text AS code, 'so_line'::text AS kind,
-             ${istDate('h.created_at')} AS doc_date, l.due_date::text AS due_date,
-             ${createdKey('h.created_at')} AS sort_key,
-             NULL::text AS party, i.code::text AS item_code, i.name::text AS item_name,
-             l.order_qty AS qty, l.uom::text AS uom, NULL::numeric AS amount,
-             h.created_by::text AS created_by,
-             (CASE WHEN l.due_date < ${c.today}::date THEN 1 ELSE 0 END)::int AS is_late,
-             (i.code || '/' || ir.rev)::text AS x1, h.id::text AS x2, 'so'::text AS x3
-        FROM public.sales_order_lines l
-        JOIN public.sales_orders h ON h.id = l.sales_order_id
-        JOIN public.item_revisions ir ON ir.id = l.item_revision_id AND ir.deleted_at IS NULL
-        JOIN public.items i ON i.id = ir.item_id
-       WHERE h.company_id = ${c.cid}::uuid AND l.deleted_at IS NULL AND h.deleted_at IS NULL
-         AND h.status::text NOT IN ${NOT_OPEN} AND l.status::text NOT IN ${NOT_OPEN}
-         AND ir.release_status IN ${st}
-      UNION ALL
-      SELECT l.id::text, ir.id, h.code::text, 'jw_line'::text,
-             ${istDate('h.created_at')}, l.due_date::text,
-             ${createdKey('h.created_at')},
-             NULL::text, i.code::text, i.name::text,
-             l.order_qty, l.uom::text, NULL::numeric,
-             h.created_by::text,
-             (CASE WHEN l.due_date < ${c.today}::date THEN 1 ELSE 0 END)::int,
-             (i.code || '/' || ir.rev)::text, h.id::text, 'jw'::text
-        FROM public.job_work_order_lines l
-        JOIN public.job_work_orders h ON h.id = l.job_work_order_id
-        JOIN public.item_revisions ir ON ir.id = l.item_revision_id AND ir.deleted_at IS NULL
-        JOIN public.items i ON i.id = ir.item_id
-       WHERE h.company_id = ${c.cid}::uuid AND l.deleted_at IS NULL AND h.deleted_at IS NULL
-         AND h.status::text NOT IN ${NOT_OPEN} AND l.status::text NOT IN ${NOT_OPEN}
-         AND ir.release_status IN ${st}
-    ) x`;
-}
-
-/** "Old drawings to verify": one row per Unverified Rev that has at least one
- *  OPEN SO / JWSO line, dated by that work's earliest Due Date. */
-export function revUnverifiedSql(c: CheckCtx): SQL {
+/** "Drawing Revs to verify": one row per Unverified Rev WITH a PDF that has at
+ *  least one OPEN SO / JWSO line, dated by that work's earliest Due Date. */
+export function revReviewSql(c: CheckCtx): SQL {
   return sql`
     SELECT ir.id::text AS row_key, ir.id, (i.code || '/' || ir.rev)::text AS code,
            'item_revision'::text AS kind,
@@ -250,7 +161,78 @@ export function revUnverifiedSql(c: CheckCtx): SQL {
       SELECT MIN(o.due_date) AS due, bool_or(o.is_open) AS any_open
         FROM (${linesOnRev}) o WHERE o.is_open) w ON w.any_open
     WHERE ir.company_id = ${c.cid}::uuid AND ir.deleted_at IS NULL
-      AND ir.release_status = 'unverified'`;
+      AND ${isUnverified()}
+      AND NULLIF(btrim(ir.drawing_file_path), '') IS NOT NULL`;
+}
+
+/** "Open lines with no drawing PDF": one row per OPEN SO / JWSO line whose
+ *  Rev has no PDF (Obsolete left out — that one needs a new Rev). The order
+ *  number opens the order (x2 = order id, x3 = 'so' | 'jw'); the Drawing Rev
+ *  opens the drawing page (id). Kept out of the Design badge. */
+export function revBlockingSql(c: CheckCtx): SQL {
+  const noPdf = sql`NULLIF(btrim(ir.drawing_file_path), '') IS NULL AND ir.release_status <> 'obsolete'`;
+  return sql`
+    SELECT x.* FROM (
+      SELECT l.id::text AS row_key, ir.id, h.code::text AS code, 'so_line'::text AS kind,
+             ${istDate('h.created_at')} AS doc_date, l.due_date::text AS due_date,
+             ${createdKey('h.created_at')} AS sort_key,
+             NULL::text AS party, i.code::text AS item_code, i.name::text AS item_name,
+             l.order_qty AS qty, l.uom::text AS uom, NULL::numeric AS amount,
+             h.created_by::text AS created_by,
+             (CASE WHEN l.due_date < ${c.today}::date THEN 1 ELSE 0 END)::int AS is_late,
+             (i.code || '/' || ir.rev)::text AS x1, h.id::text AS x2, 'so'::text AS x3
+        FROM public.sales_order_lines l
+        JOIN public.sales_orders h ON h.id = l.sales_order_id
+        JOIN public.item_revisions ir ON ir.id = l.item_revision_id AND ir.deleted_at IS NULL
+        JOIN public.items i ON i.id = ir.item_id
+       WHERE h.company_id = ${c.cid}::uuid AND l.deleted_at IS NULL AND h.deleted_at IS NULL
+         AND h.status::text NOT IN ${NOT_OPEN} AND l.status::text NOT IN ${NOT_OPEN}
+         AND ${noPdf}
+      UNION ALL
+      SELECT l.id::text, ir.id, h.code::text, 'jw_line'::text,
+             ${istDate('h.created_at')}, l.due_date::text,
+             ${createdKey('h.created_at')},
+             NULL::text, i.code::text, i.name::text,
+             l.order_qty, l.uom::text, NULL::numeric,
+             h.created_by::text,
+             (CASE WHEN l.due_date < ${c.today}::date THEN 1 ELSE 0 END)::int,
+             (i.code || '/' || ir.rev)::text, h.id::text, 'jw'::text
+        FROM public.job_work_order_lines l
+        JOIN public.job_work_orders h ON h.id = l.job_work_order_id
+        JOIN public.item_revisions ir ON ir.id = l.item_revision_id AND ir.deleted_at IS NULL
+        JOIN public.items i ON i.id = ir.item_id
+       WHERE h.company_id = ${c.cid}::uuid AND l.deleted_at IS NULL AND h.deleted_at IS NULL
+         AND h.status::text NOT IN ${NOT_OPEN} AND l.status::text NOT IN ${NOT_OPEN}
+         AND ${noPdf}
+    ) x`;
+}
+
+/** "PDF replaced on a Verified drawing": one row per Rev that a Replace
+ *  drawing turned Verified → Unverified in the last 7 days (the activity row
+ *  lib/item-revision-drawing.ts writes) and that is still Unverified, dated by
+ *  the latest such replace (Replaced On); created_by = who replaced it. */
+export function revReplacedSql(c: CheckCtx): SQL {
+  return sql`
+    SELECT ir.id::text AS row_key, ir.id, (i.code || '/' || ir.rev)::text AS code,
+           'item_revision'::text AS kind,
+           ${istDate('a.ts')} AS doc_date, NULL::text AS due_date,
+           ${createdKey('a.ts')} AS sort_key,
+           NULL::text AS party, i.code::text AS item_code, i.name::text AS item_name,
+           NULL::numeric AS qty, NULL::text AS uom, NULL::numeric AS amount,
+           a.user_id::text AS created_by, 0::int AS is_late,
+           ${firstOrderSql}::text AS x1, NULL::text AS x2, NULL::text AS x3
+    FROM public.item_revisions ir
+    JOIN public.items i ON i.id = ir.item_id
+    JOIN LATERAL (
+      SELECT al.ts, al.user_id FROM public.activity_log al
+       WHERE al.company_id = ir.company_id AND al.entity = 'ItemRevision'
+         AND al.entity_id = ir.id AND al.action = 'EDIT'
+         AND al.ts >= now() - interval '7 days'
+         AND al.changes @> ${'[{"field":"drawingFilePath"}]'}::jsonb
+         AND al.changes @> ${'[{"field":"releaseStatus","before":"Verified","after":"Unverified"}]'}::jsonb
+       ORDER BY al.ts DESC LIMIT 1) a ON TRUE
+    WHERE ir.company_id = ${c.cid}::uuid AND ir.deleted_at IS NULL
+      AND ${isUnverified()}`;
 }
 
 /** The drawing page of a Drawing Rev row (id = item_revision id). */
@@ -322,47 +304,23 @@ export const DESIGN_CHECKS: readonly CheckDef[] = [
     dated: false,
     noQty: true,
   },
-  // ADR-317 — Drawing Register.
+  // ADR-317 / ADR-323 — Drawing Register.
   {
     key: 'des_rev_review',
     dept: 'design',
-    label: 'Drawing Revs waiting approval',
-    head: ['Drawing Rev', 'SO No.', 'Sent for Review On'],
+    label: 'Drawing Revs to verify',
+    head: ['Drawing Rev', 'SO No.', 'Due Date'],
     href: '/drawing-register',
     query: revReviewSql,
     docHref: drawingHref,
     refCode: (r) => r.x1,
-    dated: false,
-    noQty: true,
-  },
-  {
-    key: 'des_rev_release',
-    dept: 'design',
-    label: 'Drawing Revs waiting release',
-    head: ['Drawing Rev', 'SO No.', 'Drawing Approved On'],
-    href: '/drawing-register',
-    query: revReleaseSql,
-    docHref: drawingHref,
-    refCode: (r) => r.x1,
-    dated: false,
-    noQty: true,
-  },
-  {
-    key: 'des_rev_correction',
-    dept: 'design',
-    label: 'Drawing corrections waiting',
-    head: ['Drawing Rev', 'Correction Reason', 'Correction Asked On'],
-    href: '/drawing-register',
-    query: revCorrectionSql,
-    docHref: drawingHref,
-    refCode: (r) => r.x1,
-    dated: false,
+    dated: true,
     noQty: true,
   },
   {
     key: 'des_rev_blocking',
     dept: 'design',
-    label: 'Order lines blocked by drawing',
+    label: 'Open lines with no drawing PDF',
     head: ['SO No.', 'Drawing Rev', 'Due Date'],
     href: '/drawing-register',
     query: revBlockingSql,
@@ -372,15 +330,15 @@ export const DESIGN_CHECKS: readonly CheckDef[] = [
     dated: true,
   },
   {
-    key: 'des_rev_unverified',
+    key: 'des_rev_replaced',
     dept: 'design',
-    label: 'Old drawings to verify',
-    head: ['Drawing Rev', 'SO No.', 'Due Date'],
+    label: 'PDF replaced on a Verified drawing',
+    head: ['Drawing Rev', 'SO No.', 'Replaced On'],
     href: '/drawing-register',
-    query: revUnverifiedSql,
+    query: revReplacedSql,
     docHref: drawingHref,
     refCode: (r) => r.x1,
-    dated: true,
+    dated: false,
     noQty: true,
   },
 ];

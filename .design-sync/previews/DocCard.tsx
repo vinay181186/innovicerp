@@ -18,7 +18,11 @@ export const QcWaiting = () => (
     code="IN-GRN-00142"
     title="Sample Heat Treat Works"
     badges={<StatusBadge kind="grnqc" status="pending" />}
-    actions={<Button size="sm" variant="ghost">Assign</Button>}
+    actions={
+      <Button size="sm" variant="ghost">
+        Assign
+      </Button>
+    }
     metrics={qty(60, 0, 0)}
     meta={['03-11-2026', 'IN-PO-00418', 'DC 4471']}
   />
@@ -49,11 +53,26 @@ export const ExpandedWithLines = () => (
     <LinesPanel code="IN-GRN-00138" onOpenDetail={() => {}}>
       <table className="innovic-table tbl-compact">
         <thead>
-          <tr><th>Item Code</th><th>Item Name</th><th>Received</th><th>Accepted</th></tr>
+          <tr>
+            <th>Item Code</th>
+            <th>Item Name</th>
+            <th>Received</th>
+            <th>Accepted</th>
+          </tr>
         </thead>
         <tbody>
-          <tr><td className="td-code">BRKT-101/A</td><td>Mounting Bracket</td><td>20</td><td>20</td></tr>
-          <tr><td className="td-code">SHFT-220/B</td><td>Pinion Shaft</td><td>15</td><td>14</td></tr>
+          <tr>
+            <td className="td-code">BRKT-101/A</td>
+            <td>Mounting Bracket</td>
+            <td>20</td>
+            <td>20</td>
+          </tr>
+          <tr>
+            <td className="td-code">SHFT-220/B</td>
+            <td>Pinion Shaft</td>
+            <td>15</td>
+            <td>14</td>
+          </tr>
         </tbody>
       </table>
     </LinesPanel>

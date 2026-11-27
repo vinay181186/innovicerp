@@ -8,14 +8,14 @@ live `test` branch, based on the three screens you named: **Job Cards table**, *
 
 Upload all of these in one go; the order only matters for how you introduce them.
 
-| # | File | Why it matters |
-|---|---|---|
-| 1 | `00-DESIGN-SYSTEM.md` | **Start here.** The overview: principles, colour, type, spacing, every component rule, the page patterns and the 12 hard rules. If you upload only one file, upload this. |
-| 2 | `01-tokens.css` | The real token file from the app. This is the source of truth for every colour, font, radius and size — Claude should copy values from here, never guess. |
-| 3 | `02-innovic-theme.css` | The real 1630-line component stylesheet. Lets Claude reuse actual class names instead of inventing new ones. |
-| 4 | `03-component-reference.md` | Class-by-class inventory (1035 lines) with real markup for every panel, table, button, badge, form and modal, plus the full z-index ladder. |
-| 5 | `04-page-anatomy.md` | The three reference screens broken down region by region and column by column (642 lines), ending in 36 reusable rules. |
-| 6 | `screenshots/*.png` | Four images — the two lists, the detail page, and a component board showing tokens, type scale, buttons, badges and the form grid. |
+| #   | File                        | Why it matters                                                                                                                                                            |
+| --- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `00-DESIGN-SYSTEM.md`       | **Start here.** The overview: principles, colour, type, spacing, every component rule, the page patterns and the 12 hard rules. If you upload only one file, upload this. |
+| 2   | `01-tokens.css`             | The real token file from the app. This is the source of truth for every colour, font, radius and size — Claude should copy values from here, never guess.                 |
+| 3   | `02-innovic-theme.css`      | The real 1630-line component stylesheet. Lets Claude reuse actual class names instead of inventing new ones.                                                              |
+| 4   | `03-component-reference.md` | Class-by-class inventory (1035 lines) with real markup for every panel, table, button, badge, form and modal, plus the full z-index ladder.                               |
+| 5   | `04-page-anatomy.md`        | The three reference screens broken down region by region and column by column (642 lines), ending in 36 reusable rules.                                                   |
+| 6   | `screenshots/*.png`         | Four images — the two lists, the detail page, and a component board showing tokens, type scale, buttons, badges and the form grid.                                        |
 
 ## Suggested prompt to paste alongside them
 

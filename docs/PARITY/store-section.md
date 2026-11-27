@@ -14,18 +14,18 @@
 
 Legacy Store group (HTML L425–440):
 
-| # | legacy key | legacy label (line) | legacy render fn (line) | React route | API module | Web module | Status |
-|---|---|---|---|---|---|---|---|
-| 1 | `grn` | 📥 **"GRN (Goods Receipt)"** (L428) | `renderGRN` (L26444) | `/goods-receipt-notes` | `goods-receipt-notes` | `goods-receipt-notes` | ✅ SHIPPED |
-| 2 | `issueregister` | 📋 **"Item Issue Register"** (L429) | `renderIssueRegister` (L23874) | `/issue-register` | `store-issues` | `store-issues` | ✅ SHIPPED |
-| 3 | `toolissue` | 🔧 **"Tool Issue Register"** (L430) | `renderToolIssue` (L23965) | `/tool-issues` | `tool-issues` | `tool-issues` | ✅ SHIPPED |
-| 4 | `partygrn` | 📥 **"Party Material GRN"** (L431) | `renderPartyGRN` (L24251) | — | — | — | ❌ **MISSING** |
-| 5 | `jwdc` | 📋 **"JW Delivery Challan"** (L432) | `renderJWDC` (L24434) | — | — | — | ❌ **MISSING** |
-| 6 | `items` | ◉ **"Item Master"** (L434) | `renderItems` (L11481) | `/items` | `items` | `items` | ✅ SHIPPED |
-| 7 | `partymaterial` | 🏭 **"Party Material Master"** (L435) | `renderPartyMaterial` (L24129) | — | — | — | ❌ **MISSING** |
-| 8 | `store` | 📦 **"Store / Inventory"** (L437) | `renderStore` (L24803) | `/store-inventory` | `store-inventory` | `store-inventory` | ✅ SHIPPED |
-| 9 | `stockledger` | 📖 **"Stock Ledger"** (L438) | `renderStockLedger` (L25013) | `/store-transactions` | `store-transactions` | `store-transactions` | ✅ SHIPPED |
-| 10 | `rpt_store` | 📊 **"Store Reports"** (L439) | `renderDeptReport('store')` (L2471 → L20029) | `/reports?group=Store` | `reports` | `reports` | ⚠️ ROUTE LIVES, sidebar entry missing |
+| #   | legacy key      | legacy label (line)                   | legacy render fn (line)                      | React route            | API module            | Web module            | Status                                |
+| --- | --------------- | ------------------------------------- | -------------------------------------------- | ---------------------- | --------------------- | --------------------- | ------------------------------------- |
+| 1   | `grn`           | 📥 **"GRN (Goods Receipt)"** (L428)   | `renderGRN` (L26444)                         | `/goods-receipt-notes` | `goods-receipt-notes` | `goods-receipt-notes` | ✅ SHIPPED                            |
+| 2   | `issueregister` | 📋 **"Item Issue Register"** (L429)   | `renderIssueRegister` (L23874)               | `/issue-register`      | `store-issues`        | `store-issues`        | ✅ SHIPPED                            |
+| 3   | `toolissue`     | 🔧 **"Tool Issue Register"** (L430)   | `renderToolIssue` (L23965)                   | `/tool-issues`         | `tool-issues`         | `tool-issues`         | ✅ SHIPPED                            |
+| 4   | `partygrn`      | 📥 **"Party Material GRN"** (L431)    | `renderPartyGRN` (L24251)                    | —                      | —                     | —                     | ❌ **MISSING**                        |
+| 5   | `jwdc`          | 📋 **"JW Delivery Challan"** (L432)   | `renderJWDC` (L24434)                        | —                      | —                     | —                     | ❌ **MISSING**                        |
+| 6   | `items`         | ◉ **"Item Master"** (L434)            | `renderItems` (L11481)                       | `/items`               | `items`               | `items`               | ✅ SHIPPED                            |
+| 7   | `partymaterial` | 🏭 **"Party Material Master"** (L435) | `renderPartyMaterial` (L24129)               | —                      | —                     | —                     | ❌ **MISSING**                        |
+| 8   | `store`         | 📦 **"Store / Inventory"** (L437)     | `renderStore` (L24803)                       | `/store-inventory`     | `store-inventory`     | `store-inventory`     | ✅ SHIPPED                            |
+| 9   | `stockledger`   | 📖 **"Stock Ledger"** (L438)          | `renderStockLedger` (L25013)                 | `/store-transactions`  | `store-transactions`  | `store-transactions`  | ✅ SHIPPED                            |
+| 10  | `rpt_store`     | 📊 **"Store Reports"** (L439)         | `renderDeptReport('store')` (L2471 → L20029) | `/reports?group=Store` | `reports`             | `reports`             | ⚠️ ROUTE LIVES, sidebar entry missing |
 
 ---
 
@@ -105,13 +105,13 @@ identified in the per-page parity docs.
 After the 3 missing modules ship, sweep the existing pages against their
 per-page parity docs and pick up small wins:
 
-| # | page | parity doc | open gaps | priority |
-|---|---|---|---|---|
-| 1 | GRN list | `grn.md` | invoice/dc Ref col, JWPO label distinction, "Goods Receipt Note (GRN)" header emoji | POLISH |
-| 2 | Store / Inventory | `store-inventory.md` | "+ Manual Receipt" button (legacy L24873) is missing from React | **BLOCKER** for inventory parity |
-| 3 | Stock Ledger | `stock-ledger.md` | check |
-| 4 | Issue Register | `issue-register.md` | check |
-| 5 | Tool Issue Register | `tool-issue.md` | check |
+| #   | page                | parity doc           | open gaps                                                                           | priority                         |
+| --- | ------------------- | -------------------- | ----------------------------------------------------------------------------------- | -------------------------------- |
+| 1   | GRN list            | `grn.md`             | invoice/dc Ref col, JWPO label distinction, "Goods Receipt Note (GRN)" header emoji | POLISH                           |
+| 2   | Store / Inventory   | `store-inventory.md` | "+ Manual Receipt" button (legacy L24873) is missing from React                     | **BLOCKER** for inventory parity |
+| 3   | Stock Ledger        | `stock-ledger.md`    | check                                                                               |
+| 4   | Issue Register      | `issue-register.md`  | check                                                                               |
+| 5   | Tool Issue Register | `tool-issue.md`      | check                                                                               |
 
 (Three of these checked at the end if time allows; otherwise added to
 backlog and shipped per the user's "we will test once store module built
@@ -157,6 +157,7 @@ build entirely."
 ### Sidebar parity (`apps/web/src/components/shared/sidebar.tsx`)
 
 All 4 missing Store sidebar entries now present:
+
 - `/party-grn` 📥 "Party Material GRN" (Entry group)
 - `/jw-dc` 📋 "JW Delivery Challan" (Entry group)
 - `/party-material` 🏭 "Party Material Master" (Master group)

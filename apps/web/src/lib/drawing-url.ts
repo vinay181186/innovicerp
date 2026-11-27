@@ -69,7 +69,7 @@ export async function drawingDownloadUrl(args: DrawingUrlArgs): Promise<string> 
  *  second and subsequent windows of a bulk save and the user is left wondering
  *  which files arrived. */
 export async function saveDrawing(args: DrawingUrlArgs): Promise<void> {
-  const name = args.fileName ?? (args.path.split('/').pop() ?? 'drawing');
+  const name = args.fileName ?? args.path.split('/').pop() ?? 'drawing';
   const url = await drawingDownloadUrl({ ...args, fileName: name });
   const a = document.createElement('a');
   a.href = url;

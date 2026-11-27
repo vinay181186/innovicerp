@@ -7,15 +7,15 @@
 // Actions by status (the server decides each; the screen only hides):
 //   Draft            Edit · Submit for Approval… (tick "Hold affected work") · Cancel ECR…
 //   Waiting Approval Cancel ECR…  (sign-offs in the Approvals table)
-//   Approved         Implement ECR… — needs all 3 sign-offs, the To Drawing Rev
-//                    Released and no customer approval pending
+//   Approved         Implement ECR… — needs all 3 sign-offs, a To Drawing Rev
+//                    that is not Obsolete (ADR-323) and no customer approval pending
 //   Implemented      Close ECR… — once no hold of this ECR is left
 // Every action carries the ECR's updatedAt (§20.4); 409 = someone acted first.
 
 import {
   ECR_CLASSIFICATION_LABELS,
   ECR_CUSTOMER_APPROVAL_LABELS,
-  REV_RELEASE_STATUSES,
+  normalizeRevStatus,
   type Ecr,
   type RevReleaseStatus,
 } from '@innovic/shared';
@@ -46,15 +46,22 @@ export const ecrDetailRoute = createRoute({
 
 const BACK_LABEL = 'Back to Engineering Change';
 
-const isRevStatus = (s: string | null): s is RevReleaseStatus =>
-  s != null && (REV_RELEASE_STATUSES as readonly string[]).includes(s);
+/** The To Drawing Rev's status in the three ADR-323 words (old stored words
+ *  are read through normalizeRevStatus); null when there is none. */
+const toRevStatus = (s: string | null): RevReleaseStatus | null =>
+  s == null ? null : normalizeRevStatus(s);
 
 /** Why Implement cannot run yet, or null. */
 function implementBlock(ecr: Ecr): string | null {
   if (ecr.status !== 'approved') return 'Needs all three sign-offs first';
   if (ecr.customerApproval === 'pending') return 'Customer approval is still awaited';
-  if (ecr.classification !== 'non_interchangeable' && ecr.toReleaseStatus !== 'released')
-    return `Release ${ecr.toLabel ?? 'the new Drawing Rev'} in the Drawing Register first`;
+  // ADR-323 — only an Obsolete To Drawing Rev stops Implement (Unverified is
+  // allowed, like Plan / PRO / Job Card).
+  if (
+    ecr.classification !== 'non_interchangeable' &&
+    toRevStatus(ecr.toReleaseStatus) === 'obsolete'
+  )
+    return `${ecr.toLabel ?? 'The new Drawing Rev'} is Obsolete — pick another Drawing Rev`;
   return null;
 }
 
@@ -95,7 +102,8 @@ function EcrDetailPage(): React.JSX.Element {
   const open = ecr.status === 'draft' || ecr.status === 'submitted';
   const newItem = ecr.classification === 'non_interchangeable';
   const implBlock = implementBlock(ecr);
-  const toNotReleased = !newItem && ecr.toLabel != null && ecr.toReleaseStatus !== 'released';
+  const toStatus = newItem ? null : toRevStatus(ecr.toReleaseStatus);
+  const toObsolete = ecr.toLabel != null && toStatus === 'obsolete';
 
   return (
     <div>
@@ -176,16 +184,8 @@ function EcrDetailPage(): React.JSX.Element {
             )}
             <ClusterFact
               label="To Drawing Rev Status"
-              value={
-                newItem ? (
-                  '—'
-                ) : isRevStatus(ecr.toReleaseStatus) ? (
-                  <RevStatusBadge status={ecr.toReleaseStatus} />
-                ) : (
-                  '—'
-                )
-              }
-              empty={newItem || !isRevStatus(ecr.toReleaseStatus)}
+              value={toStatus ? <RevStatusBadge status={toStatus} /> : '—'}
+              empty={!toStatus}
             />
             <ClusterFact
               label="Approvals"
@@ -214,9 +214,10 @@ function EcrDetailPage(): React.JSX.Element {
         </ClusterGrid>
       </DetailHeader>
 
-      {toNotReleased && (ecr.status === 'submitted' || ecr.status === 'approved') ? (
+      {toObsolete && (ecr.status === 'submitted' || ecr.status === 'approved') ? (
         <Banner tone="warn">
-          Release {ecr.toLabel} in the Drawing Register before Implement.{' '}
+          {ecr.toLabel} is Obsolete in the Drawing Register — Implement needs a Drawing Rev that is
+          not Obsolete.{' '}
           {ecr.toItemRevisionId ? (
             <Link to="/drawings/$itemRevisionId" params={{ itemRevisionId: ecr.toItemRevisionId }}>
               Open {ecr.toLabel}

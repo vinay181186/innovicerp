@@ -11,7 +11,15 @@ export const RowActions = () => (
 );
 
 export const WithLabels = () => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
+  <div
+    style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 8,
+      fontSize: 'var(--fs-sm)',
+      color: 'var(--text2)',
+    }}
+  >
     <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
       <Icon name="truck" color="var(--text3)" /> Outsource to vendor
     </span>
@@ -34,7 +42,14 @@ export const Sizes = () => (
 );
 
 export const FullSet = () => (
-  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(9, 22px)', gap: 8, color: 'var(--text2)' }}>
+  <div
+    style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(9, 22px)',
+      gap: 8,
+      color: 'var(--text2)',
+    }}
+  >
     {ICON_NAMES.map((name) => (
       <Icon key={name} name={name} title={name} />
     ))}

@@ -1,5 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
-import { findRowWithMenuItem, openRowMenu, planningLineRows, executePlanFromMenu } from './row-menu';
+import {
+  findRowWithMenuItem,
+  openRowMenu,
+  planningLineRows,
+  executePlanFromMenu,
+} from './row-menu';
 import { fillInternalSoNo, soNoFromDetail } from './case-helpers';
 import { bomParentItemName, bomPartItemName, bomPartQty } from './bom-form';
 
@@ -89,8 +94,19 @@ async function bannerText(page: Page): Promise<string> {
   for (const loc of [page.locator('[style*="rgba(239"]'), page.locator('.form-error')]) {
     const n = Math.min(await loc.count(), 12);
     for (let i = 0; i < n; i++) {
-      if (!(await loc.nth(i).isVisible().catch(() => false))) continue;
-      const t = (await loc.nth(i).innerText().catch(() => '')).trim();
+      if (
+        !(await loc
+          .nth(i)
+          .isVisible()
+          .catch(() => false))
+      )
+        continue;
+      const t = (
+        await loc
+          .nth(i)
+          .innerText()
+          .catch(() => '')
+      ).trim();
       if (t.length > 8 && !/^Cancel$/i.test(t)) return t.replace(/\s+/g, ' ');
     }
   }
@@ -103,13 +119,24 @@ test('@bom 01 — create the BOM (new picker, auto-filled name, no status field)
   page,
 }) => {
   if (state.bomNo) {
-    record({ step: '01', doc: 'BOM', code: state.bomNo, qty: '—', status: 'reused', note: 'E2E_BOM' });
+    record({
+      step: '01',
+      doc: 'BOM',
+      code: state.bomNo,
+      qty: '—',
+      status: 'reused',
+      note: 'E2E_BOM',
+    });
     return;
   }
   await page.goto('/bom-masters/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
 
-  state.bomNo = await page.locator('input[value^="BOM-"]').first().inputValue().catch(() => '');
+  state.bomNo = await page
+    .locator('input[value^="BOM-"]')
+    .first()
+    .inputValue()
+    .catch(() => '');
 
   // ELEMENT: ADR-223 took BOM Status off this screen altogether — every new BOM
   // is Active and the server decides it, so there is no field to read and
@@ -180,7 +207,9 @@ test('@bom 01 — create the BOM (new picker, auto-filled name, no status field)
   // eslint-disable-next-line no-console
   console.log(`>> dropdown gap from its field: ${Math.round(gap)}px`);
   expect(gap, 'the list is anchored to its own field').toBeLessThanOrEqual(12);
-  expect(optBox?.height ?? 0, 'the option row has its full height, not a sliver').toBeGreaterThan(20);
+  expect(optBox?.height ?? 0, 'the option row has its full height, not a sliver').toBeGreaterThan(
+    20,
+  );
 
   // Search by the NAME, not the code — the old datalist could only prefix-match
   // the code, so this is the behaviour that actually changed.
@@ -227,7 +256,14 @@ test('@bom 01 — create the BOM (new picker, auto-filled name, no status field)
 
 test('@bom 02 — create the equipment (assembly) SO with that BOM', async ({ page }) => {
   if (state.soCode) {
-    record({ step: '02', doc: 'SO', code: state.soCode, qty: `${SO_QTY}`, status: 'reused', note: 'E2E_SO' });
+    record({
+      step: '02',
+      doc: 'SO',
+      code: state.soCode,
+      qty: `${SO_QTY}`,
+      status: 'reused',
+      note: 'E2E_SO',
+    });
     return;
   }
   await page.goto('/sales-orders/new', { waitUntil: 'domcontentloaded' });
@@ -267,7 +303,10 @@ test('@bom 02 — create the equipment (assembly) SO with that BOM', async ({ pa
 
   const nums = page.locator('input[type="number"]:visible');
   await nums.nth(0).fill(String(SO_QTY));
-  await nums.nth(1).fill(String(RATE)).catch(() => {});
+  await nums
+    .nth(1)
+    .fill(String(RATE))
+    .catch(() => {});
   await page.waitForTimeout(500);
 
   await fillInternalSoNo(page);
@@ -290,7 +329,10 @@ test('@bom 02 — create the equipment (assembly) SO with that BOM', async ({ pa
 test('@bom 03 — explode the BOM into child plans', async ({ page }) => {
   await page.goto('/planning', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await page.getByPlaceholder(/Search/i).first().fill(state.soCode);
+  await page
+    .getByPlaceholder(/Search/i)
+    .first()
+    .fill(state.soCode);
   await page.waitForTimeout(2500);
   await page.getByText(state.soCode).first().click();
   await page.waitForTimeout(2500);
@@ -315,17 +357,25 @@ test('@bom 03 — explode the BOM into child plans', async ({ page }) => {
     return;
   }
   await openRowMenu(page, bomRow!);
-  const btnLabel = await page.getByRole('menuitem', { name: /^BOM Planning/ }).first().innerText();
+  const btnLabel = await page
+    .getByRole('menuitem', { name: /^BOM Planning/ })
+    .first()
+    .innerText();
   // eslint-disable-next-line no-console
   console.log(`>> ${btnLabel.replace(/\s+/g, ' ')}`);
-  await page.getByRole('menuitem', { name: /^BOM Planning/ }).first().click();
+  await page
+    .getByRole('menuitem', { name: /^BOM Planning/ })
+    .first()
+    .click();
   await page.waitForTimeout(3000);
 
   // The modal lists each child with its total need = qty/set × order qty.
   const modalText = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
   const expectedNeed = QTY_PER_SET * SO_QTY;
   // eslint-disable-next-line no-console
-  console.log(`>> expecting total need ${expectedNeed} (${QTY_PER_SET}/set × ${SO_QTY}); modal mentions it: ${modalText.includes(String(expectedNeed))}`);
+  console.log(
+    `>> expecting total need ${expectedNeed} (${QTY_PER_SET}/set × ${SO_QTY}); modal mentions it: ${modalText.includes(String(expectedNeed))}`,
+  );
 
   // Tick every plannable child. Rows only pre-tick when there is a SHORTFALL —
   // if stock already covers the need the row arrives unchecked and Save refuses
@@ -346,7 +396,10 @@ test('@bom 03 — explode the BOM into child plans', async ({ page }) => {
   // eslint-disable-next-line no-console
   console.log(`>> ticked ${boxCount} plannable child row(s)`);
 
-  await page.getByRole('button', { name: /Create|Plan/i }).last().click();
+  await page
+    .getByRole('button', { name: /Create|Plan/i })
+    .last()
+    .click();
   await page.waitForTimeout(5000);
   const err = await bannerText(page);
   if (err) {
@@ -374,7 +427,10 @@ test('@bom 04 — add a routing and execute the child plan', async ({ page }) =>
   // manufacture plan: open the plan → add an op → Save Plan → Execute.
   await page.goto('/planning', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await page.getByPlaceholder(/Search/i).first().fill(state.soCode);
+  await page
+    .getByPlaceholder(/Search/i)
+    .first()
+    .fill(state.soCode);
   await page.waitForTimeout(2500);
   await page.getByText(state.soCode).first().click();
   await page.waitForTimeout(3000);
@@ -385,7 +441,14 @@ test('@bom 04 — add a routing and execute the child plan', async ({ page }) =>
     const body = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
     // eslint-disable-next-line no-console
     console.log(`>> no Edit on the plan row; page: ${body.slice(700, 1700)}`);
-    record({ step: '04', doc: 'Job Card', code: '—', qty: '—', status: 'BLOCKED', note: 'could not open the plan for routing' });
+    record({
+      step: '04',
+      doc: 'Job Card',
+      code: '—',
+      qty: '—',
+      status: 'BLOCKED',
+      note: 'could not open the plan for routing',
+    });
     return;
   }
   await editBtn.click();
@@ -444,7 +507,10 @@ test('@bom 05 — produce and pass QC', async ({ page }) => {
     await processOp.click();
     await page.waitForTimeout(1500);
     await page.getByRole('spinbutton').first().fill(String(qty));
-    await page.getByPlaceholder(/Operator name/i).fill('E2E Auto').catch(() => {});
+    await page
+      .getByPlaceholder(/Operator name/i)
+      .fill('E2E Auto')
+      .catch(() => {});
     await page.getByRole('button', { name: /^✓\s*Complete$/ }).click();
     await page.waitForTimeout(4000);
   }
@@ -482,13 +548,23 @@ test('@bom 06 — dispatch the assembled units', async ({ page }) => {
     }
   }
   if (!picked) {
-    record({ step: '06', doc: 'Dispatch', code: '—', qty: `${SO_QTY}`, status: 'BLOCKED', note: `${state.soCode} not offered` });
+    record({
+      step: '06',
+      doc: 'Dispatch',
+      code: '—',
+      qty: `${SO_QTY}`,
+      status: 'BLOCKED',
+      note: `${state.soCode} not offered`,
+    });
     return;
   }
   await page.waitForTimeout(2000);
   await page.getByRole('button', { name: /Add Line/i }).click();
   await page.waitForTimeout(1500);
-  await page.getByPlaceholder(/code or name/i).first().fill(PARENT_ITEM);
+  await page
+    .getByPlaceholder(/code or name/i)
+    .first()
+    .fill(PARENT_ITEM);
   await page.waitForTimeout(1800);
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
@@ -549,7 +625,14 @@ test('@bom 07 — invoice the assembly', async ({ page }) => {
     }
   }
   if (!picked) {
-    record({ step: '07', doc: 'Invoice', code: '—', qty: `${SO_QTY}`, status: 'BLOCKED', note: `${state.soCode} not offered` });
+    record({
+      step: '07',
+      doc: 'Invoice',
+      code: '—',
+      qty: `${SO_QTY}`,
+      status: 'BLOCKED',
+      note: `${state.soCode} not offered`,
+    });
     return;
   }
   await page.waitForTimeout(2000);
@@ -563,8 +646,17 @@ test('@bom 07 — invoice the assembly', async ({ page }) => {
 
   const nums = page.locator('input[type="number"]');
   for (let k = 0; k < (await nums.count()); k++) {
-    if (!(await nums.nth(k).isEditable().catch(() => false))) continue;
-    const v = await nums.nth(k).inputValue().catch(() => '');
+    if (
+      !(await nums
+        .nth(k)
+        .isEditable()
+        .catch(() => false))
+    )
+      continue;
+    const v = await nums
+      .nth(k)
+      .inputValue()
+      .catch(() => '');
     if (v === '') {
       await nums.nth(k).fill(String(SO_QTY));
       break;

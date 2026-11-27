@@ -1,7 +1,11 @@
 import { StatusPills, ViewToggle } from '@innovic/web';
 
 export const AllSelected = () => (
-  <StatusPills options={['draft', 'open', 'closed', 'cancelled']} value={null} onChange={() => {}} />
+  <StatusPills
+    options={['draft', 'open', 'closed', 'cancelled']}
+    value={null}
+    onChange={() => {}}
+  />
 );
 
 export const OneActive = () => (

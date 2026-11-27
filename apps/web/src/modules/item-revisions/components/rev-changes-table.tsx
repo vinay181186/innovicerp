@@ -74,7 +74,11 @@ export function useRevChangeCount(q: ItemRevisionChangesQuery): number {
   return useItemRevisionChanges(q).data?.length ?? 0;
 }
 
-export function RevChangesSection({ query }: { query: ItemRevisionChangesQuery }): React.JSX.Element {
+export function RevChangesSection({
+  query,
+}: {
+  query: ItemRevisionChangesQuery;
+}): React.JSX.Element {
   const { data, isLoading, isError, error } = useItemRevisionChanges(query);
   return (
     <div style={{ marginTop: 'var(--sp-3)' }}>

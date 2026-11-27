@@ -40,10 +40,7 @@ const DEPT_COLORS = {
   qc: '#EF4444',
 } as const;
 
-export async function getSoTimeline(
-  soId: string,
-  user: AuthContext,
-): Promise<SoTimelineResponse> {
+export async function getSoTimeline(soId: string, user: AuthContext): Promise<SoTimelineResponse> {
   const companyId = requireCompany(user);
 
   return withUserContext(user, async (tx) => {
@@ -71,12 +68,7 @@ export async function getSoTimeline(
     const lineRows = await tx
       .select({ id: salesOrderLines.id })
       .from(salesOrderLines)
-      .where(
-        and(
-          eq(salesOrderLines.salesOrderId, soId),
-          isNull(salesOrderLines.deletedAt),
-        ),
-      );
+      .where(and(eq(salesOrderLines.salesOrderId, soId), isNull(salesOrderLines.deletedAt)));
     const lineIds = lineRows.map((r) => r.id);
 
     const events: SoTimelineEvent[] = [];
@@ -105,7 +97,10 @@ export async function getSoTimeline(
         FROM public.plans p
         WHERE p.company_id = ${companyId}::uuid
           AND p.deleted_at IS NULL
-          AND p.so_line_id IN (${sql.join(lineIds.map((id) => sql`${id}::uuid`), sql`, `)})
+          AND p.so_line_id IN (${sql.join(
+            lineIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})
         ORDER BY p.created_at ASC
       `);
       for (const row of planRows as unknown as Array<{
@@ -139,7 +134,10 @@ export async function getSoTimeline(
         LEFT JOIN public.items i ON i.id = jc.item_id AND i.deleted_at IS NULL
         WHERE jc.company_id = ${companyId}::uuid
           AND jc.deleted_at IS NULL
-          AND jc.source_so_line_id IN (${sql.join(lineIds.map((id) => sql`${id}::uuid`), sql`, `)})
+          AND jc.source_so_line_id IN (${sql.join(
+            lineIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})
         ORDER BY jc.jc_date ASC
       `);
       for (const row of jcRows as unknown as Array<{
@@ -186,7 +184,10 @@ export async function getSoTimeline(
         FROM public.purchase_requests pr
         WHERE pr.company_id = ${companyId}::uuid
           AND pr.deleted_at IS NULL
-          AND pr.source_so_line_id IN (${sql.join(lineIds.map((id) => sql`${id}::uuid`), sql`, `)})
+          AND pr.source_so_line_id IN (${sql.join(
+            lineIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})
         ORDER BY pr.pr_date ASC
       `);
       for (const row of prRows as unknown as Array<{
@@ -321,7 +322,9 @@ export async function getSoTimeline(
           const po = poById.get(row.po_id);
           const reasons: string[] = [];
           if (po && row.grn_date < po.poDate) {
-            reasons.push(`GRN date ${dmy(row.grn_date)} is before PO ${po.code} (${dmy(po.poDate)})`);
+            reasons.push(
+              `GRN date ${dmy(row.grn_date)} is before PO ${po.code} (${dmy(po.poDate)})`,
+            );
           }
           if (po?.prDate && row.grn_date < po.prDate) {
             reasons.push(
@@ -342,7 +345,6 @@ export async function getSoTimeline(
         }
       }
     }
-
 
     // Final sort — pure date ascending; ties broken by insertion order
     // (legacy renders in this same order: source-traversal order).
@@ -372,8 +374,7 @@ const PO_STATUS_LABEL: Record<string, string> = {
 };
 function poStatusLabel(status: string): string {
   return (
-    PO_STATUS_LABEL[status] ??
-    status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+    PO_STATUS_LABEL[status] ?? status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
   );
 }
 

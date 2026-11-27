@@ -788,14 +788,12 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         }
       }
 
-      // ADR-290: a line naming an older Rev than the latest released one
+      // ADR-290 / ADR-323: a line naming an older Rev than the latest verified one
       // needs its "Confirmed" tick (opened for the user if collapsed).
       const revWait = revConfirm.firstPending(fields.map((f) => f.id));
       if (revWait) {
-        const key = fields[revWait.index]?.id;
-        if (key) setOpenLines((prev) => new Set(prev).add(key));
         setLineError(
-          `Line ${revWait.index + 1}: latest released drawing is ${revWait.latestLabel} — confirm with the customer and tick Confirmed.`,
+          `Line ${revWait.index + 1}: latest verified drawing is ${revWait.latestLabel} — confirm with the customer and tick Confirmed.`,
         );
         return;
       }
@@ -835,11 +833,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           // null, not undefined: the server merges only PRESENT keys on update, so a
           // Drawing No. the user cleared must be sent as null to actually clear it.
           drawingNo: l.drawingNo?.trim() || null,
-          // null, not undefined: JSON.stringify drops undefined keys, so clearing
-          // a drawing sent nothing at all and the server kept the old file. An
-          // explicit null is what tells it the drawing was removed — and what
-          // makes the removal show up in the drawing history.
-          drawingFilePath: l.drawingFilePath || null,
+          // ADR-323: no drawingFilePath — the PDF lives in the Drawing Register
+          // only; the server takes the line's drawing from there.
           // Trimmed and always sent; the form is the only source of it and the API
           // requires a non-empty string. ADR-311: the equipment line has its own
           // Rev box now, and both paths refuse a blank Rev above — no fallback.
@@ -1335,8 +1330,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 {...register('lines.0.clientPoLineNo')}
               />
             </FormField>
-            {/* ADR-311: the equipment line's own Drawing Rev + drawing file,
-                both compulsory on a new Equipment SO (onValid). */}
+            {/* ADR-311: the equipment line's own Drawing Rev, compulsory (onValid).
+                ADR-323: no drawing upload — the PDF is in the Drawing Register. */}
             <FormField label="Drawing Rev" required size="sm" htmlFor="so-equip-rev">
               <input
                 id="so-equip-rev"
@@ -1350,23 +1345,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 {...upperCaseRevField(register('lines.0.revision'))}
               />
             </FormField>
-            <FormField label="Drawing File" size="md">
+            <FormField label="Drawing" size="md">
               <SoLineDrawingCell
-                value={watch('lines.0.drawingFilePath')}
-                onChange={(p) => setValue('lines.0.drawingFilePath', p, { shouldDirty: true })}
-                refCode={`${watch('header.code') || 'new SO'} L1`}
                 itemId={equipItemId}
                 itemCode={watch('lines.0.itemCodeText')}
                 rev={watch('lines.0.revision')}
-                {...(() => {
-                  const saved =
-                    props.mode === 'edit' && props.detail.type === 'equipment'
-                      ? props.detail.lines[0]
-                      : undefined;
-                  return saved
-                    ? { savedRev: saved.revision, savedPath: saved.drawingFilePath }
-                    : {};
-                })()}
               />
             </FormField>
             <FormField label="Remarks" size="md" htmlFor="so-equip-remarks">
@@ -1500,8 +1483,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             {/* The table scrolls inside its own wrapper, never the page. The item
                 picker's dropdown is portalled, so the wrapper cannot clip it.
                 Visible: # · Item Code + Drawing Rev · Item Name · POL · UOM · Qty
-                · Rate · Amount · Remarks. Material, Drawing No. and Drawing File
-                sit in the row's "▸ More" detail row. Widths sum to 100:
+                · Rate · Amount · Remarks. Drawing No. and the read-only drawing
+                link sit under Item Code + Drawing Rev (ADR-323); Material in
+                the row's "▸ More" detail row. Widths sum to 100:
                 4 + 22 + 14 + 7 + 5 + 7 + 8 + 9 + 12 + 12. */}
             <div className="tbl-wrap">
               <table
@@ -1515,7 +1499,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                     </th>
                     <th style={{ width: '22%' }}>
                       Item Code<span className="req">★</span> · Drawing Rev{' '}
-                      <span className="req">★</span>
+                      <span className="req">★</span> · Drawing No.
                     </th>
                     <th style={{ width: '14%' }}>Item Name</th>
                     <th className="th-ctr" style={{ width: '7%', color: 'var(--purple)' }}>
@@ -1613,6 +1597,35 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                                   rev={watch(`lines.${idx}.revision` as const)}
                                 />
                               </div>
+                              {/* Drawing No. is TYPED per line, exactly as it reads on
+                                  the customer's drawing for THIS order (user decision
+                                  2026-09-21). Re-picking the item never overwrites it.
+                                  ADR-323: on the main line, beside the read-only
+                                  "View drawing" link and notes — no upload here. */}
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  gap: 'var(--sp-1)',
+                                  alignItems: 'flex-start',
+                                  marginTop: 'var(--sp-1)',
+                                }}
+                              >
+                                <input
+                                  className="innovic-input fw-sm"
+                                  autoComplete="off"
+                                  placeholder="Drawing No."
+                                  aria-label={`Drawing No., line ${idx + 1}`}
+                                  maxLength={64}
+                                  {...register(`lines.${idx}.drawingNo` as const)}
+                                />
+                                <SoLineDrawingCell
+                                  itemId={ln?.itemId}
+                                  itemCode={ln?.itemCodeText}
+                                  rev={watch(`lines.${idx}.revision` as const)}
+                                  drawingNo={watch(`lines.${idx}.drawingNo` as const)}
+                                  confirm={revConfirm.confirmFor(field.id)}
+                                />
+                              </div>
                             </td>
                             {/* Auto-filled from the item master — read-only (set by pickItem). */}
                             <td>
@@ -1696,7 +1709,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                                   type="button"
                                   className="btn btn-ghost btn-sm"
                                   aria-expanded={open}
-                                  title="Material, Drawing No. and Drawing File"
+                                  title="Material"
                                   onClick={() => toggleLine(field.id)}
                                 >
                                   {open ? '▾' : '▸'} More
@@ -1733,55 +1746,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                                       autoComplete="off"
                                       readOnly
                                       {...register(`lines.${idx}.material` as const)}
-                                    />
-                                  </FormField>
-                                  {/* Drawing No. is TYPED per line, exactly as it reads on
-                                      the customer's drawing for THIS order (user decision
-                                      2026-09-21). Re-picking the item never overwrites it. */}
-                                  <FormField
-                                    label="Drawing No."
-                                    size="md"
-                                    htmlFor={`soln-dwg-${idx}`}
-                                  >
-                                    <input
-                                      id={`soln-dwg-${idx}`}
-                                      className="innovic-input"
-                                      autoComplete="off"
-                                      placeholder="Drawing No."
-                                      maxLength={64}
-                                      {...register(`lines.${idx}.drawingNo` as const)}
-                                    />
-                                  </FormField>
-                                  <FormField label="Drawing File" size="md">
-                                    <SoLineDrawingCell
-                                      value={watch(`lines.${idx}.drawingFilePath` as const)}
-                                      onChange={(p) =>
-                                        setValue(`lines.${idx}.drawingFilePath` as const, p, {
-                                          shouldDirty: true,
-                                        })
-                                      }
-                                      // For the drawing access log only. On a brand-new SO
-                                      // the code is still blank, so the row number is all
-                                      // there is to say.
-                                      refCode={`${watch('header.code') || 'new SO'} L${idx + 1}`}
-                                      // Item + Drawing Rev register: ABC/<rev> drawing
-                                      // fills in; saved Rev/file drive "Use as is".
-                                      itemId={ln?.itemId}
-                                      itemCode={ln?.itemCodeText}
-                                      rev={watch(`lines.${idx}.revision` as const)}
-                                      confirm={revConfirm.confirmFor(field.id)}
-                                      {...(() => {
-                                        const saved =
-                                          props.mode === 'edit' && ln?.id
-                                            ? props.detail.lines.find((d) => d.id === ln.id)
-                                            : undefined;
-                                        return saved
-                                          ? {
-                                              savedRev: saved.revision,
-                                              savedPath: saved.drawingFilePath,
-                                            }
-                                          : {};
-                                      })()}
                                     />
                                   </FormField>
                                 </FormGrid>

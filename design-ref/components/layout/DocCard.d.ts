@@ -24,5 +24,10 @@ export interface DocCardProps {
 }
 export declare function DocCard(props: DocCardProps): React.JSX.Element;
 /** "▸ LINE ITEMS — CODE  Open full detail →" band with a nested table as children. */
-export interface LinesPanelProps { title?: string; code: string; onOpenDetail?: () => void; children?: React.ReactNode; }
+export interface LinesPanelProps {
+  title?: string;
+  code: string;
+  onOpenDetail?: () => void;
+  children?: React.ReactNode;
+}
 export declare function LinesPanel(props: LinesPanelProps): React.JSX.Element;

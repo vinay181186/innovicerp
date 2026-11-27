@@ -7,11 +7,11 @@ the source; where the code does not set a value it says **not specified in code*
 
 Source files:
 
-| Screen | File(s) |
-| --- | --- |
-| Job Cards LIST | `apps/web/src/modules/job-cards/routes/list.tsx` (1037 lines) |
-| Job Card DETAIL | `routes/status.tsx` → `components/jc-status-content.tsx` → `components/jc-status-view.tsx` + `jc-view-summary.tsx` + `jc-stat-tiles.tsx` + `jc-view-tabs.tsx` |
-| Purchase Orders LIST | `apps/web/src/modules/purchase-orders/routes/list.tsx` (548) + `components/po-sheet-table.tsx` (218) |
+| Screen               | File(s)                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Job Cards LIST       | `apps/web/src/modules/job-cards/routes/list.tsx` (1037 lines)                                                                                                 |
+| Job Card DETAIL      | `routes/status.tsx` → `components/jc-status-content.tsx` → `components/jc-status-view.tsx` + `jc-view-summary.tsx` + `jc-stat-tiles.tsx` + `jc-view-tabs.tsx` |
+| Purchase Orders LIST | `apps/web/src/modules/purchase-orders/routes/list.tsx` (548) + `components/po-sheet-table.tsx` (218)                                                          |
 
 Shared: `@/components/shared/stat-strip`, `@/components/shared/item-badge`,
 `@/components/shared/searchable-select`, `@/components/shared/file-preview-modal`.
@@ -22,24 +22,24 @@ Shared: `@/components/shared/stat-strip`, `@/components/shared/item-badge`,
 
 Tokens (`01-tokens.css`):
 
-| Token | Value | Used for |
-| --- | --- | --- |
-| `--fs-body` | `14px` | body |
-| `--fs-control` | `13px` | `.btn`, `.innovic-input`, `.innovic-select`, `.innovic-table td` |
-| `--fs-label` | `11px` | `.btn-sm`, `.form-label`, `.stat-sub` |
-| `--fs-mono` | `11px` | `.badge`, `.innovic-table th` (base variant) |
-| `--fs-heading` | `17px` | — |
-| `--fs-section` | `22px` | `.section-hdr` |
-| `--fs-stat` | `28px` | `.stat-val` |
-| `--hfont` | `'Barlow Condensed', sans-serif` | headings, panel titles, sheet `th` |
-| `--bfont` | `'Barlow', sans-serif` | body, buttons, inputs |
-| `--mono` | `'Source Code Pro', monospace` | `.mono`, `.td-code`, `.badge` |
-| `--radius-sm / --radius / --radius2` | `4px / 6px / 8px` | badges / buttons+inputs / panels |
-| `--bg / --bg2 / --bg3 / --bg4 / --bg5` | `#f5f7fa / #ffffff / #f8fafc / #f2f4f7 / #eaecf0` | page / panel / header band / hover / track |
-| `--border / --border2 / --border3` | `#d8e1ec / #c8d3e0 / #b3c1d1` | hairline / gridline / visible grey |
-| `--text / --text2 / --text3` | `#172b4d / #667085 / #7b8aa0` | value / secondary / caption |
-| `--blue` `--blue2` `--blue3` | `#155eef / #123b73 / #eff6ff` | codes, primary btn, sheet header |
-| `--green/2/3` `--amber/2/3` `--red/2/3` `--purple/2/3` `--cyan` `--teal2/3` | see tokens | status tones |
+| Token                                                                       | Value                                             | Used for                                                         |
+| --------------------------------------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------- |
+| `--fs-body`                                                                 | `14px`                                            | body                                                             |
+| `--fs-control`                                                              | `13px`                                            | `.btn`, `.innovic-input`, `.innovic-select`, `.innovic-table td` |
+| `--fs-label`                                                                | `11px`                                            | `.btn-sm`, `.form-label`, `.stat-sub`                            |
+| `--fs-mono`                                                                 | `11px`                                            | `.badge`, `.innovic-table th` (base variant)                     |
+| `--fs-heading`                                                              | `17px`                                            | —                                                                |
+| `--fs-section`                                                              | `22px`                                            | `.section-hdr`                                                   |
+| `--fs-stat`                                                                 | `28px`                                            | `.stat-val`                                                      |
+| `--hfont`                                                                   | `'Barlow Condensed', sans-serif`                  | headings, panel titles, sheet `th`                               |
+| `--bfont`                                                                   | `'Barlow', sans-serif`                            | body, buttons, inputs                                            |
+| `--mono`                                                                    | `'Source Code Pro', monospace`                    | `.mono`, `.td-code`, `.badge`                                    |
+| `--radius-sm / --radius / --radius2`                                        | `4px / 6px / 8px`                                 | badges / buttons+inputs / panels                                 |
+| `--bg / --bg2 / --bg3 / --bg4 / --bg5`                                      | `#f5f7fa / #ffffff / #f8fafc / #f2f4f7 / #eaecf0` | page / panel / header band / hover / track                       |
+| `--border / --border2 / --border3`                                          | `#d8e1ec / #c8d3e0 / #b3c1d1`                     | hairline / gridline / visible grey                               |
+| `--text / --text2 / --text3`                                                | `#172b4d / #667085 / #7b8aa0`                     | value / secondary / caption                                      |
+| `--blue` `--blue2` `--blue3`                                                | `#155eef / #123b73 / #eff6ff`                     | codes, primary btn, sheet header                                 |
+| `--green/2/3` `--amber/2/3` `--red/2/3` `--purple/2/3` `--cyan` `--teal2/3` | see tokens                                        | status tones                                                     |
 
 Chrome heights: `.btn` `padding: 7px 12px` + 1px border ≈ 32px, deliberately equal to
 `.innovic-input` (`padding: 7px 10px`) so a filter row lines up. `.btn-sm` = `4px 10px`
@@ -117,14 +117,14 @@ app a horizontal scrollbar).
 **C. KPI strip** — ONE `<StatStrip>` inside `<div style={{ marginBottom: 10 }}>`. Six
 items, computed from the **loaded/filtered rows**, not global:
 
-| key | label | colour | rule |
-| --- | --- | --- | --- |
-| `total` | `Total Job Cards` | `var(--cyan)` | `rows.length` |
-| `open` | `Open` | `var(--amber)` | not done, no ops done |
-| `in_progress` | `In Progress` | `var(--blue)` | `doneOps > 0 \|\| status==='qc_pending' \|\| runningCount > 0` |
-| `on_hold` | `On Hold` | `var(--text3)` | always `0`; `title="No hold state exists in job-card data — see report"` |
-| `completed` | `Completed` | `var(--green)` | `complete` or `closed` |
-| `overdue` | `Overdue` | `var(--red)` | `!isDone && dueDate < today` |
+| key           | label             | colour         | rule                                                                     |
+| ------------- | ----------------- | -------------- | ------------------------------------------------------------------------ |
+| `total`       | `Total Job Cards` | `var(--cyan)`  | `rows.length`                                                            |
+| `open`        | `Open`            | `var(--amber)` | not done, no ops done                                                    |
+| `in_progress` | `In Progress`     | `var(--blue)`  | `doneOps > 0 \|\| status==='qc_pending' \|\| runningCount > 0`           |
+| `on_hold`     | `On Hold`         | `var(--text3)` | always `0`; `title="No hold state exists in job-card data — see report"` |
+| `completed`   | `Completed`       | `var(--green)` | `complete` or `closed`                                                   |
+| `overdue`     | `Overdue`         | `var(--red)`   | `!isDone && dueDate < today`                                             |
 
 No `onClick` / `to` on these items → each cell renders as a plain `<div>`, **not**
 announced as a control. Under the strip:
@@ -146,22 +146,22 @@ Optional `sub` = `className="text3"` `fontSize:11`. Interactive cells are real
 
 Row 1 (`flex; flexWrap:wrap; gap:8; alignItems:center; marginBottom:8`), left→right:
 
-| # | Control | class | width / size | text |
-| --- | --- | --- | --- | --- |
-| 1 | text input (debounced 300ms → `?search=`) | `innovic-input` | `width: 320, fontSize: 12` | placeholder `Search JC no., item code / name, customer, SO no.…` |
-| 2 | status select | `innovic-select` | `width: 180, fontSize: 12` | `All statuses` + `JC_COMPUTED_STATUSES` with `_`→space |
-| 3 | `<span style={{ flex: 1 }} />` spacer | — | — | — |
-| 4 | List/Card toggle, `display:flex; gap:4` | `` `btn btn-sm ${view==='list' ? 'btn-primary':'btn-ghost'}` `` | — | `List View` / `Card View`, `aria-pressed` |
+| #   | Control                                   | class                                                           | width / size               | text                                                             |
+| --- | ----------------------------------------- | --------------------------------------------------------------- | -------------------------- | ---------------------------------------------------------------- |
+| 1   | text input (debounced 300ms → `?search=`) | `innovic-input`                                                 | `width: 320, fontSize: 12` | placeholder `Search JC no., item code / name, customer, SO no.…` |
+| 2   | status select                             | `innovic-select`                                                | `width: 180, fontSize: 12` | `All statuses` + `JC_COMPUTED_STATUSES` with `_`→space           |
+| 3   | `<span style={{ flex: 1 }} />` spacer     | —                                                               | —                          | —                                                                |
+| 4   | List/Card toggle, `display:flex; gap:4`   | `` `btn btn-sm ${view==='list' ? 'btn-primary':'btn-ghost'}` `` | —                          | `List View` / `Card View`, `aria-pressed`                        |
 
 Row 2 — `display:grid; gridTemplateColumns:'repeat(4, minmax(0, 1fr))'; gap:8`, all
 `fontSize: 12`:
 
-| # | Control | class | options / type |
-| --- | --- | --- | --- |
-| 1 | machine select | `innovic-select` | `All machines` + `{code} — {name}` |
-| 2 | operator select | `innovic-select` | `All operators` + `{code} — {name}` |
-| 3 | from date | `innovic-input` `type="date"` | `placeholder="From date"` |
-| 4 | to date | `innovic-input` `type="date"` | `placeholder="To date"` |
+| #   | Control         | class                         | options / type                      |
+| --- | --------------- | ----------------------------- | ----------------------------------- |
+| 1   | machine select  | `innovic-select`              | `All machines` + `{code} — {name}`  |
+| 2   | operator select | `innovic-select`              | `All operators` + `{code} — {name}` |
+| 3   | from date       | `innovic-input` `type="date"` | `placeholder="From date"`           |
+| 4   | to date         | `innovic-input` `type="date"` | `placeholder="To date"`             |
 
 Search debounce uses the shared `normalizeSearchTerm(searchInput)` so `"  IN-JC  26 "`
 and `"IN-JC 26"` are one query, one cache entry, one URL.
@@ -191,20 +191,20 @@ Access guard (before anything renders):
 
 `<colgroup>` widths sum to 100% so the sheet never scrolls sideways.
 
-| # | Header | Width | Renders | Align | Font treatment | Truncation | Clickable |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `Sr No` | `4%` | `(page-1)*PAGE_SIZE + i + 1` | centre | `className="text3"` | — | row only |
-| 2 | `Job Card No.` | `11%` | `<Link className="td-code" style={{color:'var(--blue)',fontWeight:800}}>` `{jc.code}`, plus 2nd line `Rev. {itemRevision}` (`className="mono"`, `fontSize:9`, `var(--text3)`) | centre | mono 13px fw-800 blue | — | **yes**, `title="View job card status"`, `onClick={e=>e.stopPropagation()}` |
-| 3 | `Thumbnail` (`<ItemThumbnailHeader/>`) | `THUMBNAIL_COL_WIDTH = '8%'` | `<ItemThumbnailCell imagePath alt>` — product image fills the cell edge-to-edge (`td padding:0; position:relative; height:40`) | — | — | `object-fit: cover` | **yes** → opens `FilePreviewModal`, stops propagation |
-| 4 | `Part / Description` | `12%` | `<ItemBadge size="row" showImage={false} code name revision style={{display:'flex',width:'100%'}} />` | **left** (`style={{textAlign:'left'}}` on th AND td) | code `mono fw-700` `var(--purple)` 12px; name `text2` 11px | code+name `nowrap + ellipsis + title`, name `maxWidth 200` | no |
-| 5 | `SO No.` | `9%` | `<Link className="mono" style={{fontSize:11,color:'var(--blue)',textDecoration:'none'}}>` to `/sales-orders/$id` or `/job-work-orders/$id`; `/lineNo` suffix at `fontSize:9` when `lineNo !== 1`; else `<span className="text3">—</span>` | centre | mono 11px blue | — | **yes**, stops propagation |
-| 6 | `Qty (Plan)` | `6%` | `<span className="mono fw-700">{orderQty}</span>` + `<span className="text3" style={{fontSize:10}}>Nos</span>` | centre | mono fw-700 | one line | no |
-| 7 | `Progress` | `8%` | 80×4 track `background:'var(--bg5)'; borderRadius:2` with `var(--green)` fill at `{pct}%`, caption `{done} / {orderQty} · {pct}%` (`className="mono"`, 9px, `var(--text3)`) | centre | mono 9px | `minWidth: 80` | no |
-| 8 | `Status` | `8%` | `<JcStatusBadge status={computedStatus}/>` → `badge b-grey\|b-amber\|b-cyan\|b-green\|b-red`, labels `open / qc pending / complete / closed / no ops` | centre | `.badge` mono 11px 700 uppercase | nowrap | no |
-| 9 | `Start Date` | `7%` | `{jc.jcDate}` | centre | `className="mono" style={{fontSize:11}}` | — | no |
-| 10 | `Due Date` | `7%` | `{dueDate ?? '—'}`; optional 2nd line `Disp {customerDispatchDate}` (`className="text3"`, `fontSize:11`, `whiteSpace:'nowrap'`, `title="Customer Dispatch Date (from the plan)"`) | centre | mono 11px | nowrap | no |
-| 11 | `Days Left` | `5%` | `<span className="mono fw-700" style={{color: dColor}}>` — `—` when done/no due; `<0` red, `≤5` amber, else green; `var(--text3)` when null | centre | mono fw-700, tone-coloured | — | no |
-| 12 | `Action` | `15%` | see below | centre, `td style={{ padding: '8px 2px' }}` | — | `flexWrap:'nowrap'` | buttons only |
+| #   | Header                                 | Width                        | Renders                                                                                                                                                                                                                                   | Align                                                | Font treatment                                             | Truncation                                                 | Clickable                                                                   |
+| --- | -------------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 1   | `Sr No`                                | `4%`                         | `(page-1)*PAGE_SIZE + i + 1`                                                                                                                                                                                                              | centre                                               | `className="text3"`                                        | —                                                          | row only                                                                    |
+| 2   | `Job Card No.`                         | `11%`                        | `<Link className="td-code" style={{color:'var(--blue)',fontWeight:800}}>` `{jc.code}`, plus 2nd line `Rev. {itemRevision}` (`className="mono"`, `fontSize:9`, `var(--text3)`)                                                             | centre                                               | mono 13px fw-800 blue                                      | —                                                          | **yes**, `title="View job card status"`, `onClick={e=>e.stopPropagation()}` |
+| 3   | `Thumbnail` (`<ItemThumbnailHeader/>`) | `THUMBNAIL_COL_WIDTH = '8%'` | `<ItemThumbnailCell imagePath alt>` — product image fills the cell edge-to-edge (`td padding:0; position:relative; height:40`)                                                                                                            | —                                                    | —                                                          | `object-fit: cover`                                        | **yes** → opens `FilePreviewModal`, stops propagation                       |
+| 4   | `Part / Description`                   | `12%`                        | `<ItemBadge size="row" showImage={false} code name revision style={{display:'flex',width:'100%'}} />`                                                                                                                                     | **left** (`style={{textAlign:'left'}}` on th AND td) | code `mono fw-700` `var(--purple)` 12px; name `text2` 11px | code+name `nowrap + ellipsis + title`, name `maxWidth 200` | no                                                                          |
+| 5   | `SO No.`                               | `9%`                         | `<Link className="mono" style={{fontSize:11,color:'var(--blue)',textDecoration:'none'}}>` to `/sales-orders/$id` or `/job-work-orders/$id`; `/lineNo` suffix at `fontSize:9` when `lineNo !== 1`; else `<span className="text3">—</span>` | centre                                               | mono 11px blue                                             | —                                                          | **yes**, stops propagation                                                  |
+| 6   | `Qty (Plan)`                           | `6%`                         | `<span className="mono fw-700">{orderQty}</span>` + `<span className="text3" style={{fontSize:10}}>Nos</span>`                                                                                                                            | centre                                               | mono fw-700                                                | one line                                                   | no                                                                          |
+| 7   | `Progress`                             | `8%`                         | 80×4 track `background:'var(--bg5)'; borderRadius:2` with `var(--green)` fill at `{pct}%`, caption `{done} / {orderQty} · {pct}%` (`className="mono"`, 9px, `var(--text3)`)                                                               | centre                                               | mono 9px                                                   | `minWidth: 80`                                             | no                                                                          |
+| 8   | `Status`                               | `8%`                         | `<JcStatusBadge status={computedStatus}/>` → `badge b-grey\|b-amber\|b-cyan\|b-green\|b-red`, labels `open / qc pending / complete / closed / no ops`                                                                                     | centre                                               | `.badge` mono 11px 700 uppercase                           | nowrap                                                     | no                                                                          |
+| 9   | `Start Date`                           | `7%`                         | `{jc.jcDate}`                                                                                                                                                                                                                             | centre                                               | `className="mono" style={{fontSize:11}}`                   | —                                                          | no                                                                          |
+| 10  | `Due Date`                             | `7%`                         | `{dueDate ?? '—'}`; optional 2nd line `Disp {customerDispatchDate}` (`className="text3"`, `fontSize:11`, `whiteSpace:'nowrap'`, `title="Customer Dispatch Date (from the plan)"`)                                                         | centre                                               | mono 11px                                                  | nowrap                                                     | no                                                                          |
+| 11  | `Days Left`                            | `5%`                         | `<span className="mono fw-700" style={{color: dColor}}>` — `—` when done/no due; `<0` red, `≤5` amber, else green; `var(--text3)` when null                                                                                               | centre                                               | mono fw-700, tone-coloured                                 | —                                                          | no                                                                          |
+| 12  | `Action`                               | `15%`                        | see below                                                                                                                                                                                                                                 | centre, `td style={{ padding: '8px 2px' }}`          | —                                                          | `flexWrap:'nowrap'`                                        | buttons only                                                                |
 
 **Row click target** — the whole `<tr>`:
 
@@ -223,13 +223,13 @@ stopPropagation div:
      onClick={(e) => e.stopPropagation()}>
 ```
 
-| Order | Control | class | icon | title / aria-label | gate |
-| --- | --- | --- | --- | --- | --- |
-| 1 | `<Link to="/job-cards/$id">` | `btn btn-ghost btn-sm btn-icon` + `style={{padding:'2px 3px'}}` | `<Eye size={13}/>` | `View` | — |
-| 2 | `<PrintJcButton iconOnly/>` | `btn btn-ghost btn-sm btn-icon` | `<Printer size={13}/>` | `Print` | — |
-| 3 | `<ExcelJcButton iconOnly/>` | `btn btn-ghost btn-sm btn-icon` | `<Download size={13}/>` | `Download Excel` | — |
-| 4–5 | `<JcRowWriteActions iconOnly/>` | Edit `btn btn-ghost btn-sm btn-icon` (`<Pencil size={13}/>`), Delete `btn btn-danger btn-sm btn-icon` (`<Trash2 size={13}/>`), confirm step = `<Check size={13}/>` / `<X size={13}/>` | | `Edit` / `Delete` / `Confirm delete` / `Cancel` | self-gated inside |
-| 6 | `<AssignTaskButton className="btn btn-ghost btn-sm btn-icon" label="" />` | ↑ | `👤+` | — | self-gated inside |
+| Order | Control                                                                   | class                                                                                                                                                                                 | icon                    | title / aria-label                              | gate              |
+| ----- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | ----------------------------------------------- | ----------------- |
+| 1     | `<Link to="/job-cards/$id">`                                              | `btn btn-ghost btn-sm btn-icon` + `style={{padding:'2px 3px'}}`                                                                                                                       | `<Eye size={13}/>`      | `View`                                          | —                 |
+| 2     | `<PrintJcButton iconOnly/>`                                               | `btn btn-ghost btn-sm btn-icon`                                                                                                                                                       | `<Printer size={13}/>`  | `Print`                                         | —                 |
+| 3     | `<ExcelJcButton iconOnly/>`                                               | `btn btn-ghost btn-sm btn-icon`                                                                                                                                                       | `<Download size={13}/>` | `Download Excel`                                | —                 |
+| 4–5   | `<JcRowWriteActions iconOnly/>`                                           | Edit `btn btn-ghost btn-sm btn-icon` (`<Pencil size={13}/>`), Delete `btn btn-danger btn-sm btn-icon` (`<Trash2 size={13}/>`), confirm step = `<Check size={13}/>` / `<X size={13}/>` |                         | `Edit` / `Delete` / `Confirm delete` / `Cancel` | self-gated inside |
+| 6     | `<AssignTaskButton className="btn btn-ghost btn-sm btn-icon" label="" />` | ↑                                                                                                                                                                                     | `👤+`                   | —                                               | self-gated inside |
 
 CSS that makes this fit: `.innovic-table.tbl-grid td:last-child .jc-row-acts .btn-sm`
 = `inline-flex; gap:4; padding:2px 6px; height:24px; white-space:nowrap`.
@@ -275,16 +275,16 @@ No `validateSearch` → **no search params**. `routes/status.tsx` is a 35-line w
 
 **A. Header bar** — `display:flex; alignItems:center; gap:10; flexWrap:wrap; marginBottom:12`.
 
-| Order | Element | class / style | text |
-| --- | --- | --- | --- |
-| 1 | title | `className="section-hdr" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}` with the code in `<span className="mono" style={{ color: 'var(--text)' }}>` | `Job Card : {jc.code}` |
-| 2 | status | `<JcStatusBadge status={jc.computedStatus}/>` | — |
-| 3 | spacer | `<span style={{ flex: 1 }} />` | — |
-| 4 | back | `btn btn-ghost btn-sm` + `<ArrowLeft size={14}/>` | `Back to List` → `/job-cards` |
-| 5 | print | `btn btn-ghost btn-sm`, `disabled={opsLoading}`, `<Printer size={13}/>` | `Print Job Card` |
-| 6 | excel | `btn btn-ghost btn-sm`, `<Download size={13}/>`, `title="Download Excel (with production log)"` | `Excel` |
-| 7 | **primary** | `btn btn-primary btn-sm` | `▶ Production Entry` → `/op-entry?jc={code}` |
-| 8 | edit | `btn btn-ghost btn-sm` + `<Pencil size={14}/>`, gated `effectiveFormPerms(eff,'jc_create').edit` | `Edit Job Card` |
+| Order | Element     | class / style                                                                                                                                           | text                                         |
+| ----- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| 1     | title       | `className="section-hdr" style={{ marginBottom: 0, whiteSpace: 'nowrap' }}` with the code in `<span className="mono" style={{ color: 'var(--text)' }}>` | `Job Card : {jc.code}`                       |
+| 2     | status      | `<JcStatusBadge status={jc.computedStatus}/>`                                                                                                           | —                                            |
+| 3     | spacer      | `<span style={{ flex: 1 }} />`                                                                                                                          | —                                            |
+| 4     | back        | `btn btn-ghost btn-sm` + `<ArrowLeft size={14}/>`                                                                                                       | `Back to List` → `/job-cards`                |
+| 5     | print       | `btn btn-ghost btn-sm`, `disabled={opsLoading}`, `<Printer size={13}/>`                                                                                 | `Print Job Card`                             |
+| 6     | excel       | `btn btn-ghost btn-sm`, `<Download size={13}/>`, `title="Download Excel (with production log)"`                                                         | `Excel`                                      |
+| 7     | **primary** | `btn btn-primary btn-sm`                                                                                                                                | `▶ Production Entry` → `/op-entry?jc={code}` |
+| 8     | edit        | `btn btn-ghost btn-sm` + `<Pencil size={14}/>`, gated `effectiveFormPerms(eff,'jc_create').edit`                                                        | `Edit Job Card`                              |
 
 Note: on a detail page the action cluster sits at the **right end of the title row**, all
 `btn-sm`, icon **plus** label (lists are icon-only; detail pages are labelled).
@@ -296,12 +296,12 @@ Note: on a detail page the action cluster sits at the **right end of the title r
 with four flex columns (responsive with no media query — the flex-bases sum under 1240px
 so a 1280px laptop keeps one line):
 
-| Col | `flex` | Contents |
-| --- | --- | --- |
-| 1 Product | `'0 1 280px'` | `<ItemBadge size="tile" codeColor="var(--text)" nameMaxWidth="none">` (120px picture, `object-fit: contain`, 8px padding, `boxShadow 0 1px 3px rgba(20,40,70,0.08)`), children = `Material:` / `Size:` rows (`fontSize:12.5`, label `var(--text3)`, value `mono fw-700` + ellipsis + `title`); then `👁 Open drawing` (`btn btn-ghost btn-sm`) and, for image drawings, a thumbnail button (`border:1px solid var(--border2)`, `borderRadius:8`, `img maxHeight:56, maxWidth:116`) |
-| 2 References | `'1 1 230px'` | 2-col grid `gridTemplateColumns:'auto minmax(0, 1fr)'; columnGap:12; rowGap:4; alignItems:'baseline'`. `Kv` pairs: label `{fontSize:12, color:'var(--text3)', whiteSpace:'nowrap'}`, value `{fontSize:12.5, fontWeight:600, color:'var(--text)'}`. Rows: `Drawing`, `SO No. / Line` (or `JW No. / Line`), `Route Card` (+ `badge b-grey` `Rev n`), `Prod. Order` (+ `· POL n` in `mono fw-700` `var(--purple)`), conditional `Parent JC`, conditional `Child JC` (each with `badge b-amber` `REWORK` / `badge b-blue` `REPAIR`). Code links: `className="mono fw-700"` + `codeLink = {color:'var(--blue)', textDecoration:'none', fontSize:12}` |
-| 3 KPI tiles | `'1.5 1 400px'` | `display:grid; gridTemplateColumns:'repeat(auto-fit, minmax(72px, 1fr))'; gap:6` — 5 across, folds to 3/2 |
-| 4 Meta | `'0 0 auto'` | 2-col grid `'auto auto'; columnGap:10; rowGap:4`, values right-aligned |
+| Col          | `flex`          | Contents                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------ | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 Product    | `'0 1 280px'`   | `<ItemBadge size="tile" codeColor="var(--text)" nameMaxWidth="none">` (120px picture, `object-fit: contain`, 8px padding, `boxShadow 0 1px 3px rgba(20,40,70,0.08)`), children = `Material:` / `Size:` rows (`fontSize:12.5`, label `var(--text3)`, value `mono fw-700` + ellipsis + `title`); then `👁 Open drawing` (`btn btn-ghost btn-sm`) and, for image drawings, a thumbnail button (`border:1px solid var(--border2)`, `borderRadius:8`, `img maxHeight:56, maxWidth:116`)                                                                                                                                                              |
+| 2 References | `'1 1 230px'`   | 2-col grid `gridTemplateColumns:'auto minmax(0, 1fr)'; columnGap:12; rowGap:4; alignItems:'baseline'`. `Kv` pairs: label `{fontSize:12, color:'var(--text3)', whiteSpace:'nowrap'}`, value `{fontSize:12.5, fontWeight:600, color:'var(--text)'}`. Rows: `Drawing`, `SO No. / Line` (or `JW No. / Line`), `Route Card` (+ `badge b-grey` `Rev n`), `Prod. Order` (+ `· POL n` in `mono fw-700` `var(--purple)`), conditional `Parent JC`, conditional `Child JC` (each with `badge b-amber` `REWORK` / `badge b-blue` `REPAIR`). Code links: `className="mono fw-700"` + `codeLink = {color:'var(--blue)', textDecoration:'none', fontSize:12}` |
+| 3 KPI tiles  | `'1.5 1 400px'` | `display:grid; gridTemplateColumns:'repeat(auto-fit, minmax(72px, 1fr))'; gap:6` — 5 across, folds to 3/2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 4 Meta       | `'0 0 auto'`    | 2-col grid `'auto auto'; columnGap:10; rowGap:4`, values right-aligned                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 `KpiTile` (the detail-page tile — distinct from StatStrip): `border: 1px solid <tone>;
 borderRadius: 7; padding: '6px 8px'; textAlign:'center'`, number `className="mono"`
@@ -334,6 +334,7 @@ optional `right` slot `display:flex; alignItems:center; gap:10`.
 `JcOpFlowCards`: wrapping strip, `flexWrap:'wrap'; alignItems:'stretch'; rowGap:8`.
 Every card is the SAME fixed size — `flex:'0 0 150px'; width:150; height:92;
 border: 1.5px solid <tone>; borderRadius:8; padding:'7px 10px'` — four stacked lines:
+
 1. `OP{srNo}` (+ ` · QC` / ` · OSP`) — `className="mono"` `fontSize:11; fontWeight:800; var(--text3)`
 2. machine / `QC` / `OUTSOURCE` — `className="fw-700"` `fontSize:13`, nowrap+ellipsis+`title`
 3. operation name — `fontSize:12`, nowrap+ellipsis+`title`
@@ -409,7 +410,7 @@ Vendor purchase orders, ported from legacy `renderPurchaseOrders`.
 export const purchaseOrdersListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'purchase-orders',
-  validateSearch: listSearchSchema,   // search?, status?, poType?, page (default 1)
+  validateSearch: listSearchSchema, // search?, status?, poType?, page (default 1)
   component: PurchaseOrdersListPage,
 });
 ```
@@ -428,23 +429,30 @@ export const purchaseOrdersListRoute = createRoute({
 - Left: `<div className="section-hdr" style={{ marginBottom: 0 }}>🛒 Purchase Orders</div>`
 - Right cluster `display:flex; alignItems:center; gap:8`, left→right:
 
-| # | Control | class | width | text |
-| --- | --- | --- | --- | --- |
-| 1 | search input (300ms debounce) | `innovic-input` | `width: 240, fontSize: 12` | placeholder `🔍 Search this list…` (deliberately generic — the API matches PO code, PR ref, vendor code/name, status, type, date and line item code/name) |
-| 2 | status select | `innovic-select` | `width: 140, fontSize: 12` | `All statuses` + `PO_STATUSES` |
-| 3 | type select | `innovic-select` | `width: 140, fontSize: 12` | `All types` + `PO_TYPES` |
-| 4 | refetch pill | `text3`, `fontSize: 11, fontFamily: 'var(--mono)'` | — | `<Loader2 className="inline h-3 w-3 animate-spin" /> Updating…` |
-| 5 | primary action | `btn btn-primary` | — | `<Plus size={14} /> New PO` → `/purchase-orders/from-pr`, gated `perms.entry` |
-| 6 | view toggle | `` `btn btn-sm ${view==='list'?'btn-primary':'btn-ghost'}` `` | — | `List View` / `Card View` |
+| #   | Control                       | class                                                         | width                      | text                                                                                                                                                      |
+| --- | ----------------------------- | ------------------------------------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | search input (300ms debounce) | `innovic-input`                                               | `width: 240, fontSize: 12` | placeholder `🔍 Search this list…` (deliberately generic — the API matches PO code, PR ref, vendor code/name, status, type, date and line item code/name) |
+| 2   | status select                 | `innovic-select`                                              | `width: 140, fontSize: 12` | `All statuses` + `PO_STATUSES`                                                                                                                            |
+| 3   | type select                   | `innovic-select`                                              | `width: 140, fontSize: 12` | `All types` + `PO_TYPES`                                                                                                                                  |
+| 4   | refetch pill                  | `text3`, `fontSize: 11, fontFamily: 'var(--mono)'`            | —                          | `<Loader2 className="inline h-3 w-3 animate-spin" /> Updating…`                                                                                           |
+| 5   | primary action                | `btn btn-primary`                                             | —                          | `<Plus size={14} /> New PO` → `/purchase-orders/from-pr`, gated `perms.entry`                                                                             |
+| 6   | view toggle                   | `` `btn btn-sm ${view==='list'?'btn-primary':'btn-ghost'}` `` | —                          | `List View` / `Card View`                                                                                                                                 |
 
 **C. No KPI strip.** Deliberate — legacy's stat-card filter row was not ported
 (see `docs/ISSUES.md` ISSUE-030). Instead, an **active-filter chip row** below the band,
 rendered only when `search.status || search.poType`:
 
 ```jsx
-<div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, fontSize:12 }}>
-  <span className="text3">Filtered: <span className="amber" style={{ fontWeight: 700 }}>{activeFilter}</span></span>
-  <button type="button" className="btn btn-ghost btn-sm">Show All</button>
+<div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 12 }}>
+  <span className="text3">
+    Filtered:{' '}
+    <span className="amber" style={{ fontWeight: 700 }}>
+      {activeFilter}
+    </span>
+  </span>
+  <button type="button" className="btn btn-ghost btn-sm">
+    Show All
+  </button>
 </div>
 ```
 
@@ -462,20 +470,20 @@ Texts differ: `Loading…`, `Failed to load purchase orders`, `No purchase order
 
 Column order follows legacy L25350-25355. `<colgroup>` sums to 100%.
 
-| # | Header | Width | Renders | Align | Font treatment | Truncation | Clickable |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `Sr No` | `4%` | `i + 1` | centre | `className="text3"` | — | row only |
-| 2 | `PO No.` | `11%` | `<Link className="td-code" style={{color:'var(--blue)',fontWeight:800,fontSize:13}}>{po.code}</Link>` + 2nd line `{po.poDate}` (`className="mono"`, `fontSize:11`, `var(--text3)`) | centre | mono 13px fw-800 blue | — | **yes**, `title="Open the PO detail page"`, stops propagation |
-| 3 | `Type` | `5%` | `` `badge ${isJW ? 'b-amber' : isSvc ? 'b-teal' : 'b-blue'}` `` showing `JW` / `SVC` / `MAT` | centre | `.badge` mono 11px 700 uppercase | nowrap | no |
-| 4 | `Vendor` | `16%` | `<span className="fw-700" style={{display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}} title={vendor}>` — `vendorName ?? vendorCodeText ?? '—'` | **left** (`textAlign:'left'` on th AND td) | fw-700, body font | ellipsis + `title` | no |
-| 5 | `PR Ref` | `10%` | `<span className="mono" style={{color:'var(--purple)',fontWeight:700,fontSize:12}}>{prCodeText ?? '—'}</span>` | centre | mono 700 purple 12px | — | no |
-| 6 | `Lines` | `5%` | `{po.lineCount}` | centre | `className="mono"` | — | no |
-| 7 | `Total Qty` | `7%` | `<span className="mono fw-700">{totalQty}</span>` | centre | mono fw-700 | — | no |
-| 8 | `Received` | `7%` | `mono fw-700`, `color: receivedQty > 0 ? 'var(--green)' : 'var(--text3)'` | centre | mono fw-700, tone | — | no |
-| 9 | `Pending` | `7%` | `mono fw-700`, `color: pending > 0 ? 'var(--amber)' : 'var(--green)'` | centre | mono fw-700, tone | — | no |
-| 10 | `Value` | `7%` | `<span className="mono">₹{Math.round(v).toLocaleString('en-IN')}</span>`; `null` (prices hidden for this viewer) → `<span className="text3">—</span>` | centre | mono | — | no |
-| 11 | `Status` | `7%` | `<PoStatusBadge>` → `b-grey` draft/cancelled, `b-blue` open, `b-amber` partial/qc_pending, `b-green` closed; label = status with `_`→space | centre | `.badge` | nowrap | no |
-| 12 | `Action` | `14%` | 2×2 grid, see below | centre | — | — | buttons only |
+| #   | Header      | Width | Renders                                                                                                                                                                            | Align                                      | Font treatment                   | Truncation         | Clickable                                                     |
+| --- | ----------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | -------------------------------- | ------------------ | ------------------------------------------------------------- |
+| 1   | `Sr No`     | `4%`  | `i + 1`                                                                                                                                                                            | centre                                     | `className="text3"`              | —                  | row only                                                      |
+| 2   | `PO No.`    | `11%` | `<Link className="td-code" style={{color:'var(--blue)',fontWeight:800,fontSize:13}}>{po.code}</Link>` + 2nd line `{po.poDate}` (`className="mono"`, `fontSize:11`, `var(--text3)`) | centre                                     | mono 13px fw-800 blue            | —                  | **yes**, `title="Open the PO detail page"`, stops propagation |
+| 3   | `Type`      | `5%`  | `` `badge ${isJW ? 'b-amber' : isSvc ? 'b-teal' : 'b-blue'}` `` showing `JW` / `SVC` / `MAT`                                                                                       | centre                                     | `.badge` mono 11px 700 uppercase | nowrap             | no                                                            |
+| 4   | `Vendor`    | `16%` | `<span className="fw-700" style={{display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}} title={vendor}>` — `vendorName ?? vendorCodeText ?? '—'`      | **left** (`textAlign:'left'` on th AND td) | fw-700, body font                | ellipsis + `title` | no                                                            |
+| 5   | `PR Ref`    | `10%` | `<span className="mono" style={{color:'var(--purple)',fontWeight:700,fontSize:12}}>{prCodeText ?? '—'}</span>`                                                                     | centre                                     | mono 700 purple 12px             | —                  | no                                                            |
+| 6   | `Lines`     | `5%`  | `{po.lineCount}`                                                                                                                                                                   | centre                                     | `className="mono"`               | —                  | no                                                            |
+| 7   | `Total Qty` | `7%`  | `<span className="mono fw-700">{totalQty}</span>`                                                                                                                                  | centre                                     | mono fw-700                      | —                  | no                                                            |
+| 8   | `Received`  | `7%`  | `mono fw-700`, `color: receivedQty > 0 ? 'var(--green)' : 'var(--text3)'`                                                                                                          | centre                                     | mono fw-700, tone                | —                  | no                                                            |
+| 9   | `Pending`   | `7%`  | `mono fw-700`, `color: pending > 0 ? 'var(--amber)' : 'var(--green)'`                                                                                                              | centre                                     | mono fw-700, tone                | —                  | no                                                            |
+| 10  | `Value`     | `7%`  | `<span className="mono">₹{Math.round(v).toLocaleString('en-IN')}</span>`; `null` (prices hidden for this viewer) → `<span className="text3">—</span>`                              | centre                                     | mono                             | —                  | no                                                            |
+| 11  | `Status`    | `7%`  | `<PoStatusBadge>` → `b-grey` draft/cancelled, `b-blue` open, `b-amber` partial/qc*pending, `b-green` closed; label = status with `*`→space                                         | centre                                     | `.badge`                         | nowrap             | no                                                            |
+| 12  | `Action`    | `14%` | 2×2 grid, see below                                                                                                                                                                | centre                                     | —                                | —                  | buttons only                                                  |
 
 **Row click target** — `<tr key={po.id} onClick={() => onOpen(po.id)} style={{ cursor: 'pointer' }}>`,
 where `onOpen` is `(id) => navigate({ to: '/purchase-orders/$id', params: { id } })` passed
@@ -490,12 +498,12 @@ list's single icon row):
      onClick={(e) => e.stopPropagation()}>
 ```
 
-| Order | Control | class | label | gate |
-| --- | --- | --- | --- | --- |
-| 1 | `<Link to="/purchase-orders/$id">` | `btn btn-primary btn-sm` | `👁 View` | — |
-| 2 | `<Link to="/purchase-orders/$id/edit">` | `btn btn-ghost btn-sm` | `✎ Edit` | `canEdit && status !== 'closed'` |
-| 3 | `<Link to="/delivery-challans/new" search={{ poId }}>` | `btn btn-ghost btn-sm` | `📦 DC` | `canEdit && poSendsMaterialOut(poType) && status !== 'draft'` |
-| 4 | `<AssignTaskButton>` | `btn btn-ghost btn-sm` (default) | `👤+ Assign` | `status !== 'closed' && status !== 'cancelled'` |
+| Order | Control                                                | class                            | label        | gate                                                          |
+| ----- | ------------------------------------------------------ | -------------------------------- | ------------ | ------------------------------------------------------------- |
+| 1     | `<Link to="/purchase-orders/$id">`                     | `btn btn-primary btn-sm`         | `👁 View`    | —                                                             |
+| 2     | `<Link to="/purchase-orders/$id/edit">`                | `btn btn-ghost btn-sm`           | `✎ Edit`     | `canEdit && status !== 'closed'`                              |
+| 3     | `<Link to="/delivery-challans/new" search={{ poId }}>` | `btn btn-ghost btn-sm`           | `📦 DC`      | `canEdit && poSendsMaterialOut(poType) && status !== 'draft'` |
+| 4     | `<AssignTaskButton>`                                   | `btn btn-ghost btn-sm` (default) | `👤+ Assign` | `status !== 'closed' && status !== 'cancelled'`               |
 
 The `.innovic-table.tbl-grid .jc-row-acts .btn-sm` rule (`inline-flex`, `height:24px`,
 `padding 2px 6px`) makes each button fill its grid cell so the block reads as one tidy panel.
@@ -527,7 +535,7 @@ A new screen is "in house style" only if it follows all of these.
    end. Everything else in that cluster is `btn btn-ghost`. On detail pages the whole
    cluster is `btn-sm`.
 3. **A list's header band is sticky**: `position:'sticky'; top:0; zIndex:20;
-   background:'var(--bg)'; paddingBottom:8; marginBottom:10; borderBottom:'1px solid var(--border)'`.
+background:'var(--bg)'; paddingBottom:8; marginBottom:10; borderBottom:'1px solid var(--border)'`.
    Opaque background is mandatory; never bleed it edge-to-edge.
 4. **Background refetch is a text pill, not a spinner overlay**:
    `className="text3"`, `fontSize:11`, `fontFamily:'var(--mono)'`, `<Loader2 … animate-spin /> Updating…`,

@@ -10,10 +10,10 @@
 
 A department-scoped reports page with 2 tabs:
 
-| tab key | label | colour | body fn |
-|---|---|---|---|
-| `itemwhere` | **Item Tracker** | `#D97706` (orange) | `_rptItemWhere()` |
-| `solines` | **SO Line Tracker** | `#7C3AED` (purple) | `_rptSOLines()` |
+| tab key     | label               | colour             | body fn           |
+| ----------- | ------------------- | ------------------ | ----------------- |
+| `itemwhere` | **Item Tracker**    | `#D97706` (orange) | `_rptItemWhere()` |
+| `solines`   | **SO Line Tracker** | `#7C3AED` (purple) | `_rptSOLines()`   |
 
 Department header: `📊 Sales Reports` in dept color `#16A34A` (green).
 
@@ -21,11 +21,11 @@ Department header: `📊 Sales Reports` in dept color `#16A34A` (green).
 
 ## 1. Page chrome (L20042–20044)
 
-| # | Element | Legacy | Tag |
-|---|---|---|---|
-| 1 | Section header | `📊 Sales Reports` (green) | needs port |
-| 2 | Tab buttons | 2 tabs, active highlighted | **BLOCKER** |
-| 3 | Tab body | per-tab rendered via `_rptTbl(title, headers, rows, totals?)` helper | **BLOCKER** |
+| #   | Element        | Legacy                                                               | Tag         |
+| --- | -------------- | -------------------------------------------------------------------- | ----------- |
+| 1   | Section header | `📊 Sales Reports` (green)                                           | needs port  |
+| 2   | Tab buttons    | 2 tabs, active highlighted                                           | **BLOCKER** |
+| 3   | Tab body       | per-tab rendered via `_rptTbl(title, headers, rows, totals?)` helper | **BLOCKER** |
 
 ---
 
@@ -54,6 +54,7 @@ _rptTbl(title, headers, rows, totals?)
 ```
 
 Features:
+
 - Auto-detects numeric columns (right-aligned + mono)
 - Status-text colour coding (DELAYED/Pending/Cancelled → red; ON TIME/Accepted/Closed/OK → green; Approved/PARTIAL → blue; PENDING/AT VENDOR → amber)
 - Zebra striping
@@ -73,6 +74,7 @@ React currently has `/reports` (a single page). Adding `/reports?dept=sales` (or
 ## 5. Summary
 
 ### BLOCKERs
+
 1. **Tab strip framework** for the existing `/reports` page (color-per-tab, active-highlight).
 2. **`_rptTbl` equivalent React component** with status colour coding + numeric auto-detection + Excel export.
 3. **Per-report endpoints** (one per tab body):
@@ -81,15 +83,18 @@ React currently has `/reports` (a single page). Adding `/reports?dept=sales` (or
 4. **Sales-dept route**: `/reports/sales` showing only the 2 tabs (or `/reports?dept=sales` query-state filter).
 
 ### DELTAs
+
 - Generic `/reports` page (L20047–20070) already exists in React. Refactor it once and apply to all dept variants.
 
 ### POLISH
+
 - Tab button colours match legacy palette exactly (`#D97706`, `#7C3AED`).
 - IN-style `₹ N` formatting wherever currency appears.
 
 ---
 
 **Sign-off needed:**
+
 - Confirm whether sales-reports = a dedicated `/reports/sales` route, or a `?dept=sales` filter on the existing `/reports` page (recommend: filter).
 - Confirm the 2 report types (item-tracker, so-lines) are scope for first pass.
 - Estimate: ~400–500 LOC if shared with other depts (purchase, store, qc, production, finance, design).

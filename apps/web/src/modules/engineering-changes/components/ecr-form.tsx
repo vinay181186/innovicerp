@@ -5,7 +5,7 @@
 // Replacement Item; Change Type "Not interchangeable" clears To Drawing Rev
 // (a new item code replaces the part), any other type clears Replacement Item;
 // To Drawing Rev never equals From Drawing Rev. The Rev pickers list only the
-// picked item's Revs (GET /item-revisions?itemId=…) with their release status.
+// picked item's Revs (GET /item-revisions?itemId=…) with their Drawing Rev Status.
 
 import {
   ECR_CLASSIFICATIONS,

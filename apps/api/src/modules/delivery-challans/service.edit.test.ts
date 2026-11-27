@@ -204,7 +204,11 @@ describe('delivery-challans service — EDIT (ADR-202 Phase 3)', () => {
     expect(await sentQtyOf(po.lines[0]!.opId)).toBe(4);
 
     // Up: 4 → 7. The op counter is reversed (−4) then reposted (+7) = 7.
-    const up = await service.updateDeliveryChallan(dc.id, { lines: [{ id: lineId, qty: 7 }] }, admin);
+    const up = await service.updateDeliveryChallan(
+      dc.id,
+      { lines: [{ id: lineId, qty: 7 }] },
+      admin,
+    );
     expect(Number(up.lines[0]!.qty)).toBe(7);
     expect(await sentQtyOf(po.lines[0]!.opId)).toBe(7);
     // The code bumped a revision on the edit.

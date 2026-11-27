@@ -59,11 +59,15 @@ import {
   isRouteCardLocked,
   itemRevLabel,
   normalizeRevision,
+  normalizeRevStatus,
+  revNotReleasedMessage,
   type JcRouteCardWriteBack,
   opSrNo,
   ROUTE_CARD_APPROVAL_LABEL,
   ROUTE_CARD_LOCKED_MESSAGE,
   type RouteCardApprovalStatus,
+  routeCardDrawingMissingMessage,
+  routeCardRevMissingMessage,
 } from '@innovic/shared';
 import { type AnyColumn, and, asc, desc, eq, inArray, isNull, type SQL, sql } from 'drizzle-orm';
 import {
@@ -1088,18 +1092,23 @@ export async function createRouteCard(
         if (dup.length > 0) throw new ConflictError(`Route Card No. "${code}" already exists`);
       }
 
-      // ABC/<rev>: found or created inside THIS transaction (lib/item-revision,
-      // the one writer of the register), so card and register commit together.
-      const rev = needsRev
-        ? await resolveItemRevision(tx, user, companyId, {
-            itemId: input.itemId,
-            rev: input.drawingRev,
-            drawingFilePath: input.drawingFilePath,
-            drawingNo: input.drawingNo,
-            sourceType: 'route_card',
-            sourceRef: code,
-          })
-        : null;
+      // ADR-323 — a NEW card for a make item needs its Item + Rev already in the
+      // Drawing Register, WITH its drawing PDF. The card never creates the Rev
+      // and never uploads a file (a sent drawingFilePath is ignored).
+      let rev: { id: string; rev: string } | null = null;
+      if (needsRev) {
+        const revText = normalizeRevision(input.drawingRev ?? '');
+        const revLabel = itemRevLabel(item.code, revText);
+        const reg = await findItemRevision(tx, companyId, input.itemId, revText);
+        if (!reg) throw new ValidationError(routeCardRevMissingMessage(revLabel));
+        if (normalizeRevStatus(reg.releaseStatus) === 'obsolete') {
+          throw new ValidationError(revNotReleasedMessage(revLabel, 'obsolete'));
+        }
+        if (!reg.drawingFilePath?.trim()) {
+          throw new ValidationError(routeCardDrawingMissingMessage(revLabel));
+        }
+        rev = { id: reg.id, rev: revText };
+      }
 
       // One live card per Item + Rev (old / Buy cards: one per item with no Rev).
       const existing = await readRouteCardForItemRev(tx, companyId, input.itemId, rev?.id ?? null);
@@ -1201,12 +1210,7 @@ async function assertDrawingRevEdit(
         `This Route Card is for ${label} — its Drawing Rev cannot change. Create a new Route Card for the new Rev.`,
       );
     }
-    const offered = input.drawingFilePath?.trim() || null;
-    if (offered && cur.drawingFilePath && offered !== cur.drawingFilePath) {
-      throw new ValidationError(
-        `Drawing differs from ${label} — make a new Drawing Rev or use Replace drawing with a reason`,
-      );
-    }
+    // ADR-323 — a sent drawingFilePath is ignored (no upload from a Route Card).
     return;
   }
   if (!input.drawingRev || !(await itemNeedsRev(tx, companyId, input.itemId))) return;
@@ -1216,12 +1220,6 @@ async function assertDrawingRevEdit(
   const other = await readRouteCardForItemRev(tx, companyId, input.itemId, reg.id);
   if (other && other.id !== id)
     throw new ConflictError(`${other.code} already exists for ${label}`);
-  const offered = input.drawingFilePath?.trim() || null;
-  if (offered && reg.drawingFilePath && offered !== reg.drawingFilePath) {
-    throw new ValidationError(
-      `Drawing differs from ${label} — make a new Drawing Rev or use Replace drawing with a reason`,
-    );
-  }
 }
 
 /** The checks an edit must pass before anything is written — ONE place, used
@@ -1573,18 +1571,17 @@ export async function updateRouteCardTx(
   }
 
   // Item + Drawing Rev (0232). validateRouteCardEdit already refused a Rev
-  // change on a card that has one; here an old card gets its Rev SET, or a
-  // card's register row adopts an offered file — via the register's one
-  // writer, inside this transaction.
+  // change on a card that has one; here an old card gets its Rev SET via the
+  // register's one writer, inside this transaction. ADR-323 — a sent
+  // drawingFilePath is ignored (the PDF is uploaded in the Drawing Register).
   let itemRevisionId = header.itemRevisionId;
   const revChanges: ActivityChange[] = [];
   const curDrawing = await readCardDrawing(tx, header.itemRevisionId);
   const revText = input.drawingRev ?? curDrawing.drawingRev;
-  if (revText && (input.drawingRev || input.drawingFilePath)) {
+  if (revText && input.drawingRev) {
     const r = await resolveItemRevision(tx, user, companyId, {
       itemId: input.itemId,
       rev: revText,
-      drawingFilePath: input.drawingFilePath,
       drawingNo: input.drawingNo,
       sourceType: 'route_card',
       sourceRef: input.code,

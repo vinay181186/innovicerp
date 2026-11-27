@@ -5,14 +5,18 @@
 //   direct rows (PO, Route Card (New), Op Entry time change, Cancel Request,
 //   Day Log edit) — ✓ / ✗ on the row, tickable for "✓ Approve N";
 //   review rows (document / master changes) — "Review (n)" opens the side
-//   panel with ✓ / ✗ per field.
+//   panel with ✓ / ✗ per field;
+//   Drawing to verify (ADR-323) — no ✓ / ✗ and never ticked for "✓ Approve N":
+//   only "Open drawing to verify", because Verify needs the PDF opened.
 //
 // The list holds every waiting row (≤ WAITING_APPROVALS_LIMIT), so search and
 // the Approval Type filter run in the browser over the rows on screen.
 
-import { REV_CHANGE_REASON_MIN, type WaitingApprovalRow } from '@innovic/shared';
+import { type WaitingApprovalRow } from '@innovic/shared';
 import { type ReactNode, useMemo, useState } from 'react';
+import { ActionLink } from '@/components/shared/action-link';
 import { matchesSearchTerm } from '@/components/shared/search-match';
+import { linkProps } from '@/modules/dashboard/components/dash-text';
 import { fmtDate } from '@/lib/date';
 import { DataTable, type DataTableColumn, Panel } from '@/ui/data';
 import { srNoColumn } from '@/ui/data/lead-columns';
@@ -88,7 +92,8 @@ const COLUMNS: DataTableColumn<WaitingApprovalRow>[] = [
 /** Rows "✓ Approve N" may take: whole-document decisions, but never a Cancel
  *  Request — approving one cancels the document and reverses its stock
  *  (ADR-235), so each is approved on its own row. */
-const isBulkable = (r: WaitingApprovalRow): boolean => r.mode === 'direct' && r.kind !== 'cancel';
+const isBulkable = (r: WaitingApprovalRow): boolean =>
+  r.mode === 'direct' && r.kind !== 'cancel' && r.kind !== 'rev';
 
 export function ApprovalsList({
   showSelect,
@@ -224,7 +229,23 @@ export function ApprovalsList({
               );
             }}
             rowActions={(r) =>
-              r.mode === 'review' ? (
+              r.kind === 'rev' ? (
+                // ADR-323 — Verify only on the drawing page, with the PDF open.
+                <span onClick={(e) => e.stopPropagation()}>
+                  {r.docHref ? (
+                    <ActionLink
+                      {...linkProps(r.docHref)}
+                      check={r.docHref}
+                      fallback="text"
+                      className="btn btn-ghost btn-sm"
+                    >
+                      Open drawing to verify
+                    </ActionLink>
+                  ) : (
+                    <span className="text3">Open the drawing to verify</span>
+                  )}
+                </span>
+              ) : r.mode === 'review' ? (
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
@@ -240,15 +261,7 @@ export function ApprovalsList({
                   busy={actions.busy.has(approvalKey(r))}
                   onApprove={() => approve([r])}
                   onReject={() => setRejecting(r)}
-                  rejectLabel={
-                    r.kind === 'rc'
-                      ? ROUTE_CARD_RETURN_ACTION
-                      : r.kind === 'rev' || r.kind === 'revRelease'
-                        ? 'Reject drawing'
-                        : r.kind === 'drawingCorrection'
-                          ? 'Reject correction'
-                          : undefined
-                  }
+                  rejectLabel={r.kind === 'rc' ? ROUTE_CARD_RETURN_ACTION : undefined}
                 />
               )
             }
@@ -274,24 +287,7 @@ export function ApprovalsList({
                   placeholder:
                     'At least 5 characters. Rejecting lifts the holds this ECR put on the work.',
                 }
-              : rejecting.kind === 'rev' || rejecting.kind === 'revRelease'
-                ? {
-                    // ADR-311 — a Drawing Rev waiting for Design.
-                    title: `Reject drawing — ${rejecting.docCode}`,
-                    prompt: 'Reject Reason',
-                    confirmLabel: 'Reject drawing',
-                    minLength: REV_CHANGE_REASON_MIN,
-                    placeholder: `At least ${REV_CHANGE_REASON_MIN} characters. The Rev goes back to Design with your reason.`,
-                  }
-                : rejecting.kind === 'drawingCorrection'
-                  ? {
-                      title: `Reject correction — ${rejecting.docCode}`,
-                      prompt: 'Reject Reason',
-                      confirmLabel: 'Reject correction',
-                      minLength: REV_CHANGE_REASON_MIN,
-                      placeholder: `At least ${REV_CHANGE_REASON_MIN} characters. The released drawing stays as it is.`,
-                    }
-                  : { title: `Reject — ${rejecting.docCode}`, prompt: 'Why is this rejected?' })}
+              : { title: `Reject — ${rejecting.docCode}`, prompt: 'Why is this rejected?' })}
           onCancel={() => setRejecting(null)}
           onReject={(reason) => {
             const r = rejecting;

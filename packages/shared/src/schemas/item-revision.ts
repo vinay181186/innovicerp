@@ -89,13 +89,14 @@ export const itemRevisionSchema = z.object({
   /** The one Route Card for this Item + Rev, if created. */
   routeCardId: z.string().uuid().nullable().default(null),
   routeCardCode: z.string().nullable().default(null),
-  /** ADR-290 — release status (schemas/drawing-register.ts). */
+  /** ADR-323 — Unverified / Verified / Obsolete (schemas/drawing-register.ts). */
   releaseStatus: z.enum(REV_RELEASE_STATUSES).default('unverified'),
   changeNote: z.string().nullable().default(null),
-  releasedAt: z.string().nullable().default(null),
-  releasedBy: z.string().uuid().nullable().default(null),
-  releasedByName: z.string().nullable().default(null),
-  /** SHA-256 of the drawing file, stored at release. */
+  /** Verified On / By (stored in released_at / released_by). */
+  verifiedAt: z.string().nullable().default(null),
+  verifiedBy: z.string().uuid().nullable().default(null),
+  verifiedByName: z.string().nullable().default(null),
+  /** SHA-256 of the drawing file, stored at Verify. */
   fileHash: z.string().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid().nullable(),
@@ -133,7 +134,7 @@ export type ItemRevisionLinkedDoc = z.infer<typeof itemRevisionLinkedDocSchema>;
 export const itemRevisionDetailSchema = itemRevisionSchema.extend({
   history: z.array(itemRevisionDrawingEventSchema).default([]),
   linkedDocs: z.array(itemRevisionLinkedDocSchema).default([]),
-  /** ADR-290 — drawing corrections on a released Rev, newest first. */
+  /** ADR-290 — old drawing corrections (history only; none raised since ADR-323). */
   corrections: z.array(drawingCorrectionSchema).default([]),
 });
 export type ItemRevisionDetail = z.infer<typeof itemRevisionDetailSchema>;

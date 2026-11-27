@@ -11,14 +11,14 @@
 
 `renderHome` (L2486) dispatches by mode + role:
 
-| Mode / role | Legacy fn | Ours |
-| ----------- | --------- | ---- |
-| Customize screen (`_dashConfigMode`) | `_dashConfigScreen` L3390 | Home "Customize" view |
-| Widgets view (`_dashWidgetMode`) | `_dashWidgetView` L3313 | Home "Widgets" view |
-| Alerts view (`_homeMode='alerts'`) | `_homeAlertsView` L2878 | Home "Alerts" view (reuses `/alerts`) |
-| auto + operator | `_homeOperatorView` L2674 | Home operator layout |
-| auto + specialist (non-admin/mgr w/ primary dept) | `_homeSpecialistView` L2769 | Home specialist layout |
-| auto + admin/manager (default) | `_homeAdminView` L2560 | Home admin layout |
+| Mode / role                                       | Legacy fn                   | Ours                                  |
+| ------------------------------------------------- | --------------------------- | ------------------------------------- |
+| Customize screen (`_dashConfigMode`)              | `_dashConfigScreen` L3390   | Home "Customize" view                 |
+| Widgets view (`_dashWidgetMode`)                  | `_dashWidgetView` L3313     | Home "Widgets" view                   |
+| Alerts view (`_homeMode='alerts'`)                | `_homeAlertsView` L2878     | Home "Alerts" view (reuses `/alerts`) |
+| auto + operator                                   | `_homeOperatorView` L2674   | Home operator layout                  |
+| auto + specialist (non-admin/mgr w/ primary dept) | `_homeSpecialistView` L2769 | Home specialist layout                |
+| auto + admin/manager (default)                    | `_homeAdminView` L2560      | Home admin layout                     |
 
 Shared: `_homeHeader` L2530 (greeting + mode toggles), `_kpiCard` L2550,
 `_homeStatRow` L2665, `_workListPanel` L3222 (My Work), `_renderQuickLinks`
@@ -36,14 +36,14 @@ planning` (`_detectPrimaryDept` L2522).
 No table exists. New `dashboard_config`, ONE row per user, holding UI layout
 preference. Legacy `db.dashboardConfig = [{userId, widgets:[keys], quickLinks:[pages]}]`.
 
-| col | type | legacy |
-| --- | ---- | ------ |
-| id | uuid pk | |
-| company_id | uuid | tenancy |
-| user_id | uuid→users (UNIQUE per company) | userId |
-| widgets | jsonb (ordered array of widget keys) | widgets[] |
-| quick_links | jsonb (ordered array of page keys) | quickLinks[] |
-| + standard audit cols | | |
+| col                   | type                                 | legacy       |
+| --------------------- | ------------------------------------ | ------------ |
+| id                    | uuid pk                              |              |
+| company_id            | uuid                                 | tenancy      |
+| user_id               | uuid→users (UNIQUE per company)      | userId       |
+| widgets               | jsonb (ordered array of widget keys) | widgets[]    |
+| quick_links           | jsonb (ordered array of page keys)   | quickLinks[] |
+| + standard audit cols |                                      |              |
 
 `widgets`/`quick_links` are **ordered lists of enum-like UI keys** (layout
 preference), not entity records — jsonb is the right shape (NOT the JSON-blob
@@ -56,6 +56,7 @@ company_read + self_or_manager_write (`user_id = current_user_id()` OR mgr).
 ## 3. Server data (reuse-first)
 
 Everything computed server-side (Rule #1/#6). Reuse:
+
 - **`v_jc_op_status`** view (computed_status, op_type, qc_required, completed_qty,
   qc_accepted_qty, input_avail, available, outsource_status) for op/JC aggregates
   (running ops, ready ops, JC status, QC-pending).
@@ -66,6 +67,7 @@ Everything computed server-side (Rule #1/#6). Reuse:
 - **tasks** + **capa** tables for My Work.
 
 ### `GET /dashboard/home` → role-aware payload
+
 ```
 HomeResponse {
   userName, role, dateLabel,
@@ -84,11 +86,13 @@ HomeResponse {
   specialist?: { dept, kpis: {label,value,sub,nav,color}[], panels: Panel[] },
 }
 ```
+
 `needsAttention` items (severity critical/warn/info): overdue SOs/POs/JCs (crit),
 draft POs + pending PRs + pending NCs (warn), SOs due-this-week (info) — legacy
 L2630-2637, capped 6.
 
 ### `GET /dashboard/widgets` → WidgetData[] (for Widgets view)
+
 13 widgets (legacy `_dashWidgets`): open_sos, jc_status, running_machines,
 machine_loading, qc_pending, stock_alerts, pr_pending, my_tasks, … (+ quick_links
 is rendered client-side, full-width). Each widget = `{key, dept, label, icon,
@@ -96,6 +100,7 @@ color, navPage, data}` where `data` is the few numbers that widget shows. Server
 computes `data`; web renders the card. Visibility filtered by dept access.
 
 ### `GET /dashboard/config` / `PUT /dashboard/config`
+
 `{ widgets: string[]|null, quickLinks: string[]|null }`. PUT upserts the user's
 row. Web Customize screen edits + saves (reorder widgets, toggle widgets +
 quick links). Available widget/quick-link registries returned so the web can
@@ -109,17 +114,17 @@ render the chooser with labels/icons/dept + access flags.
 severity (critical<warn<info) then age desc. Each item:
 `{ key, dept, severity, icon, title, detail, age, action:{label, navPage} }`.
 
-| # | rule | gate | source |
-| - | ---- | ---- | ------ |
-| 1 | PO awaiting approval | purchase | purchase_orders status=draft; sev by age (>3 crit,>1 warn) |
-| 2 | PR approved, no PO | purchase | purchase_requests status=approved & no linked PO |
-| 3 | Pending incoming QC | qc | grn_lines qc_status=pending |
-| 4 | Equipment SO BOM pending | design | sales_orders type=equipment & bom_status=pending & not closed |
-| 5 | My assigned tasks | (all) | tasks assigned_to=me, status≠completed/cancelled; unread marker |
-| 6 | My CAPAs | qc | capa_records responsible=me.name, status not closed/verified |
-| 7 | Overdue JCs | production | v_jc_op_status rollup: due<today & not complete |
-| 8 | Overdue PO delivery | purchase | purchase_orders open/partial & required_date<today |
-| 9 | Stuck running ops | production | running_ops past expected cycle (elapsed/expected≥1) |
+| #   | rule                     | gate       | source                                                          |
+| --- | ------------------------ | ---------- | --------------------------------------------------------------- |
+| 1   | PO awaiting approval     | purchase   | purchase_orders status=draft; sev by age (>3 crit,>1 warn)      |
+| 2   | PR approved, no PO       | purchase   | purchase_requests status=approved & no linked PO                |
+| 3   | Pending incoming QC      | qc         | grn_lines qc_status=pending                                     |
+| 4   | Equipment SO BOM pending | design     | sales_orders type=equipment & bom_status=pending & not closed   |
+| 5   | My assigned tasks        | (all)      | tasks assigned_to=me, status≠completed/cancelled; unread marker |
+| 6   | My CAPAs                 | qc         | capa_records responsible=me.name, status not closed/verified    |
+| 7   | Overdue JCs              | production | v_jc_op_status rollup: due<today & not complete                 |
+| 8   | Overdue PO delivery      | purchase   | purchase_orders open/partial & required_date<today              |
+| 9   | Stuck running ops        | production | running_ops past expected cycle (elapsed/expected≥1)            |
 
 (Action `onclick` legacy nav targets map to our routes; `navPage` is our route
 path. Some legacy actions open record modals — we point to the list route.)

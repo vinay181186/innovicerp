@@ -7,7 +7,13 @@
 
 import { z } from 'zod';
 
-export const SERVICE_PO_STATUSES = ['draft', 'pending', 'approved', 'completed', 'cancelled'] as const;
+export const SERVICE_PO_STATUSES = [
+  'draft',
+  'pending',
+  'approved',
+  'completed',
+  'cancelled',
+] as const;
 export type ServicePoStatus = (typeof SERVICE_PO_STATUSES)[number];
 export const servicePoStatusSchema = z.enum(SERVICE_PO_STATUSES);
 
@@ -99,8 +105,14 @@ export const listServicePosQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   status: servicePoStatusSchema.optional(),
   vendorId: z.string().uuid().optional(),
-  fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  fromDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  toDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });

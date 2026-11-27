@@ -10,7 +10,16 @@ export const Levels = () => (
 );
 
 export const OnTaskRows = () => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: 340, fontSize: 'var(--fs-sm)', color: 'var(--text)' }}>
+  <div
+    style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 6,
+      width: 340,
+      fontSize: 'var(--fs-sm)',
+      color: 'var(--text)',
+    }}
+  >
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}>
       <span>Rework BRKT-101/A for IN-SO-00123</span>
       <PriorityText priority="urgent" />

@@ -1,9 +1,10 @@
 // Sort & Filter (ADR-200) — the Drawing Register list's sortable / filterable
 // fields (ADR-290). Each expression is the SAME one listDrawingRegister
-// SELECTs (aliases ir, i, ru, ol, oj, pc, so — used by its list and count query).
+// SELECTs (aliases ir, i, ru, ol, oj, so — used by its list and count query).
 
 import { sql } from 'drizzle-orm';
 
+import { revStatusSql } from '../../lib/item-revision';
 import type { SfColumnMap } from '../../lib/list-query';
 
 export const DRAWING_REGISTER_SF_COLUMNS: SfColumnMap = {
@@ -12,13 +13,14 @@ export const DRAWING_REGISTER_SF_COLUMNS: SfColumnMap = {
   customerPartNo: { sql: sql`i.customer_part_no`, type: 'text' },
   drawingRev: { sql: sql`ir.rev`, type: 'text' },
   drawingNo: { sql: sql`ir.drawing_no`, type: 'text' },
-  releaseStatus: { sql: sql`ir.release_status`, type: 'list' },
-  releasedAt: {
+  // ADR-323 — read through the legacy mapping (0263 / 0264).
+  releaseStatus: { sql: revStatusSql('ir.release_status'), type: 'list' },
+  verifiedAt: {
     sql: sql`(ir.released_at AT TIME ZONE 'Asia/Kolkata')::date`,
     sortSql: sql`ir.released_at`,
     type: 'date',
   },
-  releasedByName: {
+  verifiedByName: {
     sql: sql`COALESCE(NULLIF(btrim(ru.full_name), ''), split_part(ru.email, '@', 1))`,
     type: 'text',
   },

@@ -38,9 +38,12 @@ const lines = z
   .array(stockCountLineInputSchema)
   .min(1, 'Add at least one item')
   .max(2000)
-  .refine((ls) => new Set(ls.map((l) => `${l.itemId}|${l.itemRevisionId ?? ''}`)).size === ls.length, {
-    message: 'An item is listed twice — keep one line per item',
-  });
+  .refine(
+    (ls) => new Set(ls.map((l) => `${l.itemId}|${l.itemRevisionId ?? ''}`)).size === ls.length,
+    {
+      message: 'An item is listed twice — keep one line per item',
+    },
+  );
 
 export const createStockCountInputSchema = z.object({
   countDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

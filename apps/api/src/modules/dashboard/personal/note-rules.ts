@@ -20,9 +20,9 @@ import {
   PO_TYPES,
   poSendsMaterialOut,
   ROUTE_CARD_APPROVAL_LABEL,
-  canReleaseDrawings,
 } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
+import { revStatusWords } from '../../../lib/item-revision';
 import { rtvReadyForChallanSql } from '../../../lib/rtv-predicates';
 import { type DashAccess, hasTick } from '../access';
 import { entityHref } from './util';
@@ -37,7 +37,6 @@ export type Open =
   | 'raiser_rc_approved'
   | 'raiser_rev'
   | 'raiser_ecr'
-  | 'raiser_correction'
   | 'raiser_stock_count'
   | 'raiser_day_log'
   | 'pr_to_po'
@@ -50,21 +49,18 @@ export type Open =
   | 'nc_dispose'
   | 'nc_rtv_dc'
   | 'stock_count_approve'
-  | 'approval_rev'
-  | 'release_rev'
-  | 'approval_correction';
+  | 'approval_rev';
 
 /** The document a raiser rule's note belongs to: its table and the column
  *  naming its person (created_by, or the Day Log's owner). */
 interface RaiserOf {
   /** A table, or a parenthesised SELECT with id / company_id / deleted_at
-   *  and the person columns (DRAWING_CORRECTION_RAISER). */
+   *  and the person columns (REV_LINE_RAISER). */
   table: string;
   owner: 'created_by' | 'user_id' | 'requested_by';
-  /** ADR-290 — a second person column who also hears the decision (the Drawing
-   *  Rev's submitter beside its creator; a correction's Rev creator beside
-   *  its requester). */
-  orOwner?: 'submitted_by' | 'rev_created_by';
+  /** A second person column who also hears the decision (the ECR's
+   *  submitter beside its creator). */
+  orOwner?: 'submitted_by';
   /** Still needs `right` (Day Log: no notes once the page is hidden — the
    *  same owner rule 2026-10-30 as the Day Log reply notes). */
   needsRight?: true;
@@ -138,11 +134,20 @@ const NC_TO_RTV = JSON.stringify([
   { field: 'disposition', after: NC_DISPOSITION_LABELS.return_to_vendor },
 ]);
 
-/** ADR-290 — a drawing correction with the person columns its decision
- *  goes to: who asked for it, and who created the Rev. */
-const DRAWING_CORRECTION_RAISER = `(SELECT c.id, c.company_id, c.deleted_at, c.requested_by,
-    ir.created_by AS rev_created_by
-  FROM public.drawing_corrections c JOIN public.item_revisions ir ON ir.id = c.item_revision_id)`;
+/** ADR-323 — a Drawing Rev with the people who raised the live SO / JWSO
+ *  lines naming it (one row per Rev + line raiser): they hear it is Verified. */
+const REV_LINE_RAISER = `(SELECT ir.id, ir.company_id, ir.deleted_at, l.created_by
+    FROM public.item_revisions ir
+    JOIN public.sales_order_lines l ON l.item_revision_id = ir.id AND l.deleted_at IS NULL
+  UNION
+  SELECT ir.id, ir.company_id, ir.deleted_at, l.created_by
+    FROM public.item_revisions ir
+    JOIN public.job_work_order_lines l ON l.item_revision_id = ir.id AND l.deleted_at IS NULL)`;
+
+/** ADR-323 — release.ts verify: Drawing Rev Status became Verified. */
+const REV_VERIFIED = JSON.stringify([{ field: 'releaseStatus', after: 'Verified' }]);
+/** ADR-323 — a PDF uploaded or replaced (lib/item-revision-drawing.ts). */
+const REV_FILE_CHANGED = JSON.stringify([{ field: 'drawingFilePath' }]);
 
 /** PO types whose approval means material goes out (the po_to_dc list's rule). */
 const SEND_OUT_TYPES = PO_TYPES.filter((t) => poSendsMaterialOut(t));
@@ -395,62 +400,43 @@ export const NOTE_RULES: readonly NoteRule[] = [
     changesHas: RC_DECISION,
     raiser: { table: 'public.route_cards', owner: 'created_by' },
   },
-  // ADR-290 — a Drawing Rev decided in the Drawing Register: its creator and
-  // the person who sent it for review hear it (decision-notify rule).
-  ...(
-    [
-      ['APPROVE', 'approved', ' — Drawing Rev', 'ok'],
-      ['REJECT', 'rejected', ' — Drawing Rev', 'late'],
-      ['RELEASE', 'released', ' — Drawing Rev can be used now', 'ok'],
-    ] as const
-  ).map(
-    ([action, verb, tail, tone]): NoteRule => ({
-      entity: 'ItemRevision',
-      action,
-      right: ['drawingreg_create', 'view'],
-      open: 'raiser_rev',
-      verb,
-      tail,
-      doneTail: ' — Drawing Rev',
-      tone,
-      raiser: { table: 'public.item_revisions', owner: 'created_by', orOwner: 'submitted_by' },
-      ...(action === 'REJECT' ? { withReason: true as const } : {}),
-    }),
-  ),
-  // ADR-311 — a Rev with a file goes to Under Review on its own: the Drawing
-  // Register approvers are told; once approved, the releasers are told; a
-  // correction asked on a released file reaches the releasers. Self-approval
-  // allowed (owner 23-Nov) — but, like every non-raiser rule, the actor does
-  // not hear their own event.
-  {
-    entity: 'ItemRevision',
-    action: 'SUBMIT',
-    right: ['drawingreg_create', 'approve'],
-    open: 'approval_rev',
-    verb: 'sent for review',
-    tail: ' — Drawing Rev waiting for your approval',
-    tone: 'due',
-  },
+  // ADR-323 — a Drawing Rev Verified: the people who raised the SO / JWSO
+  // lines on it hear it (decision-notify rule, even self-verify).
   {
     entity: 'ItemRevision',
     action: 'APPROVE',
     right: ['drawingreg_create', 'view'],
-    gate: (a) => canReleaseDrawings(a.eff, a.isAdmin ? 'admin' : a.role),
-    open: 'release_rev',
-    verb: 'approved',
-    tail: ' — Drawing Rev waiting for Release',
-    tone: 'due',
+    open: 'raiser_rev',
+    verb: 'verified',
+    tail: ' — the drawing on your order line',
+    doneTail: ' — Drawing Rev',
+    tone: 'ok',
+    changesHas: REV_VERIFIED,
+    raiser: { table: REV_LINE_RAISER, owner: 'created_by' },
   },
+  // ADR-323 — a Rev got a PDF (first upload or replace, or added in the
+  // register with one): the Drawing Register Approve-tick holders are told
+  // "Drawing to verify". Like every non-raiser rule, the actor does not hear
+  // their own event.
   {
     entity: 'ItemRevision',
     action: 'EDIT',
-    right: ['drawingreg_create', 'view'],
-    gate: (a) => canReleaseDrawings(a.eff, a.isAdmin ? 'admin' : a.role),
-    open: 'approval_correction',
-    verb: 'drawing correction requested',
-    tail: ' — waiting for your approval',
+    right: ['drawingreg_create', 'approve'],
+    open: 'approval_rev',
+    verb: 'uploaded a drawing PDF on',
+    tail: ' — Drawing to verify',
     tone: 'due',
-    when: () => sql`a.detail LIKE 'Drawing correction requested%'`,
+    changesHas: REV_FILE_CHANGED,
+  },
+  {
+    entity: 'ItemRevision',
+    action: 'CREATE',
+    right: ['drawingreg_create', 'approve'],
+    open: 'approval_rev',
+    verb: 'added',
+    tail: ' — Drawing to verify',
+    tone: 'due',
+    when: () => sql`a.detail LIKE '%(drawing PDF attached)%'`,
   },
   // ADR-291 — an Engineering Change approved (all sign-offs) or rejected: its
   // creator and the person who submitted it hear it (decision-notify rule).
@@ -471,32 +457,6 @@ export const NOTE_RULES: readonly NoteRule[] = [
       tone,
       changesHas: ECR_DECISION,
       raiser: { table: 'public.engineering_changes', owner: 'created_by', orOwner: 'submitted_by' },
-      ...(action === 'REJECT' ? { withReason: true as const } : {}),
-    }),
-  ),
-  // ADR-290 — a drawing correction decided: the person who asked for it and
-  // the Rev's creator hear it (decision-notify rule). Logged by
-  // item-revisions/corrections.ts on entity DrawingCorrection.
-  ...(
-    [
-      ['APPROVE', 'approved', ' — drawing correction, new file in use', 'ok'],
-      ['REJECT', 'rejected', ' — drawing correction', 'late'],
-    ] as const
-  ).map(
-    ([action, verb, tail, tone]): NoteRule => ({
-      entity: 'DrawingCorrection',
-      action,
-      right: ['drawingreg_create', 'view'],
-      open: 'raiser_correction',
-      verb,
-      tail,
-      doneTail: ' — drawing correction',
-      tone,
-      raiser: {
-        table: DRAWING_CORRECTION_RAISER,
-        owner: 'requested_by',
-        orOwner: 'rev_created_by',
-      },
       ...(action === 'REJECT' ? { withReason: true as const } : {}),
     }),
   ),
@@ -603,7 +563,9 @@ export function raiserNameSql(me: string, alias = 'a'): SQL {
       SELECT CASE WHEN ${col} <> ${me}::uuid
                THEN COALESCE(NULLIF(btrim(ru.full_name), ''), ru.email) END
       FROM ${sql.raw(ro.table)} rd LEFT JOIN public.users ru ON ru.id = ${col}
-      WHERE rd.id = ${id})`;
+      WHERE rd.id = ${id}
+      -- A Drawing Rev has one row per line raiser: prefer the caller (no name).
+      ORDER BY (${col} = ${me}::uuid) DESC LIMIT 1)`;
   });
   return sql`(CASE ${ent} ${sql.join(whens, sql` `)} END)`;
 }
@@ -642,17 +604,13 @@ export function openSql(
         WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
           ${mine('created_by')} ${idIn}`;
     case 'raiser_rev':
-      return sql`SELECT d.id::text AS id FROM public.item_revisions d
+      return sql`SELECT DISTINCT d.id::text AS id FROM ${sql.raw(REV_LINE_RAISER)} d
         WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
-          ${seeAll ? sql`` : sql`AND (d.created_by = ${me}::uuid OR d.submitted_by = ${me}::uuid)`} ${idIn}`;
+          ${mine('created_by')} ${idIn}`;
     case 'raiser_ecr':
       return sql`SELECT d.id::text AS id FROM public.engineering_changes d
         WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
           ${seeAll ? sql`` : sql`AND (d.created_by = ${me}::uuid OR d.submitted_by = ${me}::uuid)`} ${idIn}`;
-    case 'raiser_correction':
-      return sql`SELECT d.id::text AS id FROM ${sql.raw(DRAWING_CORRECTION_RAISER)} d
-        WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
-          ${seeAll ? sql`` : sql`AND (d.requested_by = ${me}::uuid OR d.rev_created_by = ${me}::uuid)`} ${idIn}`;
     case 'raiser_day_log':
       return sql`SELECT d.id::text AS id FROM public.daily_reports d
         WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
@@ -666,16 +624,11 @@ export function openSql(
         WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
           AND ${rtvReadyForChallanSql('d')} ${idIn}`;
     case 'approval_rev':
-    case 'release_rev':
+      // ADR-323 — still Unverified (legacy words too until 0264) with a PDF.
       return sql`SELECT d.id::text AS id FROM public.item_revisions d
         WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
-          AND d.release_status = ${open === 'approval_rev' ? 'under_review' : 'approved'} ${idIn}`;
-    case 'approval_correction':
-      return sql`SELECT d.id::text AS id FROM public.item_revisions d
-        WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
-          AND EXISTS (SELECT 1 FROM public.drawing_corrections c
-                       WHERE c.item_revision_id = d.id AND c.status = 'pending'
-                         AND c.deleted_at IS NULL) ${idIn}`;
+          AND d.release_status = ANY(${sql.param(revStatusWords('unverified'))}::text[])
+          AND NULLIF(btrim(d.drawing_file_path), '') IS NOT NULL ${idIn}`;
     case 'stock_count_approve':
       return sql`SELECT d.id::text AS id FROM public.stock_counts d
         WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL

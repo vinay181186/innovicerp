@@ -26,5 +26,9 @@ test('T23 create PR blank → IN-PR', async ({ page }: { page: Page }) => {
   const body = await page.locator('body').innerText();
   const pr = body.match(/IN-PR-\d+/);
   const err = /validation failed/i.test(body);
-  log(Boolean(pr) && !err, 'T23 PR auto-generated IN-PR- on blank', pr ? pr[0] : `err=${err} url=${page.url()} :: ${body.slice(0, 180).replace(/\n/g, ' ')}`);
+  log(
+    Boolean(pr) && !err,
+    'T23 PR auto-generated IN-PR- on blank',
+    pr ? pr[0] : `err=${err} url=${page.url()} :: ${body.slice(0, 180).replace(/\n/g, ' ')}`,
+  );
 });

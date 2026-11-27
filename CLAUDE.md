@@ -1271,12 +1271,12 @@ Typecheck, lint and build all passed. ADR-270.
 Every table, entry grid, print and Excel export follows one rule. The heading aligns with
 its values.
 
-| What the column holds | Alignment | Examples |
-| --- | --- | --- |
-| Text and codes | Left | Item Name, Item Code, SO No., Client, Remarks |
-| Qty and other counts | Centre | Order Qty, Pending, Lead Days, Hours, % |
-| Money | Right | Rate, Amount, Order Value, Total Cost |
-| Short fixed values | Centre | Dates, Status, UOM, Sr No, POL, Op, Rev, Action |
+| What the column holds | Alignment | Examples                                        |
+| --------------------- | --------- | ----------------------------------------------- |
+| Text and codes        | Left      | Item Name, Item Code, SO No., Client, Remarks   |
+| Qty and other counts  | Centre    | Order Qty, Pending, Lead Days, Hours, %         |
+| Money                 | Right     | Rate, Amount, Order Value, Total Cost           |
+| Short fixed values    | Centre    | Dates, Status, UOM, Sr No, POL, Op, Rev, Action |
 
 1. **A list column does not choose.** `DataTable` asks `columnAlign`
    (`packages/shared/src/lib/column-align.ts`) from the column's kind and heading. Excel asks
@@ -1309,17 +1309,18 @@ a release. Claude Design also fell behind and nobody was told.
 4. **The release stops on a new bypass.** `apps/web/src/ui/standard.guard.test.ts` names the
    file. Old screens keep their counts in `ui/standard-frozen.json`, and no file may add more:
 
-   | Bypass | Use instead |
-   | --- | --- |
-   | `<table>` | `DataTable` or `FitRows` |
-   | `<select>` | `Select` for a short fixed list, `SearchableSelect` for a master or document |
-   | A typed colour | A colour from the theme |
-   | Typed padding, margin or gap | A spacing size from the theme |
+   | Bypass                       | Use instead                                                                  |
+   | ---------------------------- | ---------------------------------------------------------------------------- |
+   | `<table>`                    | `DataTable` or `FitRows`                                                     |
+   | `<select>`                   | `Select` for a short fixed list, `SearchableSelect` for a master or document |
+   | A typed colour               | A colour from the theme                                                      |
+   | Typed padding, margin or gap | A spacing size from the theme                                                |
 
    Fix the code. Never raise a count to get past the check unless the owner approved it. A
    printed sheet may have its own table and colours, and the kit in `ui/` builds the real table
    and dropdown. After a clean-up, lower the counts:
    `UPDATE_STANDARD_FREEZE=1 pnpm exec vitest run src/ui/standard.guard.test.ts` in `apps/web`.
+
 5. **Claude Design stays current.** `sh .design-sync/check-behind.sh` says whether it is behind,
    and the release prints the same line. When it says BEHIND, tell the owner to type
    `/design-sync`; only the owner can start it. Do the rest as `.design-sync/NOTES.md` says.

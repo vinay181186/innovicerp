@@ -95,8 +95,7 @@ export async function soEditGoesForApproval(
 ): Promise<boolean> {
   if (status === 'draft' || status === 'cancelled') return false;
   return (
-    (await hasPendingDocumentEdit(tx, companyId, ENTITY, id)) ||
-    (await soInUse(tx, companyId, id))
+    (await hasPendingDocumentEdit(tx, companyId, ENTITY, id)) || (await soInUse(tx, companyId, id))
   );
 }
 
@@ -342,7 +341,11 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
       .select()
       .from(salesOrders)
       .where(
-        and(eq(salesOrders.id, id), eq(salesOrders.companyId, companyId), isNull(salesOrders.deletedAt)),
+        and(
+          eq(salesOrders.id, id),
+          eq(salesOrders.companyId, companyId),
+          isNull(salesOrders.deletedAt),
+        ),
       )
       .limit(1)
       .for('update');
@@ -451,7 +454,9 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
       for (const l of linesOf(target)) {
         if (l.itemId && l.itemCode && !codeById.has(l.itemId)) codeById.set(l.itemId, l.itemCode);
       }
-      const missing = i.lines.flatMap((l) => (l.itemId && !codeById.has(l.itemId) ? [l.itemId] : []));
+      const missing = i.lines.flatMap((l) =>
+        l.itemId && !codeById.has(l.itemId) ? [l.itemId] : [],
+      );
       if (missing.length > 0) {
         for (const [itemId, code] of await resolveItemCodesById(tx, missing, companyId)) {
           codeById.set(itemId, code);

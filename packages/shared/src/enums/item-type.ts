@@ -120,7 +120,9 @@ export const PARTY_MATERIAL_CODE_SUFFIX = '-RM';
 
 export function withPartyMaterialSuffix(baseCode: string): string {
   const c = baseCode.trim();
-  return isPartyMaterialCode(c) ? `${c.slice(0, -PARTY_MATERIAL_CODE_SUFFIX.length)}${PARTY_MATERIAL_CODE_SUFFIX}` : `${c}${PARTY_MATERIAL_CODE_SUFFIX}`;
+  return isPartyMaterialCode(c)
+    ? `${c.slice(0, -PARTY_MATERIAL_CODE_SUFFIX.length)}${PARTY_MATERIAL_CODE_SUFFIX}`
+    : `${c}${PARTY_MATERIAL_CODE_SUFFIX}`;
 }
 
 /** True when a code is (or ends like) a Party Supplied Material code. */

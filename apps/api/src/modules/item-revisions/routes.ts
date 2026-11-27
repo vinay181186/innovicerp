@@ -1,6 +1,5 @@
 import {
   createDrawingRevInputSchema,
-  decideDrawingCorrectionInputSchema,
   listDrawingRegisterQuerySchema,
   listItemRevisionChangesQuerySchema,
   listItemRevisionsQuerySchema,
@@ -13,7 +12,6 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
-import { decideDrawingCorrection } from './corrections';
 import { getItemRevisionFixList } from './fix-list';
 import { createDrawingRev, listDrawingRegister } from './register';
 import { revStatusAction } from './release';
@@ -67,18 +65,6 @@ export async function itemRevisionRoutes(app: FastifyInstance): Promise<void> {
     return listDrawingRegister(listDrawingRegisterQuerySchema.parse(req.query), req.user);
   });
 
-  // ADR-290 — decide a drawing correction on a released Rev.
-  app.post('/item-revisions/corrections/:id/decide', async (req) => {
-    if (!req.user) throw new AuthenticationError();
-    const { id } = idParamSchema.parse(req.params);
-    const revId = await decideDrawingCorrection(
-      id,
-      decideDrawingCorrectionInputSchema.parse(req.body),
-      req.user,
-    );
-    return service.getItemRevision(revId, req.user);
-  });
-
   app.get('/item-revisions/:id', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
@@ -92,7 +78,7 @@ export async function itemRevisionRoutes(app: FastifyInstance): Promise<void> {
     return service.replaceDrawing(id, input, req.user);
   });
 
-  // ADR-290 — submit | approve | reject | release | obsolete (release.ts).
+  // ADR-323 — verify | unverify | obsolete (release.ts).
   for (const action of REV_STATUS_ACTIONS) {
     app.post(`/item-revisions/:id/${action}`, async (req) => {
       if (!req.user) throw new AuthenticationError();

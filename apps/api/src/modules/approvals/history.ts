@@ -12,6 +12,9 @@
 //            document out (that one is in the edit branch already).
 //   ecr      engineering_change_approvals — one row per sign-off (ADR-291),
 //            on the roles the caller may give (decidableEcrRoles)
+//   rev      activity_log APPROVE on an ItemRevision whose status became
+//            Verified (release.ts verify, ADR-323) — approved only; there is
+//            no reject of a drawing (a wrong one is replaced)
 // Day Log keeps no decision record, so it is not listed.
 // Every branch filters company_id; the request tables filter deleted_at (the
 // activity log has none). Newest first, paged with LIMIT / OFFSET; `counts` is
@@ -127,6 +130,22 @@ function branches(companyId: string, s: ApproverScope): SQL[] {
       WHERE a.company_id = ${companyId}::uuid AND a.deleted_at IS NULL
         AND a.role IN (${inList(s.ecrRoles)})`);
   }
+  if (s.drawings) {
+    out.push(sql`
+      -- Every column aliased: this branch is the FIRST one for a caller whose
+      -- only approve right is the Drawing Register Approve tick (ADR-323).
+      SELECT 'rev' AS kind, al.id::text AS id, 'rev' AS type_key,
+        COALESCE(al.ref_id, '') AS doc_code, al.entity_id::text AS doc_id, al.entity AS entity,
+        NULL::text AS doc_type, 'Drawing to verify'::text AS request, 'approved'::text AS decision,
+        COALESCE(NULLIF(btrim(al.user_full_name), ''), ${nameOf('u')}, al.user_name)
+          AS decided_by_name,
+        al.ts AS decided_at, al.reason AS reason
+      FROM public.activity_log al
+      LEFT JOIN public.users u ON u.id = al.user_id
+      WHERE al.company_id = ${companyId}::uuid
+        AND al.entity = 'ItemRevision' AND al.action = 'APPROVE'
+        AND al.changes @> ${'[{"field":"releaseStatus","after":"Verified"}]'}::jsonb`);
+  }
   const docs: SQL[] = [];
   if (s.po) {
     docs.push(sql`(al.entity = 'PurchaseOrder'
@@ -175,10 +194,8 @@ function hrefOf(r: Record<string, unknown>): string | null {
       return cancelDocHref(r['doc_type'] as CancelDocType, docId, code);
     case 'ecr':
       return entityHref('EngineeringChange', docId, code);
-    // ADR-311 — Drawing Register rows open the Rev's page (doc_id = item_revisions.id).
+    // ADR-323 — Drawing Register rows open the Rev's page (doc_id = item_revisions.id).
     case 'rev':
-    case 'revRelease':
-    case 'drawingCorrection':
       return `/drawings/${docId}`;
     default:
       return null;

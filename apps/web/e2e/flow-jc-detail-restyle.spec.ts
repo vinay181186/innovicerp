@@ -401,7 +401,8 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
     const logsText = openText;
     row(
       {
-        action: 'Per-op control: Recent Logs strip on OP10 lists entries (always open, no hide / show toggle)',
+        action:
+          'Per-op control: Recent Logs strip on OP10 lists entries (always open, no hide / show toggle)',
         document: JC_VIEW,
         qty: '—',
         headerStatus: `open: ${openText.slice(0, 110)}`,
@@ -538,7 +539,10 @@ test.describe.serial('JC detail restyle + operator pre-fill', () => {
     await opBox.fill(OPERATOR);
     await page.waitForTimeout(300);
     await shot(page, '07-start-form');
-    await page.getByRole('dialog').getByRole('button', { name: /Start Operation/i }).click();
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: /Start Operation/i })
+      .click();
     await dialogGone(page);
     await page.goto(`/op-entry?jc=${JC_START}`, { waitUntil: 'domcontentloaded' });
     await page.locator('table tbody tr').first().waitFor({ timeout: 45_000 });

@@ -6,12 +6,7 @@
   "srcDir": "src/ui",
   "tsconfig": "../../.design-sync/tsconfig.json",
   "cssEntry": ".ds-dist/index.css",
-  "runtimeFontPrefixes": [
-    "Barlow",
-    "Source Code Pro",
-    "Public Sans",
-    "JetBrains Mono"
-  ],
+  "runtimeFontPrefixes": ["Barlow", "Source Code Pro", "Public Sans", "JetBrains Mono"],
   "componentSrcMap": {
     "Badge": "src/ui/core/Badge.tsx",
     "Button": "src/ui/core/Button.tsx",

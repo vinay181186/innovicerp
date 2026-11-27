@@ -19,7 +19,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 import { type Locator, type Page, expect, test } from '@playwright/test';
-import { clickFirstRowMenuItem, planningLineRows, EDIT_PLAN_ITEM, clickPlanMenuItem } from './row-menu';
+import {
+  clickFirstRowMenuItem,
+  planningLineRows,
+  EDIT_PLAN_ITEM,
+  clickPlanMenuItem,
+} from './row-menu';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -45,9 +50,12 @@ const QC_DOCS_SO_WITHOUT_DIR = 'IN-SO-00035';
 const STAMP = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
 
 /** The rule's message (shared/jc-op-sequence.ts). Op numbers vary per case. */
-const RULE_RE = /Op (\d+) \(QC\) cannot directly follow Op (\d+) \(OSP\)\. Add a manufacturing operation between them/;
+const RULE_RE =
+  /Op (\d+) \(QC\) cannot directly follow Op (\d+) \(OSP\)\. Add a manufacturing operation between them/;
 const ruleRe = (qc: number, osp: number): RegExp =>
-  new RegExp(`Op ${qc} \\(QC\\) cannot directly follow Op ${osp} \\(OSP\\)\\. Add a manufacturing operation between them`);
+  new RegExp(
+    `Op ${qc} \\(QC\\) cannot directly follow Op ${osp} \\(OSP\\)\\. Add a manufacturing operation between them`,
+  );
 
 // ─── state / results ───────────────────────────────────────────────────────
 
@@ -101,7 +109,9 @@ function record(row: ResultRow): void {
   mkdirSync(dirname(RESULTS_FILE), { recursive: true });
   writeFileSync(RESULTS_FILE, JSON.stringify(rows, null, 2));
   // eslint-disable-next-line no-console
-  console.log(`>> [${row.scenario}] ${row.result.toUpperCase()} | ${row.action} | ${row.document} | ${row.headerStatus} | ${row.note}`);
+  console.log(
+    `>> [${row.scenario}] ${row.result.toUpperCase()} | ${row.action} | ${row.document} | ${row.headerStatus} | ${row.note}`,
+  );
 }
 function log(msg: string): void {
   // eslint-disable-next-line no-console
@@ -123,10 +133,14 @@ function testDbUrl(): string {
   const env = readFileSync('C:/Innovic_projects/innovic-erp/erp/.env.local', 'utf8');
   const m = /^TEST_DATABASE_URL=(.*)$/m.exec(env);
   const url = (m?.[1] ?? '').trim().replace(/^["']|["']$/g, '');
-  if (!/uitsrhyulidubnddzcex/.test(url)) throw new Error('TEST_DATABASE_URL is not the TEST project');
+  if (!/uitsrhyulidubnddzcex/.test(url))
+    throw new Error('TEST_DATABASE_URL is not the TEST project');
   return url;
 }
-async function db<T = Record<string, unknown>>(query: string, params: unknown[] = []): Promise<T[]> {
+async function db<T = Record<string, unknown>>(
+  query: string,
+  params: unknown[] = [],
+): Promise<T[]> {
   if (!/^\s*(select|with)\b/i.test(query)) throw new Error('SELECT only');
   const sql = postgres(testDbUrl(), { ssl: 'require', max: 1, prepare: false });
   try {
@@ -135,7 +149,13 @@ async function db<T = Record<string, unknown>>(query: string, params: unknown[] 
     await sql.end();
   }
 }
-interface DbOp { op_seq: number; operation: string; op_type: string; vendor: string | null; deleted: boolean }
+interface DbOp {
+  op_seq: number;
+  operation: string;
+  op_type: string;
+  vendor: string | null;
+  deleted: boolean;
+}
 async function jcOps(code: string): Promise<DbOp[]> {
   return db<DbOp>(
     `SELECT o.op_seq, o.operation, o.op_type, o.outsource_vendor_text AS vendor, (o.deleted_at IS NOT NULL) AS deleted
@@ -154,10 +174,14 @@ async function jcStatus(code: string): Promise<string> {
   return r[0] ? r[0].s : '(missing)';
 }
 async function jcCount(): Promise<number> {
-  const r = await db<{ n: string }>(`SELECT count(*)::text AS n FROM job_cards WHERE deleted_at IS NULL`);
+  const r = await db<{ n: string }>(
+    `SELECT count(*)::text AS n FROM job_cards WHERE deleted_at IS NULL`,
+  );
   return Number(r[0]?.n ?? 0);
 }
-async function jcByCode(code: string): Promise<{ id: string; remarks: string | null; recovery_kind: string | null }> {
+async function jcByCode(
+  code: string,
+): Promise<{ id: string; remarks: string | null; recovery_kind: string | null }> {
   const r = await db<{ id: string; remarks: string | null; recovery_kind: string | null }>(
     `SELECT id, remarks, recovery_kind FROM job_cards WHERE code = $1 AND deleted_at IS NULL`,
     [code],
@@ -173,7 +197,9 @@ function rememberRemarks(code: string, current: string | null): string | null {
   return (readState().oldRemarks ?? {})[code] ?? null;
 }
 const opsSummary = (ops: DbOp[]): string =>
-  ops.map((o) => `${o.op_seq * 10}:${o.op_type}"${o.operation}"${o.vendor ? `[${o.vendor}]` : ''}`).join(' → ');
+  ops
+    .map((o) => `${o.op_seq * 10}:${o.op_type}"${o.operation}"${o.vendor ? `[${o.vendor}]` : ''}`)
+    .join(' → ');
 
 // ─── UI helpers ────────────────────────────────────────────────────────────
 
@@ -209,9 +235,15 @@ async function comboOptions(page: Page, input: Locator): Promise<string[]> {
   await expect(listbox).toBeVisible({ timeout: 30_000 });
   await expect(listbox).not.toContainText('Loading', { timeout: 60_000 });
   await page.waitForTimeout(500);
-  const out = (await listbox.getByRole('option').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+  const out = (await listbox.getByRole('option').allInnerTexts()).map((t) =>
+    t.replace(/\s+/g, ' ').trim(),
+  );
   await page.keyboard.press('Escape').catch(() => {});
-  await page.locator('.section-hdr').first().click({ force: true }).catch(() => {});
+  await page
+    .locator('.section-hdr')
+    .first()
+    .click({ force: true })
+    .catch(() => {});
   return out;
 }
 
@@ -230,7 +262,8 @@ function viewCards(page: Page): Locator {
   return page.locator('span.mono.fw-700[style*="height: 24px"]');
 }
 const hint = (page: Page): Locator => page.getByRole('alert').filter({ hasText: RULE_RE });
-const saveJc = (page: Page): Locator => page.getByRole('button', { name: /Save Job Card|Save Changes/ });
+const saveJc = (page: Page): Locator =>
+  page.getByRole('button', { name: /Save Job Card|Save Changes/ });
 
 async function addProcessOp(page: Page, n: number, name: string, machine: string): Promise<void> {
   await page.getByRole('button', { name: '+ Add Op', exact: true }).click();
@@ -238,7 +271,12 @@ async function addProcessOp(page: Page, n: number, name: string, machine: string
   const card = opCard(page, n);
   await expect(card).toBeVisible({ timeout: 15_000 });
   await card.getByPlaceholder('Operation name ★').fill(name);
-  await pickCombo(page, card.locator('input[id^="jc-edit-mach-"]'), machine, new RegExp(machine, 'i'));
+  await pickCombo(
+    page,
+    card.locator('input[id^="jc-edit-mach-"]'),
+    machine,
+    new RegExp(machine, 'i'),
+  );
 }
 async function addOspOp(page: Page, n: number, name: string, vendor: string): Promise<void> {
   await page.getByRole('button', { name: '+ Add Outsource Op', exact: true }).click();
@@ -253,7 +291,12 @@ async function addQcOp(page: Page, n: number, process: string): Promise<void> {
   await page.waitForTimeout(400);
   const card = opCard(page, n);
   await expect(card).toBeVisible({ timeout: 15_000 });
-  await pickCombo(page, card.locator('input[id^="jc-edit-qcproc-"]'), process, new RegExp(`^${process}$`));
+  await pickCombo(
+    page,
+    card.locator('input[id^="jc-edit-qcproc-"]'),
+    process,
+    new RegExp(`^${process}$`),
+  );
 }
 
 /** Open /job-cards/new, pick the JWSO source line, set qty + remarks. */
@@ -263,31 +306,56 @@ async function startJcCreate(page: Page, s: State, remarks: string): Promise<voi
   const source = page.locator('input[list="dlJcSource"]');
   await expect(source).toBeVisible({ timeout: 30_000 });
   await expect
-    .poll(async () => (await page.locator('#dlJcSource option').evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value))).some((v) => v.includes(s.jwCode!)), {
-      timeout: 60_000,
-      message: `the JWSO ${s.jwCode} is offered as a JC source`,
-    })
+    .poll(
+      async () =>
+        (
+          await page
+            .locator('#dlJcSource option')
+            .evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value))
+        ).some((v) => v.includes(s.jwCode!)),
+      {
+        timeout: 60_000,
+        message: `the JWSO ${s.jwCode} is offered as a JC source`,
+      },
+    )
     .toBe(true);
-  const values = await page.locator('#dlJcSource option').evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value));
+  const values = await page
+    .locator('#dlJcSource option')
+    .evaluateAll((els) => els.map((e) => (e as HTMLOptionElement).value));
   const label = values.find((v) => v.includes(s.jwCode!))!;
   await source.fill(label);
   await page.waitForTimeout(800);
   await expect(page.getByText(/Already in JCs/)).toBeVisible({ timeout: 15_000 });
-  const qty = page.locator('.form-grp').filter({ has: page.locator('label', { hasText: /^Order Qty/ }) }).locator('input');
+  const qty = page
+    .locator('.form-grp')
+    .filter({ has: page.locator('label', { hasText: /^Order Qty/ }) })
+    .locator('input');
   await qty.fill(String(JC_QTY));
   await page.locator('textarea.innovic-textarea').fill(remarks);
 }
 
 /** Click Save on the JC form and return the created/updated JC from the API response. */
-async function saveJcExpectOk(page: Page, method: 'POST' | 'PATCH'): Promise<{ id: string; code: string }> {
+async function saveJcExpectOk(
+  page: Page,
+  method: 'POST' | 'PATCH',
+): Promise<{ id: string; code: string }> {
   const resp = page.waitForResponse(
-    (r) => r.request().method() === method && /\/job-cards(\/[0-9a-f-]{36})?$/.test(new URL(r.url()).pathname),
+    (r) =>
+      r.request().method() === method &&
+      /\/job-cards(\/[0-9a-f-]{36})?$/.test(new URL(r.url()).pathname),
     { timeout: 60_000 },
   );
   await saveJc(page).click();
   const r = await resp;
-  const body = (await r.json().catch(() => ({}))) as { id?: string; code?: string; message?: string };
-  expect(r.status(), `save ${method} /job-cards -> ${r.status()} ${body.message ?? ''}`).toBeLessThan(300);
+  const body = (await r.json().catch(() => ({}))) as {
+    id?: string;
+    code?: string;
+    message?: string;
+  };
+  expect(
+    r.status(),
+    `save ${method} /job-cards -> ${r.status()} ${body.message ?? ''}`,
+  ).toBeLessThan(300);
   // Create returns to the list; the JC Status edit form returns to the JC's own page.
   await page.waitForURL((u) => !/\/(new|edit)\/?$/.test(u.pathname), { timeout: 60_000 });
   return { id: body.id!, code: body.code! };
@@ -323,27 +391,47 @@ test('01 - build the JWSO the job cards hang off (E2E_ADR168_)', async ({ page }
     await page.getByPlaceholder(/Client PO reference/i).fill(`${MARK}JWSO-${STAMP}`);
     const lineCodeBoxes = page.locator('input[id^="jwln-ic-"]');
     if ((await lineCodeBoxes.count()) === 0) {
-      await page.getByRole('button', { name: /Add Line/i }).first().click();
+      await page
+        .getByRole('button', { name: /Add Line/i })
+        .first()
+        .click();
       await page.waitForTimeout(800);
     }
     // Line Item Code is a type-to-search picker (#jwln-ic-0): type, then pick the option.
     await page.locator('#jwln-ic-0').click();
     await page.locator('#jwln-ic-0').fill(ITEM_CODE);
-    await page.getByRole('option').filter({ hasText: ITEM_CODE }).first().click({ timeout: 30_000 });
+    await page
+      .getByRole('option')
+      .filter({ hasText: ITEM_CODE })
+      .first()
+      .click({ timeout: 30_000 });
     await page.waitForTimeout(2500);
-    await expect(page.locator('input[name="lines.0.partName"]')).not.toHaveValue('', { timeout: 30_000 });
+    await expect(page.locator('input[name="lines.0.partName"]')).not.toHaveValue('', {
+      timeout: 30_000,
+    });
     await page.locator('input[name="lines.0.orderQty"]').fill(String(JWSO_QTY));
     // Drawing Rev is mandatory on a JWSO line ("Line 1: enter the drawing Rev").
     await page.locator('input[name="lines.0.revision"]').fill('A');
     await page.locator('input[name="lines.0.rate"]').fill('10');
     await page.waitForTimeout(400);
-    const resp = page.waitForResponse((r) => r.request().method() === 'POST' && /\/job-work-orders$/.test(new URL(r.url()).pathname), { timeout: 90_000 });
+    const resp = page.waitForResponse(
+      (r) =>
+        r.request().method() === 'POST' && /\/job-work-orders$/.test(new URL(r.url()).pathname),
+      { timeout: 90_000 },
+    );
     await page.getByRole('button', { name: /Save JW/i }).click();
     const r = await resp;
-    const body = (await r.json()) as { id: string; code: string; message?: string; lines?: { id: string }[] };
+    const body = (await r.json()) as {
+      id: string;
+      code: string;
+      message?: string;
+      lines?: { id: string }[];
+    };
     expect(r.status(), 'JWSO saved: ' + JSON.stringify(body).slice(0, 200)).toBeLessThan(300);
     s = writeState({ jwCode: body.code, jwId: body.id, jwLineId: body.lines?.[0]?.id });
-    log(`JWSO ${s.jwCode} (${s.jwId}) line ${s.jwLineId} — client PO ref ${MARK}JWSO-${STAMP}, qty ${JWSO_QTY}`);
+    log(
+      `JWSO ${s.jwCode} (${s.jwId}) line ${s.jwLineId} — client PO ref ${MARK}JWSO-${STAMP}, qty ${JWSO_QTY}`,
+    );
   }
   if (!s.jwLineId) {
     const r = await db<{ id: string }>(
@@ -352,17 +440,26 @@ test('01 - build the JWSO the job cards hang off (E2E_ADR168_)', async ({ page }
     );
     s = writeState({ jwLineId: r[0]?.id });
   }
-  const st = await db<{ status: string }>(`SELECT status FROM job_work_orders WHERE code = $1`, [s.jwCode]);
+  const st = await db<{ status: string }>(`SELECT status FROM job_work_orders WHERE code = $1`, [
+    s.jwCode,
+  ]);
   record({
-    scenario: 'Setup', action: 'Create job-work order', document: s.jwCode!, qty: `${JWSO_QTY}`,
-    headerStatus: st[0]?.status ?? '?', overallStatus: 'open, 1 line', result: 'pass',
+    scenario: 'Setup',
+    action: 'Create job-work order',
+    document: s.jwCode!,
+    qty: `${JWSO_QTY}`,
+    headerStatus: st[0]?.status ?? '?',
+    overallStatus: 'open, 1 line',
+    result: 'pass',
     note: `client PO ref ${MARK}JWSO-…; line 1 = ${ITEM_CODE}`,
   });
 });
 
 // ─── Final Inspection replaces DIR ─────────────────────────────────────────
 
-test('S1 (+) JW JC with two in-house ops gets a 3rd op "Final Inspection" (not DIR)', async ({ page }) => {
+test('S1 (+) JW JC with two in-house ops gets a 3rd op "Final Inspection" (not DIR)', async ({
+  page,
+}) => {
   test.setTimeout(600_000);
   let s = readState();
   // Reuse JC A only while it is still in its S1 shape — S9 later retypes it.
@@ -385,10 +482,20 @@ test('S1 (+) JW JC with two in-house ops gets a 3rd op "Final Inspection" (not D
   await snap(page, 'S1-status');
   const ops = await jcOps(jc.code);
   log(`S1: screen op 30 = "${thirdText}" | DB: ${opsSummary(ops)}`);
-  const ok = ops.length === 3 && ops[2]!.op_type === 'qc' && ops[2]!.operation === 'Final Inspection' && /Final Inspection/.test(thirdText) && !/\bDIR\b/i.test(thirdText);
+  const ok =
+    ops.length === 3 &&
+    ops[2]!.op_type === 'qc' &&
+    ops[2]!.operation === 'Final Inspection' &&
+    /Final Inspection/.test(thirdText) &&
+    !/\bDIR\b/i.test(thirdText);
   record({
-    scenario: 'S1', action: 'Save two in-house ops', document: jc.code, qty: `${JC_QTY}`,
-    headerStatus: await jcStatus(jc.code), overallStatus: `3 ops: ${opsSummary(ops)}`, result: ok ? 'pass' : 'fail',
+    scenario: 'S1',
+    action: 'Save two in-house ops',
+    document: jc.code,
+    qty: `${JC_QTY}`,
+    headerStatus: await jcStatus(jc.code),
+    overallStatus: `3 ops: ${opsSummary(ops)}`,
+    result: ok ? 'pass' : 'fail',
     note: `op 30 on screen: "${thirdText}"`,
   });
   expect(ops.map((o) => o.op_type)).toEqual(['process', 'process', 'qc']);
@@ -407,15 +514,22 @@ test('S2 (+) the JC form QC-op picker offers "Final Inspection" and "dir"', asyn
   const hasFinal = opts.some((o) => /^Final Inspection\b/.test(o));
   const hasDir = opts.some((o) => /^dir$/i.test(o));
   record({
-    scenario: 'S2', action: 'Open QC process picker', document: 'QC Process: Final Inspection', qty: '',
-    headerStatus: 'Active', overallStatus: `offered: ${opts.map((o) => o.split(' — ')[0]).join(', ')}`, result: hasFinal && hasDir ? 'pass' : 'fail',
+    scenario: 'S2',
+    action: 'Open QC process picker',
+    document: 'QC Process: Final Inspection',
+    qty: '',
+    headerStatus: 'Active',
+    overallStatus: `offered: ${opts.map((o) => o.split(' — ')[0]).join(', ')}`,
+    result: hasFinal && hasDir ? 'pass' : 'fail',
     note: 'both "Final Inspection" and "dir" are offered on the JC form',
   });
   expect(hasFinal, 'Final Inspection offered').toBe(true);
   expect(hasDir, 'dir offered as an ordinary row').toBe(true);
 });
 
-test('S3 (−) QC Process Master refuses to delete "Final Inspection" (system-added) and "dir" (in use)', async ({ page }) => {
+test('S3 (−) QC Process Master refuses to delete "Final Inspection" (system-added) and "dir" (in use)', async ({
+  page,
+}) => {
   page.on('dialog', (d) => void d.accept());
   await page.goto('/qc-processes', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
@@ -425,13 +539,25 @@ test('S3 (−) QC Process Master refuses to delete "Final Inspection" (system-ad
   const tryDelete = async (code: string): Promise<string> => {
     await search.fill(code);
     await page.waitForTimeout(2000);
-    const row = page.locator('tbody tr').filter({ hasText: new RegExp(`^\\s*\\d+\\s+${code}\\b`) }).first();
-    const rowAny = (await row.count()) ? row : page.locator('tbody tr').filter({ hasText: code }).first();
+    const row = page
+      .locator('tbody tr')
+      .filter({ hasText: new RegExp(`^\\s*\\d+\\s+${code}\\b`) })
+      .first();
+    const rowAny = (await row.count())
+      ? row
+      : page.locator('tbody tr').filter({ hasText: code }).first();
     await expect(rowAny).toBeVisible({ timeout: 30_000 });
-    const del = rowAny.getByRole('button', { name: /^Delete$/  /* icon-only Action column, 2026-09-21 */ });
-    expect(await del.count(), `Del button visible for ${code} (needs L5 edit+approve)`).toBeGreaterThan(0);
+    const del = rowAny.getByRole('button', {
+      name: /^Delete$/ /* icon-only Action column, 2026-09-21 */,
+    });
+    expect(
+      await del.count(),
+      `Del button visible for ${code} (needs L5 edit+approve)`,
+    ).toBeGreaterThan(0);
     await del.click();
-    const banner = page.getByRole('alert').filter({ hasText: /cannot be deleted|Set it to Inactive/ });
+    const banner = page
+      .getByRole('alert')
+      .filter({ hasText: /cannot be deleted|Set it to Inactive/ });
     await expect(banner).toBeVisible({ timeout: 30_000 });
     return (await banner.innerText()).replace(/\s+/g, ' ').trim();
   };
@@ -448,16 +574,27 @@ test('S3 (−) QC Process Master refuses to delete "Final Inspection" (system-ad
   );
   const fi = rows.find((r) => r.code === 'Final Inspection');
   const dr = rows.find((r) => r.code === 'dir');
-  const finalOk = /automatic Final Inspection step/i.test(finalMsg) && !!fi && fi.deleted_at === null;
+  const finalOk =
+    /automatic Final Inspection step/i.test(finalMsg) && !!fi && fi.deleted_at === null;
   const dirOk = /used in \d+ job card op/i.test(dirMsg) && !!dr && dr.deleted_at === null;
   record({
-    scenario: 'S3', action: 'Delete system QC process', document: 'QC Process: Final Inspection', qty: '',
-    headerStatus: fi?.is_active ? 'Active' : 'Inactive', overallStatus: 'row still present', result: finalOk ? 'by-design' : 'fail',
+    scenario: 'S3',
+    action: 'Delete system QC process',
+    document: 'QC Process: Final Inspection',
+    qty: '',
+    headerStatus: fi?.is_active ? 'Active' : 'Inactive',
+    overallStatus: 'row still present',
+    result: finalOk ? 'by-design' : 'fail',
     note: finalMsg,
   });
   record({
-    scenario: 'S3', action: 'Delete in-use QC process', document: 'QC Process: dir', qty: '',
-    headerStatus: dr?.is_active ? 'Active' : 'Inactive', overallStatus: 'row still present', result: dirOk ? 'by-design' : 'fail',
+    scenario: 'S3',
+    action: 'Delete in-use QC process',
+    document: 'QC Process: dir',
+    qty: '',
+    headerStatus: dr?.is_active ? 'Active' : 'Inactive',
+    overallStatus: 'row still present',
+    result: dirOk ? 'by-design' : 'fail',
     note: dirMsg,
   });
   expect(finalMsg).toMatch(/automatic Final Inspection step/i);
@@ -467,16 +604,27 @@ test('S3 (−) QC Process Master refuses to delete "Final Inspection" (system-ad
   expect(dr?.deleted_at ?? null).toBeNull();
 });
 
-test('S4 (+) an old JC ending in DIR keeps exactly its ops after a remarks-only edit', async ({ page }) => {
+test('S4 (+) an old JC ending in DIR keeps exactly its ops after a remarks-only edit', async ({
+  page,
+}) => {
   test.setTimeout(600_000);
   const jc = await jcByCode(OLD_DIR_JC);
   const before = await jcOps(OLD_DIR_JC);
   const status = await jcStatus(OLD_DIR_JC);
   log(`S4: ${OLD_DIR_JC} status=${status} recovery=${jc.recovery_kind} ops=${opsSummary(before)}`);
-  if (jc.recovery_kind || !/^(open|qc_pending)$/.test(status) || !/^dir$/i.test(before[before.length - 1]?.operation ?? '')) {
+  if (
+    jc.recovery_kind ||
+    !/^(open|qc_pending)$/.test(status) ||
+    !/^dir$/i.test(before[before.length - 1]?.operation ?? '')
+  ) {
     record({
-      scenario: 'S4', action: 'Save with remark change', document: OLD_DIR_JC, qty: '',
-      headerStatus: status, overallStatus: opsSummary(before), result: 'na',
+      scenario: 'S4',
+      action: 'Save with remark change',
+      document: OLD_DIR_JC,
+      qty: '',
+      headerStatus: status,
+      overallStatus: opsSummary(before),
+      result: 'na',
       note: `not editable as required: recovery=${jc.recovery_kind}, status=${status}`,
     });
     test.skip(true, 'no editable old DIR job card');
@@ -486,18 +634,32 @@ test('S4 (+) an old JC ending in DIR keeps exactly its ops after a remarks-only 
   await page.goto(`/job-cards/${jc.id}/edit`, { waitUntil: 'domcontentloaded' });
   await expect(editCards(page)).toHaveCount(before.length, { timeout: 60_000 });
   await expect(hint(page)).toHaveCount(0);
-  await page.locator('.form-grp').filter({ has: page.locator('label', { hasText: /^Remarks/ }) }).locator('textarea, input').first().fill(`${MARK}S4 remarks-only edit (was: ${orig4 ?? ''})`);
+  await page
+    .locator('.form-grp')
+    .filter({ has: page.locator('label', { hasText: /^Remarks/ }) })
+    .locator('textarea, input')
+    .first()
+    .fill(`${MARK}S4 remarks-only edit (was: ${orig4 ?? ''})`);
   await saveJcExpectOk(page, 'PATCH');
   const after = await jcOps(OLD_DIR_JC);
   await page.goto(`/job-cards/${jc.id}`, { waitUntil: 'domcontentloaded' });
   await expect(viewCards(page)).toHaveCount(after.length, { timeout: 60_000 });
   const screenCount = await viewCards(page).count();
   await snap(page, 'S4-status');
-  const ok = after.length === before.length && screenCount === before.length && !after.some((o) => o.operation === 'Final Inspection') && after.map((o) => o.operation).join('|') === before.map((o) => o.operation).join('|');
+  const ok =
+    after.length === before.length &&
+    screenCount === before.length &&
+    !after.some((o) => o.operation === 'Final Inspection') &&
+    after.map((o) => o.operation).join('|') === before.map((o) => o.operation).join('|');
   log(`S4: after=${opsSummary(after)} screen cards=${screenCount}`);
   record({
-    scenario: 'S4', action: 'Save with remark change', document: OLD_DIR_JC, qty: '',
-    headerStatus: await jcStatus(OLD_DIR_JC), overallStatus: `${after.length} ops unchanged: ${opsSummary(after)}`, result: ok ? 'pass' : 'fail',
+    scenario: 'S4',
+    action: 'Save with remark change',
+    document: OLD_DIR_JC,
+    qty: '',
+    headerStatus: await jcStatus(OLD_DIR_JC),
+    overallStatus: `${after.length} ops unchanged: ${opsSummary(after)}`,
+    result: ok ? 'pass' : 'fail',
     note: 'no "Final Inspection" appended; old DIR op kept as-is',
   });
   expect(after.map((o) => o.operation)).toEqual(before.map((o) => o.operation));
@@ -524,24 +686,38 @@ test('S5 (+) JW JC ending in an OSP op gets NO Final Inspection', async ({ page 
   await snap(page, 'S5-status');
   const ops = await jcOps(jc.code);
   log(`S5: DB ${opsSummary(ops)}`);
-  const ok = ops.length === 2 && ops[1]!.op_type === 'outsource' && !ops.some((o) => o.operation === 'Final Inspection');
+  const ok =
+    ops.length === 2 &&
+    ops[1]!.op_type === 'outsource' &&
+    !ops.some((o) => o.operation === 'Final Inspection');
   record({
-    scenario: 'S5', action: 'Save process then OSP', document: jc.code, qty: `${JC_QTY}`,
-    headerStatus: await jcStatus(jc.code), overallStatus: `2 ops: ${opsSummary(ops)}`, result: ok ? 'pass' : 'fail',
+    scenario: 'S5',
+    action: 'Save process then OSP',
+    document: jc.code,
+    qty: `${JC_QTY}`,
+    headerStatus: await jcStatus(jc.code),
+    overallStatus: `2 ops: ${opsSummary(ops)}`,
+    result: ok ? 'pass' : 'fail',
     note: 'ends with the OSP op; no Final Inspection appended (Rule B)',
   });
   expect(ops.map((o) => o.op_type)).toEqual(['process', 'outsource']);
   expect(await page.locator('body').innerText()).not.toMatch(/Final Inspection/);
 });
 
-test('S15 (+) QC Documents columns are MIR, MCR, Final Inspection, TPI (+ DIR only when a JC has it)', async ({ page }) => {
+test('S15 (+) QC Documents columns are MIR, MCR, Final Inspection, TPI (+ DIR only when a JC has it)', async ({
+  page,
+}) => {
   const headersFor = async (so: string): Promise<string[]> => {
     await page.goto('/qc-docs', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2500);
     await pickCombo(page, page.locator('#qc-docs-so'), so, new RegExp(so));
     await expect(page.locator('body')).toContainText(so, { timeout: 60_000 });
     await page.waitForTimeout(2500);
-    const ths = await page.locator('table.innovic-table thead tr').first().locator('th').allInnerTexts();
+    const ths = await page
+      .locator('table.innovic-table thead tr')
+      .first()
+      .locator('th')
+      .allInnerTexts();
     return ths.map((t) => t.trim());
   };
   const withDir = await headersFor(QC_DOCS_SO_WITH_DIR);
@@ -564,13 +740,23 @@ test('S15 (+) QC Documents columns are MIR, MCR, Final Inspection, TPI (+ DIR on
   const ok1 = fixedInOrder(withDir) && up(withDir).includes('DIR');
   const ok2 = fixedInOrder(withoutDir) && !up(withoutDir).includes('DIR');
   record({
-    scenario: 'S15', action: 'Open QC documents list', document: QC_DOCS_SO_WITH_DIR, qty: '',
-    headerStatus: 'SO view', overallStatus: `columns: ${withDir.join(', ')}`, result: ok1 ? 'pass' : 'fail',
+    scenario: 'S15',
+    action: 'Open QC documents list',
+    document: QC_DOCS_SO_WITH_DIR,
+    qty: '',
+    headerStatus: 'SO view',
+    overallStatus: `columns: ${withDir.join(', ')}`,
+    result: ok1 ? 'pass' : 'fail',
     note: `${dirRows[0]?.n ?? '?'} DIR op(s) on this SO's job cards -> DIR column shown after the fixed four`,
   });
   record({
-    scenario: 'S15', action: 'Open QC documents list', document: QC_DOCS_SO_WITHOUT_DIR, qty: '',
-    headerStatus: 'SO view', overallStatus: `columns: ${withoutDir.join(', ')}`, result: ok2 ? 'pass' : 'fail',
+    scenario: 'S15',
+    action: 'Open QC documents list',
+    document: QC_DOCS_SO_WITHOUT_DIR,
+    qty: '',
+    headerStatus: 'SO view',
+    overallStatus: `columns: ${withoutDir.join(', ')}`,
+    result: ok2 ? 'pass' : 'fail',
     note: 'no DIR op on this SO -> no DIR column; fixed four still present in order',
   });
   expect(ok1, 'SO with a DIR op: fixed four in order + DIR').toBe(true);
@@ -579,7 +765,9 @@ test('S15 (+) QC Documents columns are MIR, MCR, Final Inspection, TPI (+ DIR on
 
 // ─── No QC directly after OSP ──────────────────────────────────────────────
 
-test('S6 (−) create Process → OSP → QC: live hint, Save refused, no JC created; S7 (+) insert a Process between them → saves', async ({ page }) => {
+test('S6 (−) create Process → OSP → QC: live hint, Save refused, no JC created; S7 (+) insert a Process between them → saves', async ({
+  page,
+}) => {
   test.setTimeout(900_000);
   let s = readState();
   const countBefore = await jcCount();
@@ -599,10 +787,16 @@ test('S6 (−) create Process → OSP → QC: live hint, Save refused, no JC cre
   expect(page.url(), 'still on the create form').toContain('/job-cards/new');
   const countAfter = await jcCount();
   log(`S6: banner = ${bannerText}; JC count ${countBefore} -> ${countAfter}`);
-  const s6ok = ruleRe(30, 20).test(hintText) && ruleRe(30, 20).test(bannerText) && countAfter === countBefore;
+  const s6ok =
+    ruleRe(30, 20).test(hintText) && ruleRe(30, 20).test(bannerText) && countAfter === countBefore;
   record({
-    scenario: 'S6', action: 'Add QC after OSP', document: '(new JC — not created)', qty: `${JC_QTY}`,
-    headerStatus: '—', overallStatus: `no JC created (count ${countBefore} → ${countAfter})`, result: s6ok ? 'by-design' : 'fail',
+    scenario: 'S6',
+    action: 'Add QC after OSP',
+    document: '(new JC — not created)',
+    qty: `${JC_QTY}`,
+    headerStatus: '—',
+    overallStatus: `no JC created (count ${countBefore} → ${countAfter})`,
+    result: s6ok ? 'by-design' : 'fail',
     note: `hint + banner: "${bannerText}"`,
   });
   expect(hintText).toMatch(ruleRe(30, 20));
@@ -630,8 +824,13 @@ test('S6 (−) create Process → OSP → QC: live hint, Save refused, no JC cre
   log(`S7: JC C ${jc.code} — ${opsSummary(ops)}`);
   const s7ok = ops.map((o) => o.op_type).join(',') === 'process,outsource,process,qc';
   record({
-    scenario: 'S7', action: 'Insert process between OSP and QC', document: jc.code, qty: `${JC_QTY}`,
-    headerStatus: await jcStatus(jc.code), overallStatus: `4 ops: ${opsSummary(ops)}`, result: s7ok ? 'pass' : 'fail',
+    scenario: 'S7',
+    action: 'Insert process between OSP and QC',
+    document: jc.code,
+    qty: `${JC_QTY}`,
+    headerStatus: await jcStatus(jc.code),
+    overallStatus: `4 ops: ${opsSummary(ops)}`,
+    result: s7ok ? 'pass' : 'fail',
     note: 'hint disappeared once a manufacturing op sat between OSP and QC; Save succeeded',
   });
   expect(ops.map((o) => o.op_type)).toEqual(['process', 'outsource', 'process', 'qc']);
@@ -653,14 +852,21 @@ test('S8 (+) create Process → QC saves (QC is not blocked in general)', async 
   log(`S8: JC D ${jc.code} — ${opsSummary(ops)}`);
   const ok = ops.map((o) => o.op_type).join(',') === 'process,qc' && ops[1]!.operation === 'dir';
   record({
-    scenario: 'S8', action: 'Save process then QC', document: jc.code, qty: `${JC_QTY}`,
-    headerStatus: await jcStatus(jc.code), overallStatus: `2 ops: ${opsSummary(ops)}`, result: ok ? 'pass' : 'fail',
+    scenario: 'S8',
+    action: 'Save process then QC',
+    document: jc.code,
+    qty: `${JC_QTY}`,
+    headerStatus: await jcStatus(jc.code),
+    overallStatus: `2 ops: ${opsSummary(ops)}`,
+    result: ok ? 'pass' : 'fail',
     note: 'QC after an in-house op is allowed; no extra Final Inspection (routing already ends in QC)',
   });
   expect(ops.map((o) => o.op_type)).toEqual(['process', 'qc']);
 });
 
-test('S9 (+) edit JC A: retype its last in-house op to OSP → no hint, Save drops the stale Final Inspection', async ({ page }) => {
+test('S9 (+) edit JC A: retype its last in-house op to OSP → no hint, Save drops the stale Final Inspection', async ({
+  page,
+}) => {
   test.setTimeout(600_000);
   const s = readState();
   const jc = s.jcA!;
@@ -673,7 +879,12 @@ test('S9 (+) edit JC A: retype its last in-house op to OSP → no hint, Save dro
     const card = opCard(page, 2);
     await card.locator('input[type="checkbox"]').check();
     await page.waitForTimeout(400);
-    await pickCombo(page, card.locator('input[id^="jc-edit-vend-"]'), VENDOR_CODE, new RegExp(VENDOR_CODE));
+    await pickCombo(
+      page,
+      card.locator('input[id^="jc-edit-vend-"]'),
+      VENDOR_CODE,
+      new RegExp(VENDOR_CODE),
+    );
     await page.waitForTimeout(500);
     await expect(hint(page)).toHaveCount(0);
     await snap(page, 'S9-before-save');
@@ -685,17 +896,28 @@ test('S9 (+) edit JC A: retype its last in-house op to OSP → no hint, Save dro
   const body = await page.locator('body').innerText();
   await snap(page, 'S9-status');
   log(`S9: ${jc.code} now ${opsSummary(after)}`);
-  const ok = after.map((o) => o.op_type).join(',') === 'process,outsource' && after[1]!.vendor === VENDOR_CODE && !after.some((o) => o.operation === 'Final Inspection') && !/Final Inspection/.test(body);
+  const ok =
+    after.map((o) => o.op_type).join(',') === 'process,outsource' &&
+    after[1]!.vendor === VENDOR_CODE &&
+    !after.some((o) => o.operation === 'Final Inspection') &&
+    !/Final Inspection/.test(body);
   record({
-    scenario: 'S9', action: 'Retype last op to OSP', document: jc.code, qty: `${JC_QTY}`,
-    headerStatus: await jcStatus(jc.code), overallStatus: `2 ops: ${opsSummary(after)}`, result: ok ? 'pass' : 'fail',
+    scenario: 'S9',
+    action: 'Retype last op to OSP',
+    document: jc.code,
+    qty: `${JC_QTY}`,
+    headerStatus: await jcStatus(jc.code),
+    overallStatus: `2 ops: ${opsSummary(after)}`,
+    result: ok ? 'pass' : 'fail',
     note: 'stale system "Final Inspection" dropped automatically; JC ends with the OSP op',
   });
   expect(after.map((o) => o.op_type)).toEqual(['process', 'outsource']);
   expect(body).not.toMatch(/Final Inspection/);
 });
 
-test('S10 (−) edit JC B (Process, OSP): add a QC op after the OSP → hint, Save refused, JC unchanged', async ({ page }) => {
+test('S10 (−) edit JC B (Process, OSP): add a QC op after the OSP → hint, Save refused, JC unchanged', async ({
+  page,
+}) => {
   test.setTimeout(600_000);
   const s = readState();
   const jc = s.jcB!;
@@ -714,23 +936,36 @@ test('S10 (−) edit JC B (Process, OSP): add a QC op after the OSP → hint, Sa
   expect(page.url()).toContain('/edit');
   const after = await jcOps(jc.code);
   log(`S10: hint="${hintText}" banner="${bannerText}" ops ${opsSummary(after)}`);
-  const ok = ruleRe(30, 20).test(hintText) && ruleRe(30, 20).test(bannerText) && after.map((o) => o.operation).join('|') === before.map((o) => o.operation).join('|');
+  const ok =
+    ruleRe(30, 20).test(hintText) &&
+    ruleRe(30, 20).test(bannerText) &&
+    after.map((o) => o.operation).join('|') === before.map((o) => o.operation).join('|');
   record({
-    scenario: 'S10', action: 'Add QC after OSP', document: jc.code, qty: `${JC_QTY}`,
-    headerStatus: await jcStatus(jc.code), overallStatus: `unchanged: ${opsSummary(after)}`, result: ok ? 'by-design' : 'fail',
+    scenario: 'S10',
+    action: 'Add QC after OSP',
+    document: jc.code,
+    qty: `${JC_QTY}`,
+    headerStatus: await jcStatus(jc.code),
+    overallStatus: `unchanged: ${opsSummary(after)}`,
+    result: ok ? 'by-design' : 'fail',
     note: `"${bannerText}"`,
   });
   expect(bannerText).toMatch(ruleRe(30, 20));
   expect(after.length).toBe(before.length);
 });
 
-test('S11 (+) grandfathered OSP→QC JC: remarks-only save works; adding a NEW QC right after the OSP is refused', async ({ page }) => {
+test('S11 (+) grandfathered OSP→QC JC: remarks-only save works; adding a NEW QC right after the OSP is refused', async ({
+  page,
+}) => {
   test.setTimeout(600_000);
   const jc = await jcByCode(GRANDFATHERED_JC);
   const before = await jcOps(GRANDFATHERED_JC);
   const status = await jcStatus(GRANDFATHERED_JC);
   log(`S11: ${GRANDFATHERED_JC} status=${status} ops=${opsSummary(before)}`);
-  expect(before.map((o) => o.op_type).slice(0, 2), 'fixture still is OSP → QC').toEqual(['outsource', 'qc']);
+  expect(before.map((o) => o.op_type).slice(0, 2), 'fixture still is OSP → QC').toEqual([
+    'outsource',
+    'qc',
+  ]);
   const orig11 = rememberRemarks(GRANDFATHERED_JC, jc.remarks);
 
   // Part 1: remarks-only edit saves without any hint.
@@ -738,8 +973,18 @@ test('S11 (+) grandfathered OSP→QC JC: remarks-only save works; adding a NEW Q
   await expect(editCards(page)).toHaveCount(before.length, { timeout: 60_000 });
   await expect(hint(page)).toHaveCount(0);
   await snap(page, 'S11-no-hint');
-  await page.locator('.form-grp').filter({ has: page.locator('label', { hasText: /^Remarks/ }) }).locator('textarea, input').first().fill(`${MARK}S11 grandfathered remarks-only edit (was: ${orig11 ?? ''})`);
-  const resp = page.waitForResponse((r) => r.request().method() === 'PATCH' && /\/job-cards\/[0-9a-f-]{36}$/.test(new URL(r.url()).pathname), { timeout: 60_000 });
+  await page
+    .locator('.form-grp')
+    .filter({ has: page.locator('label', { hasText: /^Remarks/ }) })
+    .locator('textarea, input')
+    .first()
+    .fill(`${MARK}S11 grandfathered remarks-only edit (was: ${orig11 ?? ''})`);
+  const resp = page.waitForResponse(
+    (r) =>
+      r.request().method() === 'PATCH' &&
+      /\/job-cards\/[0-9a-f-]{36}$/.test(new URL(r.url()).pathname),
+    { timeout: 60_000 },
+  );
   await saveJc(page).click();
   const r = await resp;
   const body = (await r.json().catch(() => ({}))) as { message?: string };
@@ -748,11 +993,21 @@ test('S11 (+) grandfathered OSP→QC JC: remarks-only save works; adding a NEW Q
   const after1 = await jcOps(GRANDFATHERED_JC);
   const rem = await jcByCode(GRANDFATHERED_JC);
   log(`S11 part 1: PATCH -> ${r.status()} ${body.message ?? ''}; remarks now "${rem.remarks}"`);
-  const p1ok = savedOk && /E2E_ADR168_S11/.test(rem.remarks ?? '') && after1.map((o) => o.operation).join('|') === before.map((o) => o.operation).join('|');
+  const p1ok =
+    savedOk &&
+    /E2E_ADR168_S11/.test(rem.remarks ?? '') &&
+    after1.map((o) => o.operation).join('|') === before.map((o) => o.operation).join('|');
   record({
-    scenario: 'S11', action: 'Save with remark change', document: GRANDFATHERED_JC, qty: '',
-    headerStatus: await jcStatus(GRANDFATHERED_JC), overallStatus: `ops unchanged: ${opsSummary(after1)}`, result: p1ok ? 'pass' : 'fail',
-    note: savedOk ? 'existing OSP → QC pair is grandfathered: no hint, Save OK' : `save refused: ${body.message ?? r.status()}`,
+    scenario: 'S11',
+    action: 'Save with remark change',
+    document: GRANDFATHERED_JC,
+    qty: '',
+    headerStatus: await jcStatus(GRANDFATHERED_JC),
+    overallStatus: `ops unchanged: ${opsSummary(after1)}`,
+    result: p1ok ? 'pass' : 'fail',
+    note: savedOk
+      ? 'existing OSP → QC pair is grandfathered: no hint, Save OK'
+      : `save refused: ${body.message ?? r.status()}`,
   });
   expect(savedOk, `remarks-only save on a grandfathered JC: ${body.message ?? ''}`).toBe(true);
 
@@ -777,8 +1032,13 @@ test('S11 (+) grandfathered OSP→QC JC: remarks-only save works; adding a NEW Q
   log(`S11 part 2: hint="${hintText}" banner="${bannerText}" ops ${opsSummary(after2)}`);
   const p2ok = ruleRe(20, 10).test(bannerText) && after2.length === after1.length;
   record({
-    scenario: 'S11', action: 'Add new QC after OSP', document: GRANDFATHERED_JC, qty: '',
-    headerStatus: await jcStatus(GRANDFATHERED_JC), overallStatus: `unchanged: ${opsSummary(after2)}`, result: p2ok ? 'by-design' : 'fail',
+    scenario: 'S11',
+    action: 'Add new QC after OSP',
+    document: GRANDFATHERED_JC,
+    qty: '',
+    headerStatus: await jcStatus(GRANDFATHERED_JC),
+    overallStatus: `unchanged: ${opsSummary(after2)}`,
+    result: p2ok ? 'by-design' : 'fail',
     note: `"${bannerText}" — bad state not saved`,
   });
   // Revert: leave without saving.
@@ -787,7 +1047,9 @@ test('S11 (+) grandfathered OSP→QC JC: remarks-only save works; adding a NEW Q
   expect(after2.length).toBe(after1.length);
 });
 
-test('S16 (+) rework child (OSP → QC) is exempt: no hint, remarks-only save works', async ({ page }) => {
+test('S16 (+) rework child (OSP → QC) is exempt: no hint, remarks-only save works', async ({
+  page,
+}) => {
   test.setTimeout(600_000);
   const jc = await jcByCode(REWORK_JC);
   const before = await jcOps(REWORK_JC);
@@ -800,27 +1062,55 @@ test('S16 (+) rework child (OSP → QC) is exempt: no hint, remarks-only save wo
   await page.waitForTimeout(1000);
   const hintCount = await hint(page).count();
   await snap(page, 'S16-no-hint');
-  await page.locator('.form-grp').filter({ has: page.locator('label', { hasText: /^Remarks/ }) }).locator('textarea, input').first().fill(`${MARK}S16 rework exempt remarks-only edit (was: ${(orig16 ?? '').slice(0, 120)})`);
-  const resp = page.waitForResponse((r) => r.request().method() === 'PATCH' && /\/job-cards\/[0-9a-f-]{36}$/.test(new URL(r.url()).pathname), { timeout: 60_000 });
+  await page
+    .locator('.form-grp')
+    .filter({ has: page.locator('label', { hasText: /^Remarks/ }) })
+    .locator('textarea, input')
+    .first()
+    .fill(`${MARK}S16 rework exempt remarks-only edit (was: ${(orig16 ?? '').slice(0, 120)})`);
+  const resp = page.waitForResponse(
+    (r) =>
+      r.request().method() === 'PATCH' &&
+      /\/job-cards\/[0-9a-f-]{36}$/.test(new URL(r.url()).pathname),
+    { timeout: 60_000 },
+  );
   await saveJc(page).click();
   const r = await resp;
   const body = (await r.json().catch(() => ({}))) as { message?: string };
   await page.waitForTimeout(1500);
   const after = await jcOps(REWORK_JC);
   const rem = await jcByCode(REWORK_JC);
-  log(`S16: hint count=${hintCount}; PATCH -> ${r.status()} ${body.message ?? ''}; remarks "${(rem.remarks ?? '').slice(0, 60)}"`);
+  log(
+    `S16: hint count=${hintCount}; PATCH -> ${r.status()} ${body.message ?? ''}; remarks "${(rem.remarks ?? '').slice(0, 60)}"`,
+  );
   const frozen = r.status() >= 400;
-  const ok = hintCount === 0 && r.status() < 300 && /E2E_ADR168_S16/.test(rem.remarks ?? '') && after.length === before.length;
+  const ok =
+    hintCount === 0 &&
+    r.status() < 300 &&
+    /E2E_ADR168_S16/.test(rem.remarks ?? '') &&
+    after.length === before.length;
   record({
-    scenario: 'S16', action: 'Save with remark change', document: REWORK_JC, qty: '',
-    headerStatus: await jcStatus(REWORK_JC), overallStatus: `ops unchanged: ${opsSummary(after)}`, result: ok ? 'pass' : frozen ? 'na' : 'fail',
-    note: hintCount === 0 ? (frozen ? `no hint shown, but the save was refused (${body.message ?? r.status()}) — JC is ${status}` : 'rework child exempt: no hint, Save OK') : 'hint WAS shown on a rework child',
+    scenario: 'S16',
+    action: 'Save with remark change',
+    document: REWORK_JC,
+    qty: '',
+    headerStatus: await jcStatus(REWORK_JC),
+    overallStatus: `ops unchanged: ${opsSummary(after)}`,
+    result: ok ? 'pass' : frozen ? 'na' : 'fail',
+    note:
+      hintCount === 0
+        ? frozen
+          ? `no hint shown, but the save was refused (${body.message ?? r.status()}) — JC is ${status}`
+          : 'rework child exempt: no hint, Save OK'
+        : 'hint WAS shown on a rework child',
   });
   expect(hintCount, 'no OSP→QC hint on a rework child').toBe(0);
   if (frozen) test.skip(true, `save refused because the JC is ${status}: ${body.message ?? ''}`);
 });
 
-test('S12 (−/+) Planning: OSP → QC plan is refused on Save; OSP → Process → QC saves', async ({ page }) => {
+test('S12 (−/+) Planning: OSP → QC plan is refused on Save; OSP → Process → QC saves', async ({
+  page,
+}) => {
   test.setTimeout(900_000);
   let s = readState();
   await page.goto('/planning', { waitUntil: 'domcontentloaded' });
@@ -831,15 +1121,29 @@ test('S12 (−/+) Planning: OSP → QC plan is refused on Save; OSP → Process 
   await page.getByText(s.jwCode!, { exact: true }).first().click();
   await page.waitForTimeout(2500);
 
-  const modal = page.locator('table.ops-routing').locator('xpath=ancestor::div[contains(@class,"modal") or @role="dialog"][1]');
-  const planStatusNow = s.planId ? (await db<{ plan_status: string }>(`SELECT plan_status FROM plans WHERE id = $1 AND deleted_at IS NULL`, [s.planId]))[0]?.plan_status : undefined;
+  const modal = page
+    .locator('table.ops-routing')
+    .locator('xpath=ancestor::div[contains(@class,"modal") or @role="dialog"][1]');
+  const planStatusNow = s.planId
+    ? (
+        await db<{ plan_status: string }>(
+          `SELECT plan_status FROM plans WHERE id = $1 AND deleted_at IS NULL`,
+          [s.planId],
+        )
+      )[0]?.plan_status
+    : undefined;
   if (!s.planId || !planStatusNow || !/^(in_planning|planned)$/.test(planStatusNow)) {
     await clickFirstRowMenuItem(page, planningLineRows(page), /^Plan \d/);
     await page.waitForTimeout(1500);
-    const planQty = page.locator('.form-grp:has(label:has-text("Plan Qty")) input[type="number"]').first();
+    const planQty = page
+      .locator('.form-grp:has(label:has-text("Plan Qty")) input[type="number"]')
+      .first();
     await planQty.waitFor({ state: 'visible', timeout: 30_000 });
     await planQty.fill(String(PLAN_QTY));
-    const created = page.waitForResponse((r) => r.request().method() === 'POST' && /\/plans$/.test(new URL(r.url()).pathname), { timeout: 60_000 });
+    const created = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && /\/plans$/.test(new URL(r.url()).pathname),
+      { timeout: 60_000 },
+    );
     await page.getByRole('button', { name: /^Save Plan$/ }).click();
     const cr = await created;
     const cbody = (await cr.json().catch(() => ({}))) as { id?: string; code?: string };
@@ -866,10 +1170,18 @@ test('S12 (−/+) Planning: OSP → QC plan is refused on Save; OSP → Process 
   await page.getByRole('button', { name: '+ Add Outsource Op', exact: true }).click();
   await page.waitForTimeout(400);
   await rows.nth(seeded).getByPlaceholder('Operation name').fill(`${MARK}Heat treatment`);
-  await pickCombo(page, rows.nth(seeded).locator('input[id^="plan-osp-vend-"]'), VENDOR_CODE, new RegExp(VENDOR_CODE));
+  await pickCombo(
+    page,
+    rows.nth(seeded).locator('input[id^="plan-osp-vend-"]'),
+    VENDOR_CODE,
+    new RegExp(VENDOR_CODE),
+  );
   await page.getByRole('button', { name: '+ Add QC Op', exact: true }).click();
   await page.waitForTimeout(400);
-  await rows.nth(seeded + 1).locator('select').selectOption('dir');
+  await rows
+    .nth(seeded + 1)
+    .locator('select')
+    .selectOption('dir');
   for (let i = seeded - 1; i >= 0; i--) {
     await rows.nth(i).locator('button.btn-danger').click();
     await page.waitForTimeout(300);
@@ -880,11 +1192,18 @@ test('S12 (−/+) Planning: OSP → QC plan is refused on Save; OSP → Process 
   await expect(err.first()).toBeVisible({ timeout: 30_000 });
   const errText = (await err.first().innerText()).replace(/\s+/g, ' ').trim();
   await snap(page, 'S12-refused');
-  const st1 = await db<{ plan_status: string }>(`SELECT plan_status FROM plans WHERE id = $1`, [s.planId]);
+  const st1 = await db<{ plan_status: string }>(`SELECT plan_status FROM plans WHERE id = $1`, [
+    s.planId,
+  ]);
   log(`S12 refused: "${errText}"; plan status ${st1[0]?.plan_status}`);
   record({
-    scenario: 'S12', action: 'Save plan OSP then QC', document: s.planCode!, qty: `${PLAN_QTY}`,
-    headerStatus: st1[0]?.plan_status ?? '?', overallStatus: 'not saved (server refused)', result: ruleRe(20, 10).test(errText) ? 'by-design' : 'fail',
+    scenario: 'S12',
+    action: 'Save plan OSP then QC',
+    document: s.planCode!,
+    qty: `${PLAN_QTY}`,
+    headerStatus: st1[0]?.plan_status ?? '?',
+    overallStatus: 'not saved (server refused)',
+    result: ruleRe(20, 10).test(errText) ? 'by-design' : 'fail',
     note: `"${errText}"`,
   });
   expect(errText).toMatch(ruleRe(20, 10));
@@ -895,11 +1214,20 @@ test('S12 (−/+) Planning: OSP → QC plan is refused on Save; OSP → Process 
   await page.getByRole('button', { name: '+ Add Op', exact: true }).click();
   await page.waitForTimeout(400);
   await rows.nth(1).getByPlaceholder('Operation name').fill(`${MARK}Deburr`);
-  await pickCombo(page, rows.nth(1).locator('input[id^="plan-mach-"]'), MACHINE_A, new RegExp(MACHINE_A, 'i'));
+  await pickCombo(
+    page,
+    rows.nth(1).locator('input[id^="plan-mach-"]'),
+    MACHINE_A,
+    new RegExp(MACHINE_A, 'i'),
+  );
   await page.getByRole('button', { name: '+ Add QC Op', exact: true }).click();
   await page.waitForTimeout(400);
   await rows.nth(2).locator('select').selectOption('dir');
-  const updated = page.waitForResponse((r) => r.request().method() === 'PATCH' && /\/plans\/[0-9a-f-]{36}$/.test(new URL(r.url()).pathname), { timeout: 60_000 });
+  const updated = page.waitForResponse(
+    (r) =>
+      r.request().method() === 'PATCH' && /\/plans\/[0-9a-f-]{36}$/.test(new URL(r.url()).pathname),
+    { timeout: 60_000 },
+  );
   await page.getByRole('button', { name: /Save Plan/i }).click();
   const ur = await updated;
   const ubody = (await ur.json().catch(() => ({}))) as { message?: string };
@@ -907,16 +1235,24 @@ test('S12 (−/+) Planning: OSP → QC plan is refused on Save; OSP → Process 
   // The modal closes once update + finalize are through.
   await expect(page.locator('table.ops-routing')).toBeHidden({ timeout: 60_000 });
   await page.waitForTimeout(1500);
-  const st2 = await db<{ plan_status: string }>(`SELECT plan_status FROM plans WHERE id = $1`, [s.planId]);
+  const st2 = await db<{ plan_status: string }>(`SELECT plan_status FROM plans WHERE id = $1`, [
+    s.planId,
+  ]);
   const pops = await db<{ op_seq: number; operation: string; op_type: string }>(
-    `SELECT op_seq, operation, op_type FROM plan_ops WHERE plan_id = $1 AND deleted_at IS NULL ORDER BY op_seq`, [s.planId],
+    `SELECT op_seq, operation, op_type FROM plan_ops WHERE plan_id = $1 AND deleted_at IS NULL ORDER BY op_seq`,
+    [s.planId],
   );
   const summary = pops.map((o) => `${o.op_seq * 10}:${o.op_type}"${o.operation}"`).join(' → ');
   log(`S12 saved: status ${st2[0]?.plan_status}; ops ${summary}`);
   const ok = pops.map((o) => o.op_type).join(',') === 'outsource,process,qc';
   record({
-    scenario: 'S12', action: 'Save plan OSP, process, QC', document: s.planCode!, qty: `${PLAN_QTY}`,
-    headerStatus: st2[0]?.plan_status ?? '?', overallStatus: `3 ops: ${summary}`, result: ok ? 'pass' : 'fail',
+    scenario: 'S12',
+    action: 'Save plan OSP, process, QC',
+    document: s.planCode!,
+    qty: `${PLAN_QTY}`,
+    headerStatus: st2[0]?.plan_status ?? '?',
+    overallStatus: `3 ops: ${summary}`,
+    result: ok ? 'pass' : 'fail',
     note: 'plan saved (not executed — no job card raised from it)',
   });
   void modal;
@@ -939,15 +1275,25 @@ async function routeCardEditPath(page: Page, s: State): Promise<void> {
   await expect(rows).toHaveCount(0);
   await page.getByRole('button', { name: /^\+ Outsourced op$/ }).click();
   await page.waitForTimeout(300);
-  await rows.nth(0).getByPlaceholder(/Vendor code/).fill(VENDOR_CODE);
-  await rows.nth(0).getByPlaceholder(/Coating \/ Painting/).fill(`${MARK}Heat treatment`);
+  await rows
+    .nth(0)
+    .getByPlaceholder(/Vendor code/)
+    .fill(VENDOR_CODE);
+  await rows
+    .nth(0)
+    .getByPlaceholder(/Coating \/ Painting/)
+    .fill(`${MARK}Heat treatment`);
   await page.getByRole('button', { name: /^\+ Inspection$/ }).click();
   await page.waitForTimeout(300);
-  await rows.nth(1).getByPlaceholder(/DIR \/ MIR/).fill('dir');
+  await rows
+    .nth(1)
+    .getByPlaceholder(/DIR \/ MIR/)
+    .fill('dir');
   const saveBtn = page.getByRole('button', { name: /Save Changes/ });
   await expect(saveBtn).toBeEnabled({ timeout: 15_000 });
   const isPut = (r: { request: () => { method: () => string }; url: () => string }): boolean =>
-    r.request().method() === 'PUT' && /\/route-cards\/[0-9a-f-]{36}$/.test(new URL(r.url()).pathname);
+    r.request().method() === 'PUT' &&
+    /\/route-cards\/[0-9a-f-]{36}$/.test(new URL(r.url()).pathname);
   const refused = page.waitForResponse(isPut, { timeout: 60_000 });
   await saveBtn.click();
   const rr = await refused;
@@ -958,8 +1304,13 @@ async function routeCardEditPath(page: Page, s: State): Promise<void> {
   await snap(page, 'S13-edit-refused');
   log(`S13 (edit) refused: HTTP ${rr.status()} "${errText}"`);
   record({
-    scenario: 'S13', action: 'Save route card OSP then QC', document: rcLabel, qty: '',
-    headerStatus: 'edit', overallStatus: 'not saved (server refused)', result: rr.status() === 400 && ruleRe(20, 10).test(errText) ? 'by-design' : 'fail',
+    scenario: 'S13',
+    action: 'Save route card OSP then QC',
+    document: rcLabel,
+    qty: '',
+    headerStatus: 'edit',
+    overallStatus: 'not saved (server refused)',
+    result: rr.status() === 400 && ruleRe(20, 10).test(errText) ? 'by-design' : 'fail',
     note: `HTTP ${rr.status()} "${rbody.message ?? errText}"`,
   });
   expect(rr.status()).toBe(400);
@@ -969,26 +1320,44 @@ async function routeCardEditPath(page: Page, s: State): Promise<void> {
   await page.waitForTimeout(300);
   await page.getByRole('button', { name: /^\+ Add Operation$/ }).click();
   await page.waitForTimeout(300);
-  await rows.nth(1).getByPlaceholder(/Machine code/).fill(MACHINE_A);
-  await rows.nth(1).getByPlaceholder(/od turn/).fill(`${MARK}Deburr`);
+  await rows
+    .nth(1)
+    .getByPlaceholder(/Machine code/)
+    .fill(MACHINE_A);
+  await rows
+    .nth(1)
+    .getByPlaceholder(/od turn/)
+    .fill(`${MARK}Deburr`);
   await page.getByRole('button', { name: /^\+ Inspection$/ }).click();
   await page.waitForTimeout(300);
-  await rows.nth(2).getByPlaceholder(/DIR \/ MIR/).fill('dir');
+  await rows
+    .nth(2)
+    .getByPlaceholder(/DIR \/ MIR/)
+    .fill('dir');
   const saved = page.waitForResponse(isPut, { timeout: 60_000 });
   await saveBtn.click();
   const sr = await saved;
   const sbody = (await sr.json().catch(() => ({}))) as { message?: string };
   expect(sr.status(), `route card edit saved: ${sbody.message ?? ''}`).toBeLessThan(300);
   const rops = await db<{ op_seq: number; operation: string; op_type: string }>(
-    `SELECT op_seq, operation, op_type FROM route_card_ops WHERE route_card_id = $1 AND deleted_at IS NULL ORDER BY op_seq`, [s.rcId],
+    `SELECT op_seq, operation, op_type FROM route_card_ops WHERE route_card_id = $1 AND deleted_at IS NULL ORDER BY op_seq`,
+    [s.rcId],
   );
-  const rc = await db<{ current_revision: string | null }>(`SELECT current_revision FROM route_cards WHERE id = $1`, [s.rcId]);
+  const rc = await db<{ current_revision: string | null }>(
+    `SELECT current_revision FROM route_cards WHERE id = $1`,
+    [s.rcId],
+  );
   const summary = rops.map((o) => `${o.op_seq * 10}:${o.op_type}"${o.operation}"`).join(' → ');
   log(`S13 (edit) saved: ${s.rcCode} rev ${rc[0]?.current_revision} ops ${summary}`);
   const ok = rops.map((o) => o.op_type).join(',') === 'outsource,process,qc';
   record({
-    scenario: 'S13', action: 'Save route card OSP, process, QC', document: rcLabel, qty: '',
-    headerStatus: `rev ${rc[0]?.current_revision ?? '?'}`, overallStatus: `3 ops: ${summary}`, result: ok ? 'pass' : 'fail',
+    scenario: 'S13',
+    action: 'Save route card OSP, process, QC',
+    document: rcLabel,
+    qty: '',
+    headerStatus: `rev ${rc[0]?.current_revision ?? '?'}`,
+    overallStatus: `3 ops: ${summary}`,
+    result: ok ? 'pass' : 'fail',
     note: 'route card edited (existing card from an earlier run)',
   });
   expect(rops.map((o) => o.op_type)).toEqual(['outsource', 'process', 'qc']);
@@ -1013,7 +1382,10 @@ test('S13 (−/+) Route Card: OSP → QC refused; OSP → Process → QC saves',
   await page.goto('/route-cards/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
   await pickCombo(page, page.locator('#rc-item'), rcItem!, new RegExp(rcItem!));
-  await page.getByPlaceholder(/Optional manufacturing notes/i).fill(`${MARK}route card routing check`).catch(() => {});
+  await page
+    .getByPlaceholder(/Optional manufacturing notes/i)
+    .fill(`${MARK}route card routing check`)
+    .catch(() => {});
   const rows = page.locator('table tbody tr').filter({ has: page.locator('input') });
   // A new route card starts with one blank process row — clear it first.
   const del = rows.locator('button.btn-danger');
@@ -1024,14 +1396,26 @@ test('S13 (−/+) Route Card: OSP → QC refused; OSP → Process → QC saves',
   await expect(rows).toHaveCount(0);
   await page.getByRole('button', { name: /^\+ Outsourced op$/ }).click();
   await page.waitForTimeout(300);
-  await rows.nth(0).getByPlaceholder(/Vendor code/).fill(VENDOR_CODE);
-  await rows.nth(0).getByPlaceholder(/Coating \/ Painting/).fill(`${MARK}Heat treatment`);
+  await rows
+    .nth(0)
+    .getByPlaceholder(/Vendor code/)
+    .fill(VENDOR_CODE);
+  await rows
+    .nth(0)
+    .getByPlaceholder(/Coating \/ Painting/)
+    .fill(`${MARK}Heat treatment`);
   await page.getByRole('button', { name: /^\+ Inspection$/ }).click();
   await page.waitForTimeout(300);
-  await rows.nth(1).getByPlaceholder(/DIR \/ MIR/).fill('dir');
+  await rows
+    .nth(1)
+    .getByPlaceholder(/DIR \/ MIR/)
+    .fill('dir');
   const saveBtn = page.getByRole('button', { name: /Save Route Card/ });
   await expect(saveBtn).toBeEnabled({ timeout: 15_000 });
-  const refused = page.waitForResponse((r) => r.request().method() === 'POST' && /\/route-cards$/.test(new URL(r.url()).pathname), { timeout: 60_000 });
+  const refused = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && /\/route-cards$/.test(new URL(r.url()).pathname),
+    { timeout: 60_000 },
+  );
   await saveBtn.click();
   const rr = await refused;
   const rbody = (await rr.json().catch(() => ({}))) as { message?: string };
@@ -1041,8 +1425,13 @@ test('S13 (−/+) Route Card: OSP → QC refused; OSP → Process → QC saves',
   await snap(page, 'S13-refused');
   log(`S13 refused: HTTP ${rr.status()} "${errText}"`);
   record({
-    scenario: 'S13', action: 'Save route card OSP then QC', document: `Route card for ${rcItem}`, qty: '',
-    headerStatus: '—', overallStatus: 'not created (server refused)', result: rr.status() === 400 && ruleRe(20, 10).test(errText) ? 'by-design' : 'fail',
+    scenario: 'S13',
+    action: 'Save route card OSP then QC',
+    document: `Route card for ${rcItem}`,
+    qty: '',
+    headerStatus: '—',
+    overallStatus: 'not created (server refused)',
+    result: rr.status() === 400 && ruleRe(20, 10).test(errText) ? 'by-design' : 'fail',
     note: `HTTP ${rr.status()} "${rbody.message ?? errText}"`,
   });
   expect(rr.status()).toBe(400);
@@ -1053,33 +1442,60 @@ test('S13 (−/+) Route Card: OSP → QC refused; OSP → Process → QC saves',
   await page.waitForTimeout(300);
   await page.getByRole('button', { name: /^\+ Add Operation$/ }).click();
   await page.waitForTimeout(300);
-  await rows.nth(1).getByPlaceholder(/Machine code/).fill(MACHINE_A);
-  await rows.nth(1).getByPlaceholder(/od turn/).fill(`${MARK}Deburr`);
+  await rows
+    .nth(1)
+    .getByPlaceholder(/Machine code/)
+    .fill(MACHINE_A);
+  await rows
+    .nth(1)
+    .getByPlaceholder(/od turn/)
+    .fill(`${MARK}Deburr`);
   await page.getByRole('button', { name: /^\+ Inspection$/ }).click();
   await page.waitForTimeout(300);
-  await rows.nth(2).getByPlaceholder(/DIR \/ MIR/).fill('dir');
-  const created = page.waitForResponse((r) => r.request().method() === 'POST' && /\/route-cards$/.test(new URL(r.url()).pathname), { timeout: 60_000 });
+  await rows
+    .nth(2)
+    .getByPlaceholder(/DIR \/ MIR/)
+    .fill('dir');
+  const created = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && /\/route-cards$/.test(new URL(r.url()).pathname),
+    { timeout: 60_000 },
+  );
   await saveBtn.click();
   const cr = await created;
-  const cbody = (await cr.json().catch(() => ({}))) as { id?: string; code?: string; message?: string };
+  const cbody = (await cr.json().catch(() => ({}))) as {
+    id?: string;
+    code?: string;
+    message?: string;
+  };
   expect(cr.status(), `route card saved: ${cbody.message ?? ''}`).toBeLessThan(300);
   s = writeState({ rcId: cbody.id, rcCode: cbody.code });
   const rops = await db<{ op_seq: number; operation: string; op_type: string }>(
-    `SELECT op_seq, operation, op_type FROM route_card_ops WHERE route_card_id = $1 AND deleted_at IS NULL ORDER BY op_seq`, [cbody.id],
+    `SELECT op_seq, operation, op_type FROM route_card_ops WHERE route_card_id = $1 AND deleted_at IS NULL ORDER BY op_seq`,
+    [cbody.id],
   );
-  const rc = await db<{ current_revision: string | null }>(`SELECT current_revision FROM route_cards WHERE id = $1`, [cbody.id]);
+  const rc = await db<{ current_revision: string | null }>(
+    `SELECT current_revision FROM route_cards WHERE id = $1`,
+    [cbody.id],
+  );
   const summary = rops.map((o) => `${o.op_seq * 10}:${o.op_type}"${o.operation}"`).join(' → ');
   log(`S13 saved: ${cbody.code} rev ${rc[0]?.current_revision} ops ${summary}`);
   const ok = rops.map((o) => o.op_type).join(',') === 'outsource,process,qc';
   record({
-    scenario: 'S13', action: 'Save route card OSP, process, QC', document: `${cbody.code} (${rcItem})`, qty: '',
-    headerStatus: `rev ${rc[0]?.current_revision ?? '?'}`, overallStatus: `3 ops: ${summary}`, result: ok ? 'pass' : 'fail',
+    scenario: 'S13',
+    action: 'Save route card OSP, process, QC',
+    document: `${cbody.code} (${rcItem})`,
+    qty: '',
+    headerStatus: `rev ${rc[0]?.current_revision ?? '?'}`,
+    overallStatus: `3 ops: ${summary}`,
+    result: ok ? 'pass' : 'fail',
     note: 'route card created for an item that had none',
   });
   expect(rops.map((o) => o.op_type)).toEqual(['outsource', 'process', 'qc']);
 });
 
-test('S14 (−) server enforcement without the UI: POST /job-cards with OSP → QC → HTTP 400, no JC created', async ({ page }) => {
+test('S14 (−) server enforcement without the UI: POST /job-cards with OSP → QC → HTTP 400, no JC created', async ({
+  page,
+}) => {
   test.setTimeout(300_000);
   const s = readState();
   await page.goto('/job-cards', { waitUntil: 'domcontentloaded' });
@@ -1089,7 +1505,13 @@ test('S14 (−) server enforcement without the UI: POST /job-cards with OSP → 
   const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
   const src = await page.request.get(`${api}/job-cards/source-options`, { headers });
   expect(src.status(), 'source-options reachable with the session token').toBe(200);
-  const options = (await src.json()) as { lineId: string; code: string; type: string; itemCode: string | null; remaining: number }[];
+  const options = (await src.json()) as {
+    lineId: string;
+    code: string;
+    type: string;
+    itemCode: string | null;
+    remaining: number;
+  }[];
   const line = options.find((o) => o.code === s.jwCode && o.type === 'jw');
   expect(line, `${s.jwCode} is an open JW source line`).toBeTruthy();
   const countBefore = await jcCount();
@@ -1101,7 +1523,14 @@ test('S14 (−) server enforcement without the UI: POST /job-cards with OSP → 
     priority: 'normal',
     remarks: `${MARK}S14 direct API OSP then QC (must be refused)`,
     ops: [
-      { operation: `${MARK}Heat treatment`, opType: 'outsource', outsourceVendorCode: VENDOR_CODE, cycleTimeMin: 0, qcRequired: false, outsourceCost: 0 },
+      {
+        operation: `${MARK}Heat treatment`,
+        opType: 'outsource',
+        outsourceVendorCode: VENDOR_CODE,
+        cycleTimeMin: 0,
+        qcRequired: false,
+        outsourceCost: 0,
+      },
       { operation: 'dir', opType: 'qc', cycleTimeMin: 0, qcRequired: true, outsourceCost: 0 },
     ],
     qcDocs: [],
@@ -1109,12 +1538,26 @@ test('S14 (−) server enforcement without the UI: POST /job-cards with OSP → 
   const res = await page.request.post(`${api}/job-cards`, { headers, data: payload });
   const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
   const countAfter = await jcCount();
-  const stray = await db<{ code: string }>(`SELECT code FROM job_cards WHERE remarks LIKE $1 AND deleted_at IS NULL`, [`${MARK}S14%`]);
-  log(`S14: HTTP ${res.status()} ${JSON.stringify(body)}; JC count ${countBefore} -> ${countAfter}; stray=${stray.length}`);
-  const ok = res.status() === 400 && ruleRe(20, 10).test(body.message ?? '') && countAfter === countBefore && stray.length === 0;
+  const stray = await db<{ code: string }>(
+    `SELECT code FROM job_cards WHERE remarks LIKE $1 AND deleted_at IS NULL`,
+    [`${MARK}S14%`],
+  );
+  log(
+    `S14: HTTP ${res.status()} ${JSON.stringify(body)}; JC count ${countBefore} -> ${countAfter}; stray=${stray.length}`,
+  );
+  const ok =
+    res.status() === 400 &&
+    ruleRe(20, 10).test(body.message ?? '') &&
+    countAfter === countBefore &&
+    stray.length === 0;
   record({
-    scenario: 'S14', action: 'Post OSP then QC to API', document: '(new JC — not created)', qty: `${JC_QTY}`,
-    headerStatus: '—', overallStatus: `HTTP ${res.status()}; JC count ${countBefore} → ${countAfter}`, result: ok ? 'by-design' : 'fail',
+    scenario: 'S14',
+    action: 'Post OSP then QC to API',
+    document: '(new JC — not created)',
+    qty: `${JC_QTY}`,
+    headerStatus: '—',
+    overallStatus: `HTTP ${res.status()}; JC count ${countBefore} → ${countAfter}`,
+    result: ok ? 'by-design' : 'fail',
     note: `${body.error ?? ''}: "${body.message ?? ''}"`,
   });
   expect(res.status()).toBe(400);
@@ -1127,7 +1570,13 @@ test('99 - summary', async () => {
   const rows = readResults();
   const s = readState();
   log('STATE: ' + JSON.stringify(s));
-  for (const r of rows) log(`${r.scenario.padEnd(6)} ${r.result.padEnd(9)} ${r.action.padEnd(34)} ${r.document.padEnd(28)} ${r.headerStatus.padEnd(12)} ${r.note.slice(0, 90)}`);
-  const counts = rows.reduce<Record<string, number>>((a, r) => ({ ...a, [r.result]: (a[r.result] ?? 0) + 1 }), {});
+  for (const r of rows)
+    log(
+      `${r.scenario.padEnd(6)} ${r.result.padEnd(9)} ${r.action.padEnd(34)} ${r.document.padEnd(28)} ${r.headerStatus.padEnd(12)} ${r.note.slice(0, 90)}`,
+    );
+  const counts = rows.reduce<Record<string, number>>(
+    (a, r) => ({ ...a, [r.result]: (a[r.result] ?? 0) + 1 }),
+    {},
+  );
   log('COUNTS: ' + JSON.stringify(counts));
 });

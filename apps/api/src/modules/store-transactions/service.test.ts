@@ -300,7 +300,11 @@ describe('buildStoreTxnWhere', () => {
       2,
     );
     expect(
-      service.buildStoreTxnWhere(companyId, { ...base, fromDate: '2026-01-01', toDate: '2026-01-31' }),
+      service.buildStoreTxnWhere(companyId, {
+        ...base,
+        fromDate: '2026-01-01',
+        toDate: '2026-01-31',
+      }),
     ).toHaveLength(3);
   });
 

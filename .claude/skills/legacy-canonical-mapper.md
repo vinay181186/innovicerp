@@ -11,6 +11,7 @@ This skill enforces strict 1:1 parity between the legacy HTML file and the
 current React implementation. The legacy HTML is the SINGLE SOURCE OF TRUTH.
 
 **Core principles:**
+
 1. **No invention** — every field, label, button, color, icon must come from legacy HTML
 2. **Atomic mapping** — each element is mapped individually with line citation
 3. **Canonical** — one and only one interpretation per element
@@ -21,6 +22,7 @@ current React implementation. The legacy HTML is the SINGLE SOURCE OF TRUTH.
 ## When this skill activates
 
 User says any of:
+
 - "map <element> to legacy"
 - "verify <X> matches HTML"
 - "what does HTML say about <X>"
@@ -30,6 +32,7 @@ User says any of:
 - "match <X> with HTML"
 
 Also activates implicitly when:
+
 - User uploads HTML and asks for any UI work
 - User says "as per HTML"
 - User mentions "legacy" + "match" / "mirror" / "1:1"
@@ -39,6 +42,7 @@ Also activates implicitly when:
 **Authoritative source:** `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html`
 
 If this file is missing, STOP immediately. Tell user:
+
 > "Cannot proceed. Legacy HTML file not found at expected path. Please confirm
 > location of `InnovicERP_v82_12_3_DataLossFix_29-04-2026.html`."
 
@@ -46,25 +50,26 @@ If this file is missing, STOP immediately. Tell user:
 
 ### Step 1: Identify the legacy source for the requested element
 
-| Element type | Where to find in legacy HTML |
-|---|---|
-| Left menu / sidebar | `#sidebar` element + sidebar JS structure |
-| Top bar | `#topbar` element |
-| Page (any module) | `render<Name>()` JavaScript function |
-| Form | `function showModal*` or `function edit*` |
-| Table columns | Inside the `render*` function's table |
-| Status badge | CSS class definitions + usage in renders |
-| Color scheme | CSS `:root` variables block |
-| Icons | Inline emoji or icon usage in renders |
-| Print template | `function print*` |
-| Modal | `showModalLg(` or `showModal(` calls |
-| Dashboard tiles | `function renderDashboard(` or `renderHome(` |
-| Department grouping | sidebar nav array structure |
-| Field validation | save handler functions (`_save<X>` or `save<X>`) |
+| Element type        | Where to find in legacy HTML                     |
+| ------------------- | ------------------------------------------------ |
+| Left menu / sidebar | `#sidebar` element + sidebar JS structure        |
+| Top bar             | `#topbar` element                                |
+| Page (any module)   | `render<Name>()` JavaScript function             |
+| Form                | `function showModal*` or `function edit*`        |
+| Table columns       | Inside the `render*` function's table            |
+| Status badge        | CSS class definitions + usage in renders         |
+| Color scheme        | CSS `:root` variables block                      |
+| Icons               | Inline emoji or icon usage in renders            |
+| Print template      | `function print*`                                |
+| Modal               | `showModalLg(` or `showModal(` calls             |
+| Dashboard tiles     | `function renderDashboard(` or `renderHome(`     |
+| Department grouping | sidebar nav array structure                      |
+| Field validation    | save handler functions (`_save<X>` or `save<X>`) |
 
 ### Step 2: Read the legacy HTML
 
 Use the `view` tool to read the specific section. Record:
+
 - Exact line numbers
 - Exact text content (verbatim, no paraphrasing)
 - Exact CSS classes used
@@ -82,6 +87,7 @@ Find the corresponding file in `apps/web/src/`. Record exactly what's there now.
 ### Step 4: Build the comparison matrix
 
 Create a table with these columns:
+
 - # (sequential)
 - Element (what is being compared)
 - Legacy HTML value (verbatim from HTML, with line ref)
@@ -98,11 +104,13 @@ Before making ANY changes, output the comparison to user.
 ### Step 6: Get user confirmation OR proceed per skill scope
 
 If activated for "verify" / "compare" / "check" / "what does HTML say" verbs:
+
 - Output comparison only
 - Do NOT modify code
 - Wait for user instruction
 
 If activated for "map" / "build" / "match" / "fix" verbs:
+
 - Output comparison
 - Make changes that bring React to match legacy exactly
 - Re-run comparison after changes
@@ -111,6 +119,7 @@ If activated for "map" / "build" / "match" / "fix" verbs:
 ### Step 7: Final verification
 
 After any code changes:
+
 - Re-read both legacy + React
 - Re-build comparison
 - Every row MUST show ✅ MATCH
@@ -183,6 +192,7 @@ REMAINING DIFFERENCES
 ### NEVER infer
 
 If HTML says nothing about behavior X, do NOT guess. Output:
+
 > "⚠️ AMBIGUOUS: Legacy HTML does not specify <behavior>. STOPPING.
 > Please clarify: <option A> OR <option B>?"
 
@@ -199,6 +209,7 @@ OR if the original verb was "map" / "match" / "fix" (action verbs).
 ### NEVER assume completeness
 
 If HTML has more than what's visible at a glance, DIG DEEPER. Examples:
+
 - Sidebar: check both the visible nav AND the JS that builds it
 - Modals: check both the form AND its save handler for validation
 - Status badge: check both display AND the CSS class that styles it
@@ -208,6 +219,7 @@ If HTML has more than what's visible at a glance, DIG DEEPER. Examples:
 ### Example 1: "verify sidebar matches HTML"
 
 Response structure:
+
 1. Read `#sidebar` in legacy HTML (find sections + items array)
 2. Read `apps/web/src/components/shared/sidebar.tsx`
 3. Build comparison: each section, each item, label, icon, order, route
@@ -218,6 +230,7 @@ Response structure:
 ### Example 2: "map left menu to legacy"
 
 Response structure:
+
 1. Same as above (read both)
 2. Output comparison FIRST
 3. Then change sidebar.tsx to match HTML exactly
@@ -228,6 +241,7 @@ Response structure:
 ### Example 3: "what does HTML say about /items page"
 
 Response structure:
+
 1. Find `renderItems()` in legacy HTML
 2. Document atomically:
    - Page title
@@ -243,6 +257,7 @@ Response structure:
 ### Example 4: "build items form from HTML"
 
 Response structure:
+
 1. Find item-related form in legacy HTML (`showModal` with item fields)
 2. Document every field: name, label, type, required, validation, default
 3. Output comparison vs current `ItemForm.tsx`
@@ -253,6 +268,7 @@ Response structure:
 ## Field comparison checklist (use for every form)
 
 For each field, capture from legacy:
+
 - [ ] Field name (key)
 - [ ] Display label (exact text)
 - [ ] Input type (text / select / number / date / textarea / checkbox)
@@ -271,6 +287,7 @@ If any of these is unclear from HTML, STOP and ask user.
 ## Table column comparison checklist
 
 For each column, capture from legacy:
+
 - [ ] Column header text (exact)
 - [ ] Column position (1st, 2nd, etc.)
 - [ ] Data field rendered
@@ -284,6 +301,7 @@ For each column, capture from legacy:
 ## Sidebar / menu comparison checklist
 
 For sidebar verification:
+
 - [ ] Total section count
 - [ ] Each section: key, label, icon, color/dept-class
 - [ ] Section order
@@ -320,6 +338,7 @@ loaded), document all branches:
 - "Group these fields" → REJECTED unless HTML groups them.
 
 Response to rejection requests:
+
 > "This skill enforces 1:1 parity with legacy HTML. The request <X> deviates
 > from legacy. Would you like to:
 > A) Mirror legacy exactly (current scope)
@@ -329,11 +348,13 @@ Response to rejection requests:
 ## Definition of done
 
 For verify/compare/check verbs:
+
 - Comparison report output
 - Every difference flagged
 - No code changes
 
 For map/build/match/fix verbs:
+
 - Comparison report output BEFORE changes
 - Changes made
 - Comparison report output AFTER changes
@@ -347,6 +368,7 @@ say so directly. Never fabricate. Never bluff. Never "best guess" without
 flagging it as a guess.
 
 Format for uncertainty:
+
 > "⚠️ UNCERTAIN: <what I cannot determine>
 > Reason: <why>
 > Need from user: <specific question>"

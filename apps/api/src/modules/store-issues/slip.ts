@@ -104,6 +104,7 @@ export async function resolveIssuedTo(
     return { userId: u.id, issuedTo: shortName(u.full_name ?? u.email) };
   }
   const typed = input.issuedToText?.trim() ?? '';
-  if (!typed) throw new ValidationError('Pick who received it (a Production person) or type a name');
+  if (!typed)
+    throw new ValidationError('Pick who received it (a Production person) or type a name');
   return { userId: null, issuedTo: typed };
 }

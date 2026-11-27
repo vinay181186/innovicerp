@@ -10,8 +10,12 @@ export const FormPopup = () => (
     onClose={noop}
     footer={
       <>
-        <Button size="sm" variant="ghost">Cancel</Button>
-        <Button size="sm" variant="primary">Save</Button>
+        <Button size="sm" variant="ghost">
+          Cancel
+        </Button>
+        <Button size="sm" variant="primary">
+          Save
+        </Button>
       </>
     }
   >
@@ -43,8 +47,16 @@ export const HeaderActions = () => (
     size="sm"
     title="Plan RM for IN-JC-00456"
     onClose={noop}
-    headerActions={<Button size="sm" variant="ghost">Print</Button>}
-    footer={<Button size="sm" variant="primary">Save</Button>}
+    headerActions={
+      <Button size="sm" variant="ghost">
+        Print
+      </Button>
+    }
+    footer={
+      <Button size="sm" variant="primary">
+        Save
+      </Button>
+    }
   >
     <FormGrid>
       <FormField label="UOM" size="md">
@@ -66,8 +78,14 @@ export const WithNotice = () => (
     size="sm"
     title="Send PO IN-MPO-00311 for approval"
     onClose={noop}
-    footer={<Button size="sm" variant="primary">Send</Button>}
+    footer={
+      <Button size="sm" variant="primary">
+        Send
+      </Button>
+    }
   >
-    <Banner flush tone="warn">PO value is above your approval limit. It goes to the Purchase Manager.</Banner>
+    <Banner flush tone="warn">
+      PO value is above your approval limit. It goes to the Purchase Manager.
+    </Banner>
   </Modal>
 );

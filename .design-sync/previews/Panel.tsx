@@ -6,7 +6,9 @@ export const WithActions = () => (
     actions={
       <>
         <StatusBadge kind="so" status="open" />
-        <Button size="sm" variant="ghost">Print</Button>
+        <Button size="sm" variant="ghost">
+          Print
+        </Button>
       </>
     }
   >
@@ -16,7 +18,8 @@ export const WithActions = () => (
 
 export const TitleOnly = () => (
   <Panel title="Dispatch Remarks">
-    Pack BRKT-101/A in wooden crates, 20 pieces per crate. Test certificate to go with the first lot.
+    Pack BRKT-101/A in wooden crates, 20 pieces per crate. Test certificate to go with the first
+    lot.
   </Panel>
 );
 

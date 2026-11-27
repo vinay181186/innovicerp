@@ -12,15 +12,15 @@ single-HTML + Firebase Firestore system; the legacy HTML in `legacy/` remains th
 
 ## Stack (see CLAUDE.md §5 for the locked list)
 
-| Layer | Technology |
-| --- | --- |
-| Backend | TypeScript (strict), Node 24, **Fastify 5**, **Drizzle ORM**, **Zod**, Pino logs |
-| Frontend | React 18 + Vite 5, **TanStack Router / Query / Table**, Zustand, react-hook-form, Tailwind + shadcn/ui |
-| Database | Supabase **Postgres 15** (Mumbai `ap-south-1`), RLS-enforced multi-tenancy |
-| Storage | Supabase Storage (S3-compatible) for file uploads/attachments |
-| Async jobs | **BullMQ + Redis** (`apps/api/src/lib/queue.ts`; alerts worker + `job-queue` module) |
-| Realtime | Supabase Realtime — selective (Op Entry, alerts) only |
-| Shared | `packages/shared` — Zod schemas + inferred types + enums, single source of truth |
+| Layer      | Technology                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------------ |
+| Backend    | TypeScript (strict), Node 24, **Fastify 5**, **Drizzle ORM**, **Zod**, Pino logs                       |
+| Frontend   | React 18 + Vite 5, **TanStack Router / Query / Table**, Zustand, react-hook-form, Tailwind + shadcn/ui |
+| Database   | Supabase **Postgres 15** (Mumbai `ap-south-1`), RLS-enforced multi-tenancy                             |
+| Storage    | Supabase Storage (S3-compatible) for file uploads/attachments                                          |
+| Async jobs | **BullMQ + Redis** (`apps/api/src/lib/queue.ts`; alerts worker + `job-queue` module)                   |
+| Realtime   | Supabase Realtime — selective (Op Entry, alerts) only                                                  |
+| Shared     | `packages/shared` — Zod schemas + inferred types + enums, single source of truth                       |
 
 ## Repository layout
 
@@ -73,17 +73,17 @@ Purchase Request → Purchase Order → GRN → Store inventory ────┘ 
 
 ## Module domains (drill-down index is in `README.md`)
 
-| Domain | Modules (representative) |
-| --- | --- |
-| Master Data | companies, users, clients, vendors, operators, machines, cost-centers, doc-numbers, report-types |
-| Catalog & Engineering | items, bom-master, route-cards, assembly, osp-processes, tool-issues, plans, tasks |
-| Sales & SO Analytics | sales-orders, so-overview, so-status, so-timeline, so-costing, so-cycle-time, so-planning, so-qc-status, pending-so-value, prod-so-list |
-| Job Work & Execution | job-work-orders, jw-dc, jwso-documents, prod-jw-list, job-cards, jc-ops, op-entry, op-log-viewer, machine-loading |
-| Production Mgmt & Shop Floor | production-dashboard, production-schedule, shop-floor, sc-dashboard, stuck-dashboard, job-queue, daily-report, daily-task-reports |
-| Procurement & Store | purchase-orders, purchase-requests, service-pos, goods-receipt-notes, party-grn, party-materials, store-inventory, store-issues, store-transactions, stock-valuation |
-| Quality | incoming-qc, qc-processes, qc-command, qc-dashboard, qc-documents, qc-history, nc-register, capa, tpi |
-| Dispatch, Finance & Design | customer-dispatches, delivery-challans, invoices, design-projects, design-tracker, design-issues, design-work-log |
-| Dashboards, Reporting & System | dashboard, reports, saved-reports, access-control, activity-log, alerts, approval-config, backup, data-integrity, print-templates, trash |
+| Domain                         | Modules (representative)                                                                                                                                             |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Master Data                    | companies, users, clients, vendors, operators, machines, cost-centers, doc-numbers, report-types                                                                     |
+| Catalog & Engineering          | items, bom-master, route-cards, assembly, osp-processes, tool-issues, plans, tasks                                                                                   |
+| Sales & SO Analytics           | sales-orders, so-overview, so-status, so-timeline, so-costing, so-cycle-time, so-planning, so-qc-status, pending-so-value, prod-so-list                              |
+| Job Work & Execution           | job-work-orders, jw-dc, jwso-documents, prod-jw-list, job-cards, jc-ops, op-entry, op-log-viewer, machine-loading                                                    |
+| Production Mgmt & Shop Floor   | production-dashboard, production-schedule, shop-floor, sc-dashboard, stuck-dashboard, job-queue, daily-report, daily-task-reports                                    |
+| Procurement & Store            | purchase-orders, purchase-requests, service-pos, goods-receipt-notes, party-grn, party-materials, store-inventory, store-issues, store-transactions, stock-valuation |
+| Quality                        | incoming-qc, qc-processes, qc-command, qc-dashboard, qc-documents, qc-history, nc-register, capa, tpi                                                                |
+| Dispatch, Finance & Design     | customer-dispatches, delivery-challans, invoices, design-projects, design-tracker, design-issues, design-work-log                                                    |
+| Dashboards, Reporting & System | dashboard, reports, saved-reports, access-control, activity-log, alerts, approval-config, backup, data-integrity, print-templates, trash                             |
 
 ## Status enums (shared, `packages/shared/src/enums/`)
 

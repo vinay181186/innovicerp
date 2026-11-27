@@ -1,7 +1,17 @@
 import * as React from 'react';
-export interface TopNavItem { label: string; icon?: string; }
-export interface TopNavGroup { label?: string; items: TopNavItem[]; }
-export interface TopNavSection { key: string; label: string; groups: TopNavGroup[]; }
+export interface TopNavItem {
+  label: string;
+  icon?: string;
+}
+export interface TopNavGroup {
+  label?: string;
+  items: TopNavItem[];
+}
+export interface TopNavSection {
+  key: string;
+  label: string;
+  groups: TopNavGroup[];
+}
 /**
  * The 54px header band: logo, Dashboard, module dropdowns (Entry / Master / Report columns), right cluster.
  * @startingPoint section="Navigation" subtitle="Header with module mega-menus" viewport="1280x320"

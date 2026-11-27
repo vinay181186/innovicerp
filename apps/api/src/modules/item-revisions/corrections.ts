@@ -1,37 +1,11 @@
-// ADR-290 — drawing corrections on a released / superseded Rev (or an old
-// unverified Rev with a file that open orders / Job Cards use).
-// A "Replace drawing" on such a Rev writes a pending drawing_corrections row
-// (lib/item-revision-drawing.ts); this file decides it:
-//   POST /item-revisions/corrections/:id/decide {decision, note}
-// Right: canReleaseDrawings. §20.2 — conditional on status = 'pending'; 0 rows
-// = 409 naming who decided. Approve applies the file through the SAME body as
-// Replace drawing (applyDrawingCorrection, §20.1) and stores the new file hash.
-//
-// LOCK ORDER — the Rev's SO / JWSO lines, then the Rev row, then the
-// correction: the order Replace drawing takes them (lines → Rev → its
-// correction insert), so a decide and a replace on one Rev queue.
+// ADR-290 drawing corrections — retired by ADR-323 (a Replace drawing now
+// applies at once and resets the status). No correction is raised or decided
+// any more; 0263 closed the pending ones. The old rows are still read for the
+// Rev detail page (history only).
 
-import {
-  ActivityAction,
-  canReleaseDrawings,
-  type DecideDrawingCorrectionInput,
-  type DrawingCorrection,
-  itemRevLabel,
-  REV_CHANGE_REASON_MIN,
-} from '@innovic/shared';
+import { type DrawingCorrection, itemRevLabel } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
-import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import {
-  AuthorizationError,
-  ConflictError,
-  NotFoundError,
-  ValidationError,
-} from '../../lib/errors';
-import { fmtDateTime } from '../../lib/format-date';
-import { applyDrawingCorrection, lockRevForDrawingChange } from '../../lib/item-revision-drawing';
-import { emitActivityLog } from '../activity-log/service';
-import { getMyAccess } from '../access-control/service';
-import { hashDrawingFile } from '../drawing-files/service';
+import type { DbTransaction } from '../../db/with-user-context';
 
 const nameSql = (alias: string): SQL =>
   sql.raw(`COALESCE(NULLIF(btrim(${alias}.full_name), ''), split_part(${alias}.email, '@', 1))`);
@@ -82,109 +56,4 @@ export async function listRevCorrections(
        AND c.deleted_at IS NULL
      ORDER BY c.requested_at DESC`)) as unknown as Array<Record<string, unknown>>;
   return rows.map(toCorrection);
-}
-
-async function readCorrection(
-  tx: DbTransaction,
-  companyId: string,
-  id: string,
-): Promise<DrawingCorrection> {
-  const rows = (await tx.execute(sql`
-    ${CORRECTION_SELECT}
-     WHERE c.id = ${id}::uuid AND c.company_id = ${companyId}::uuid AND c.deleted_at IS NULL
-     LIMIT 1`)) as unknown as Array<Record<string, unknown>>;
-  if (!rows[0]) throw new NotFoundError('Drawing correction not found');
-  return toCorrection(rows[0]);
-}
-
-/** Decide one pending correction. Returns the Rev id (the route re-reads it). */
-export async function decideDrawingCorrection(
-  id: string,
-  input: DecideDrawingCorrectionInput,
-  user: AuthContext,
-): Promise<string> {
-  if (user.role !== 'admin' && !canReleaseDrawings(await getMyAccess(user), user.role)) {
-    throw new AuthorizationError(
-      'Deciding a drawing correction needs the "Can release drawings" switch. Ask an admin.',
-    );
-  }
-  if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
-  const companyId = user.companyId;
-  const note = input.note?.trim() || null;
-  if (input.decision === 'reject' && (note?.length ?? 0) < REV_CHANGE_REASON_MIN) {
-    throw new ValidationError('Reason is required (at least 5 characters)');
-  }
-
-  // The new file is hashed before the transaction (a storage read is slow).
-  const pre = await withUserContext(user, (tx) => readCorrection(tx, companyId, id));
-  // ADR-311 — owner 23-Nov: self-approval allowed; the requester may approve their own correction.
-  let fileHash: string | null = null;
-  if (input.decision === 'approve') {
-    fileHash = await hashDrawingFile(pre.drawingFilePath);
-    if (!fileHash) {
-      throw new ValidationError(
-        `The corrected drawing of ${pre.label} could not be read — ask for the correction again`,
-      );
-    }
-  }
-
-  await withUserContext(user, async (tx) => {
-    await lockRevForDrawingChange(tx, companyId, pre.itemRevisionId);
-    const done = (await tx.execute(sql`
-      UPDATE public.drawing_corrections
-         SET status = ${input.decision === 'approve' ? 'approved' : 'rejected'},
-             decided_by = ${user.id}::uuid, decided_at = now(), decision_note = ${note},
-             updated_by = ${user.id}::uuid
-       WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
-         AND status = 'pending'
-      RETURNING id`)) as unknown as Array<{ id: string }>;
-    if (done.length === 0) {
-      const now = await readCorrection(tx, companyId, id);
-      throw new ConflictError(
-        `The correction for ${now.label} was already ${now.status}${
-          now.decidedByName ? ` by ${now.decidedByName}` : ''
-        }${now.decidedAt ? ` at ${fmtDateTime(now.decidedAt)}` : ''}. Reload the page.`,
-      );
-    }
-    if (input.decision === 'approve') {
-      await applyDrawingCorrection(
-        tx,
-        user,
-        companyId,
-        pre.itemRevisionId,
-        { drawingFilePath: pre.drawingFilePath, drawingNo: pre.drawingNo, reason: pre.reason },
-        fileHash!,
-      );
-    }
-    // The decision itself: APPROVE / REJECT on the correction (entity
-    // DrawingCorrection — the Rev's own APPROVE / REJECT stays its status
-    // decision). The note rules (dashboard/personal/note-rules.ts) tell the
-    // requester and the Rev's creator. The file change of an approval is the
-    // Rev's EDIT written by applyDrawingCorrection above.
-    const approved = input.decision === 'approve';
-    await emitActivityLog(
-      tx,
-      {
-        action: approved ? ActivityAction.Approve : ActivityAction.Reject,
-        entity: 'DrawingCorrection',
-        entityId: id,
-        refId: pre.label,
-        reason: note,
-        changes: [
-          {
-            field: 'status',
-            label: 'Correction Status',
-            before: 'Pending',
-            after: approved ? 'Approved' : 'Rejected',
-          },
-        ],
-        detail: `Drawing correction on ${pre.label} ${approved ? 'approved' : 'rejected'}${
-          note ? ` — ${note}` : ''
-        }`,
-      },
-      companyId,
-      user,
-    );
-  });
-  return pre.itemRevisionId;
 }

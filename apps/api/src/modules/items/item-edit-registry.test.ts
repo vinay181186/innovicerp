@@ -60,7 +60,9 @@ afterAll(async () => {
   } else {
     await db.delete(approvalConfig).where(eq(approvalConfig.companyId, admin.companyId!));
   }
-  await db.delete(documentEditRequests).where(like(documentEditRequests.docCode, `${TEST_PREFIX}%`));
+  await db
+    .delete(documentEditRequests)
+    .where(like(documentEditRequests.docCode, `${TEST_PREFIX}%`));
   await db.delete(activityLog).where(like(activityLog.refId, `${TEST_PREFIX}%`));
   await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
 }, 180_000);

@@ -6,13 +6,7 @@
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import {
-  clients,
-  invoicePayments,
-  invoices,
-  salesOrders,
-  users,
-} from '../../db/schema';
+import { clients, invoicePayments, invoices, salesOrders, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, ConflictError } from '../../lib/errors';
 import { AUDITOR, asAccess } from '../../lib/test-access';
@@ -152,16 +146,22 @@ describe('addPayment — ticks decide (ADR-232)', () => {
 
   it('finance L2 with role operator passes the gate', async () => {
     const user = asAccess(admin, { departments: { finance: 'L2' } }, 'operator');
-    await expect(service.addPayment(UNKNOWN_ID, {} as never, user)).rejects.not.toBeInstanceOf(AuthorizationError);
+    await expect(service.addPayment(UNKNOWN_ID, {} as never, user)).rejects.not.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('finance L1 (no tick) is refused', async () => {
     const user = asAccess(admin, { departments: { finance: 'L1' } }, 'manager');
-    await expect(service.addPayment(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.addPayment(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 
   it('L7 Auditor is refused', async () => {
     const user = asAccess(admin, AUDITOR, 'viewer');
-    await expect(service.addPayment(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(service.addPayment(UNKNOWN_ID, {} as never, user)).rejects.toBeInstanceOf(
+      AuthorizationError,
+    );
   });
 });

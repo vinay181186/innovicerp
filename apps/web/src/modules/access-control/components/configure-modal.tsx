@@ -244,7 +244,8 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   const [drawingDownload, setDrawingDownload] = useState(false);
   // ADR-289 — "Can print drawings": the same whole-account shape as download.
   const [drawingPrint, setDrawingPrint] = useState(false);
-  // ADR-290 — "Drawing Release button": same whole-account shape as print.
+  // ADR-290 — "Drawing Release button". ADR-323: no longer shown or edited;
+  // kept only so a save sends back the value it loaded.
   const [drawingRelease, setDrawingRelease] = useState(false);
   const [departments, setDepartments] = useState<DeptTiers>({});
   const [forms, setForms] = useState<Record<string, FormPerms>>({});
@@ -1104,50 +1105,9 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               </div>
             </div>
 
-            {/* ── Drawing release: one whole-account tick (ADR-290) ──
-                Same shape as the print tick above: locked on for L6, never
-                implied by L7 Auditor. */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 'var(--sp-3)',
-                marginBottom: 'var(--sp-4)',
-                padding: 'var(--sp-2) var(--sp-3)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius2)',
-                background: 'var(--bg3)',
-              }}
-            >
-              <input
-                id="ac-drawing-release"
-                type="checkbox"
-                checked={fullAccess || drawingRelease}
-                disabled={fullAccess}
-                onChange={(e) => setDrawingRelease(e.target.checked)}
-                style={{ marginTop: 'var(--sp-0)' }}
-              />
-              <div>
-                <label
-                  htmlFor="ac-drawing-release"
-                  style={{
-                    fontSize: 'var(--fs-sm)',
-                    fontWeight: 700,
-                    cursor: fullAccess ? 'default' : 'pointer',
-                  }}
-                >
-                  Drawing Release button
-                </label>
-                <div
-                  className="text3"
-                  style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
-                >
-                  {fullAccess
-                    ? 'Included in L6 Super Admin — everyone at this level may release a Drawing Rev.'
-                    : 'May release a Drawing Rev and approve a drawing correction on a released Rev.'}
-                </div>
-              </div>
-            </div>
+            {/* ADR-323 — no Drawing Release switch any more: Verify is the
+                Drawing Register Approve tick. The saved value is carried
+                through untouched (drawingRelease above), only not shown. */}
 
             {/* ── Department worksheet ── */}
             <div

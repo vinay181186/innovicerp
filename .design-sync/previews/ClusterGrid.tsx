@@ -11,7 +11,12 @@ export const DetailView = () => (
     <Cluster name="Vendor">
       <ClusterFact label="Vendor" value="Sample Heat Treat Works" />
       <ClusterFact num label="Vendor Code" value="VND-012" />
-      <ClusterFact span={2} wrap label="Vendor Address" value="Plot 14, GIDC Phase II, Vatva, Ahmedabad, Gujarat 382445" />
+      <ClusterFact
+        span={2}
+        wrap
+        label="Vendor Address"
+        value="Plot 14, GIDC Phase II, Vatva, Ahmedabad, Gujarat 382445"
+      />
     </Cluster>
     <Cluster name="This receipt">
       <ClusterFact num label="PO Qty" value="100" />

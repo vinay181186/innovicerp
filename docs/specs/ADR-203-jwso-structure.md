@@ -9,6 +9,7 @@ Plus: RM is found/created **silently** when a line's item is picked (no popup),
 UOM NOS, Party Supplied Material, ₹0; customer = the JWSO's customer.
 
 Already done (frozen — do not redesign):
+
 - Migration `0193_jwso_structure.sql` + `apps/api/src/db/schema.ts`
 - Shared contract (`packages/shared`): job-work-order.ts, party-grn.ts,
   party-material.ts, party-material-issue.ts, customer-material-return.ts (new),
@@ -21,6 +22,7 @@ Already done (frozen — do not redesign):
 ## Server rules (by module)
 
 ### JWSO (job-work-orders, prod-jw-list)
+
 1. **RM per line.** On create AND update, for every live line: `ensureRmItemForOrderItem(line.itemId)`
    then `ensurePartyMaterial(rmItemId, header.clientId)`; write `rm_item_id`,
    `party_material_id`. Errors propagate (whole save fails). Delete
@@ -47,13 +49,14 @@ Already done (frozen — do not redesign):
    view (find it in nav). Create/update RESPONSES pass the same money mask as
    get (`priceVisible:false`). Create ignores rate/gst for price-blind users.
 9. Read shape: each line gets `rmItemId/rmItemCode/partyMaterialId/
-   partyMaterialCode/rmAcceptedQty/inUse`. `partyReceivedQty` (detail + list) =
+partyMaterialCode/rmAcceptedQty/inUse`. `partyReceivedQty` (detail + list) =
    Σ accepted_qty by jw_line_id; list adds `rmRequiredQty` = Σ order_qty of lines
    with an rm. Search also matches rm item code.
 10. prod-jw-list: exclude recovery JCs, cap done per line, apply search to count,
     escape LIKE, real due date (MIN line due).
 
 ### Party side (party-grn, party-materials, party-material-issues, party-stock-ledger, lib/party-stock-ledger)
+
 1. **Party GRN create**: lines `{jwLineId, receivedQty, remarks}`. Lock each line
    (`lockJwLine`), `assertJwLineOpenForWork(line,'receive customer material')`,
    line must belong to the GRN's JWSO and have `party_material_id` (else
@@ -115,6 +118,7 @@ Already done (frozen — do not redesign):
    'customer_material_return'.
 
 ### Outward + production (jw-returns, jw-invoices, job-cards, op-entry, reports, sales-orders, purchase-requests, lib/stock-ledger)
+
 1. JC create from a JW line: `lockJwLine` + `assertJwLineOpenForWork(line,'raise a Job Card')`
    before the balance sum. JC source list: only open, not short-closed lines of
    non-cancelled JWSOs (header open).
@@ -136,6 +140,7 @@ Already done (frozen — do not redesign):
 8. partyOwned items refused: SO lines, PR lines, `postStockMove` (company stock).
 
 ## Screens
+
 - JWSO create/edit per `JWSO-Create-Workflow-Mockup.html` (repo parent folder):
   header without material; lines table gets a "Customer RM" column showing
   `ABCD123-RM ✓` (and a small "new" chip when the ensure call created it);
@@ -157,6 +162,7 @@ Already done (frozen — do not redesign):
 - JC customer-material panel per-JC figures.
 
 ## Naming (docs/NAMING.md — update in the same commit)
+
 Customer RM (Item -RM) · `rmItemId` · `job_work_order_lines.rm_item_id`;
 Customer Material Return · `IN-CMR-#####`; Returned to Store (issue);
 Rejected Returned; Incoming QC (party GRN) pending.

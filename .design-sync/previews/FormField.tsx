@@ -10,7 +10,11 @@ export const Required = () => (
 
 export const WithHelp = () => (
   <FormGrid>
-    <FormField label="Client PO No." size="full" help="The customer's own PO number, as printed on their order.">
+    <FormField
+      label="Client PO No."
+      size="full"
+      help="The customer's own PO number, as printed on their order."
+    >
       <Input mono defaultValue="PO-4500123" />
     </FormField>
   </FormGrid>
@@ -18,7 +22,12 @@ export const WithHelp = () => (
 
 export const WithError = () => (
   <FormGrid>
-    <FormField label="Order Qty" required size="full" error="Order Qty cannot be more than the 40 NOS left on this plan.">
+    <FormField
+      label="Order Qty"
+      required
+      size="full"
+      error="Order Qty cannot be more than the 40 NOS left on this plan."
+    >
       <Input mono state="bad" defaultValue="60" />
     </FormField>
   </FormGrid>

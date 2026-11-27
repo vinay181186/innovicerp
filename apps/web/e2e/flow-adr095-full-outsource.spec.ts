@@ -52,7 +52,10 @@ test('full outsource raises exactly one PR and has no Material Source field', as
   console.log('>> ASSERT 1 ok — no Material Source / From Stock / Purchase New on the form');
 
   // Fill the plan.
-  await page.getByPlaceholder(/search code/i).first().fill(ITEM_CODE);
+  await page
+    .getByPlaceholder(/search code/i)
+    .first()
+    .fill(ITEM_CODE);
   await page.waitForTimeout(1800);
   const numbers = page.locator('input[type="number"]');
   await numbers.nth(0).fill(String(QTY)); // Order qty
@@ -100,8 +103,10 @@ test('full outsource raises exactly one PR and has no Material Source field', as
   expect(prPage.includes(process), 'the new PR carries our process name').toBe(true);
   const tbdRows = prPage.match(/\(vendor TBD\)/g) ?? [];
   console.log(`>> "(vendor TBD)" occurrences on PR list: ${tbdRows.length}`);
-  expect(tbdRows.length, 'no NEW material PR (IN-JWPR-00020 is a known pre-change row)')
-    .toBeLessThanOrEqual(1);
+  expect(
+    tbdRows.length,
+    'no NEW material PR (IN-JWPR-00020 is a known pre-change row)',
+  ).toBeLessThanOrEqual(1);
   console.log('>> ASSERT 4 ok — new PR is the job-work PR, no new material PR');
 });
 
@@ -125,7 +130,10 @@ test('store inventory shows the At Vendor column', async ({ page }) => {
   console.log('>> ASSERT 5 ok — At Vendor column present and correctly positioned');
 
   // ASSERT 6: the one item with material genuinely out at a vendor reads 5 / 5.
-  await page.getByPlaceholder(/Search item/i).first().fill('554117146000');
+  await page
+    .getByPlaceholder(/Search item/i)
+    .first()
+    .fill('554117146000');
   await page.waitForTimeout(3000);
   const row = (await page.locator('tbody tr').first().innerText()).replace(/\n/g, ' | ');
   console.log(`>> LEVER CATCH RAMMER row: ${row}`);

@@ -1,28 +1,27 @@
-// ADR-290 — "Latest released drawing is ABC/2. This line specifies ABC/1.
-// Confirm with the customer." The SO / JWSO form may not save until every such
-// line carries the "Confirmed" tick. A client confirm only — the server does
-// not store it.
+// ADR-290 / ADR-323 — "Latest verified drawing is ABC/2. This line specifies
+// ABC/1. Confirm with the customer." The SO / JWSO form may not save until
+// every such line carries the "Confirmed" tick. A client confirm only — the
+// server does not store it.
 //
-// The Drawing File control sits in the line's "More" panel, which is not
-// mounted while the line is collapsed. So the form owns the ticks here, and a
-// headless <RevConfirmProbe> in each line's main row reads the same look-up
-// (same query key — no second request) to know which lines need one.
+// The form owns the ticks here, and a headless <RevConfirmProbe> in each
+// line's main row reads the same look-up (same query key — no second request)
+// to know which lines need one, mounted or not.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useItemRevisionLookup } from '../api';
 
 export interface RevConfirmGate {
-  /** Probe → gate: this line's latest released label (null = no question). */
+  /** Probe → gate: this line's latest verified label (null = no question). */
   report: (lineKey: string, latestLabel: string | null) => void;
-  /** The `confirm` prop for DrawingRevField on this line. */
+  /** The `confirm` prop for DrawingRevInfo on this line. */
   confirmFor: (lineKey: string) => { checked: boolean; onChange: (checked: boolean) => void };
   /** First line (in form order) still waiting for its tick, with the latest
-   *  released label to name in the message; null when all are confirmed. */
+   *  verified label to name in the message; null when all are confirmed. */
   firstPending: (lineKeys: readonly string[]) => { index: number; latestLabel: string } | null;
 }
 
 export function useRevConfirmGate(): RevConfirmGate {
-  // Latest released label per line, as the probes last saw it.
+  // Latest verified label per line, as the probes last saw it.
   const latest = useRef(new Map<string, string>());
   // The label each line's tick was given for — a different latest asks again.
   const [ticked, setTicked] = useState<Readonly<Record<string, string>>>({});

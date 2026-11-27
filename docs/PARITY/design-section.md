@@ -10,15 +10,15 @@
 
 Legacy Design group (HTML L441–449, ungrouped — all 7 items at root):
 
-| # | legacy key | label (line) | legacy render fn | React route | Status |
-|---|---|---|---|---|---|
-| 1 | `designprojects` | 📋 Design Projects (L443) | `renderDesignProjects` L7570 + `_dpRenderDetail` L7623 | — | ❌ **MISSING** |
-| 2 | `designissues` | ⚠ Design Issues (L444) | `renderDesignIssuesPage` L7890 | — | ❌ **MISSING** |
-| 3 | `designworklog` | ⏱ Daily Work Log (L445) | `renderDesignWorkLog` L7935 (5 tabs) | — | ❌ **MISSING** |
-| 4 | `bommaster` | 📦 BOM Master (L446) | `renderBOMMaster` L8438 | `/bom-masters` | ✅ SHIPPED |
-| 5 | `designtracker` | 🎨 Design Tracker (L447) | `renderDesignTracker` L7259 | — | ❌ **MISSING** |
-| 6 | `routecards` | 🗒 Route Cards (L448) | `renderRouteCards` L10078 | `/route-cards` | ✅ SHIPPED |
-| 7 | `rpt_design` | 📊 Design Reports (L449) | `renderDeptReport('design')` L2476 | `/reports?group=Design` | ⚠️ Route lives — sidebar entry missing |
+| #   | legacy key       | label (line)              | legacy render fn                                       | React route             | Status                                 |
+| --- | ---------------- | ------------------------- | ------------------------------------------------------ | ----------------------- | -------------------------------------- |
+| 1   | `designprojects` | 📋 Design Projects (L443) | `renderDesignProjects` L7570 + `_dpRenderDetail` L7623 | —                       | ❌ **MISSING**                         |
+| 2   | `designissues`   | ⚠ Design Issues (L444)    | `renderDesignIssuesPage` L7890                         | —                       | ❌ **MISSING**                         |
+| 3   | `designworklog`  | ⏱ Daily Work Log (L445)   | `renderDesignWorkLog` L7935 (5 tabs)                   | —                       | ❌ **MISSING**                         |
+| 4   | `bommaster`      | 📦 BOM Master (L446)      | `renderBOMMaster` L8438                                | `/bom-masters`          | ✅ SHIPPED                             |
+| 5   | `designtracker`  | 🎨 Design Tracker (L447)  | `renderDesignTracker` L7259                            | —                       | ❌ **MISSING**                         |
+| 6   | `routecards`     | 🗒 Route Cards (L448)     | `renderRouteCards` L10078                              | `/route-cards`          | ✅ SHIPPED                             |
+| 7   | `rpt_design`     | 📊 Design Reports (L449)  | `renderDeptReport('design')` L2476                     | `/reports?group=Design` | ⚠️ Route lives — sidebar entry missing |
 
 Current React: 2/7 shipped. **5 entries to build**.
 
@@ -29,6 +29,7 @@ Current React: 2/7 shipped. **5 entries to build**.
 Two distinct subsystems share the Design dept:
 
 ### A) Design Tracker (older, single-table)
+
 - `db.designTracker[*]` — per-SO design assignment with revision tracking
 - `db.designTimeLog[*]` — time entries per design
 - Status: `Pending | In Progress | Review | Approved | Revision`
@@ -36,6 +37,7 @@ Two distinct subsystems share the Design dept:
 - Gate: BOM creation on Equipment SOs blocked until design is Approved (legacy `_dsnIsApproved`)
 
 ### B) Design Engineering (newer, multi-table, v82.0+)
+
 - `db.designProjects[*]` — DP-NNNN. Status: `Design Active | In Review | Released | On Hold`. Has `checklist` (jsonb), `engineers[]`, `lead`
 - `db.designTasks[*]` — per-project task. Priority: `Critical/High/Medium/Low`. Status: `Not Started/In Progress/In Review/Completed`. Has `discussions[]`
 - `db.designIssues[*]` — per-project issue (optionally linked to task). Severity: `Critical/Major/Minor`. Status: `Open/In Progress/Resolved/Closed`. Has `discussions[]`
@@ -54,6 +56,7 @@ Ordered smallest-first by isolation, ensuring downstream features have their dep
 ### Slice A — Migration `0033_phase8_design.sql`
 
 8 new tables in one transaction:
+
 - `design_tracker` + `design_time_log`
 - `design_projects` + `design_tasks` + `design_issues` + `design_work_log`
 - `design_dcrs` + `design_dcns`

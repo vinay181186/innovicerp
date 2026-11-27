@@ -17,7 +17,10 @@ import { expect, test } from '@playwright/test';
 test('@modaldd client picker inside a modal renders ABOVE the overlay', async ({ page }) => {
   await page.goto('/party-material', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
-  await page.getByRole('button', { name: /Add Material/i }).first().click();
+  await page
+    .getByRole('button', { name: /Add Material/i })
+    .first()
+    .click();
   await page.waitForTimeout(1500);
 
   const clientBox = page.getByPlaceholder(/Type customer code or name/i).first();

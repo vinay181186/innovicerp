@@ -10,7 +10,15 @@ const customers = [
 
 const noop = () => {};
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function Field({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <FormGrid>
       <FormField label={label} required={required} size="full">
@@ -22,13 +30,24 @@ function Field({ label, required, children }: { label: string; required?: boolea
 
 export const Empty = () => (
   <Field label="Customer" required>
-    <SearchableSelect value={null} onChange={noop} options={customers} placeholder="Type to search…" />
+    <SearchableSelect
+      value={null}
+      onChange={noop}
+      options={customers}
+      placeholder="Type to search…"
+    />
   </Field>
 );
 
 export const Selected = () => (
   <Field label="Customer" required>
-    <SearchableSelect value="c1" valueLabel="CUS-0012 — Sample Engineering Pvt Ltd" onChange={noop} options={customers} clearable />
+    <SearchableSelect
+      value="c1"
+      valueLabel="CUS-0012 — Sample Engineering Pvt Ltd"
+      onChange={noop}
+      options={customers}
+      clearable
+    />
   </Field>
 );
 
@@ -53,7 +72,13 @@ function OpenOnMount({ error, options }: { error?: unknown; options: typeof cust
   return (
     <div ref={box} style={{ minHeight: 190 }}>
       <Field label="Customer" required>
-        <SearchableSelect value={null} onChange={noop} options={options} placeholder="Type to search…" error={error} />
+        <SearchableSelect
+          value={null}
+          onChange={noop}
+          options={options}
+          placeholder="Type to search…"
+          error={error}
+        />
       </Field>
     </div>
   );

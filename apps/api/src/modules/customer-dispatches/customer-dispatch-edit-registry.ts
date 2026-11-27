@@ -38,7 +38,9 @@ interface DispatchEditLine {
 
 /** The shape buildFilteredInput emits for applyEdit to reconstruct from. */
 interface DispatchFilteredInput {
-  header: Partial<Pick<UpdateCustomerDispatchInput, 'dispatchDate' | 'transport' | 'vehicleNo' | 'remarks'>>;
+  header: Partial<
+    Pick<UpdateCustomerDispatchInput, 'dispatchDate' | 'transport' | 'vehicleNo' | 'remarks'>
+  >;
   approvedLineKeys: string[];
   proposedLines: ReadonlyArray<{ id: string; qty: number }>;
   /** The requester's edit reason — kept on the EDIT history row the approval writes. */
@@ -152,7 +154,9 @@ export const customerDispatchEditRegistryEntry: DocEditRegistryEntry = {
       approvedLineKeys,
       proposedLines: input.lines,
       ...(input.reason ? { reason: input.reason } : {}),
-      ...(input.expectedUpdatedAt !== undefined ? { expectedUpdatedAt: input.expectedUpdatedAt } : {}),
+      ...(input.expectedUpdatedAt !== undefined
+        ? { expectedUpdatedAt: input.expectedUpdatedAt }
+        : {}),
     } satisfies DispatchFilteredInput;
   },
 

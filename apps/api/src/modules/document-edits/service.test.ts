@@ -117,7 +117,9 @@ afterAll(async () => {
     await db.delete(approvalConfig).where(eq(approvalConfig.companyId, admin.companyId!));
   }
 
-  await db.delete(documentEditRequests).where(like(documentEditRequests.docCode, `${TEST_PREFIX}%`));
+  await db
+    .delete(documentEditRequests)
+    .where(like(documentEditRequests.docCode, `${TEST_PREFIX}%`));
   const headers = await db
     .select({ id: purchaseOrders.id })
     .from(purchaseOrders)

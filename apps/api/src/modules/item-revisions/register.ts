@@ -1,6 +1,7 @@
-// ADR-290 — Drawing Register list: GET /item-revisions/register. One row per
-// live Item + Drawing Rev with its release status, how many open SO / JWSO
-// lines and open Job Cards use it, and whether a drawing correction waits.
+// ADR-290 / ADR-323 — Drawing Register list: GET /item-revisions/register.
+// One row per live Item + Drawing Rev with its status (Unverified / Verified /
+// Obsolete), whether it has a PDF, and how many open SO / JWSO lines and open
+// Job Cards use it.
 // Right: Drawing Register View. 25 rows a page; Sort & Filter ADR-200.
 // Also POST /item-revisions — a new Drawing Rev added in the register
 // (createDrawingRev, Drawing Register Entry right).
@@ -9,11 +10,11 @@ import {
   ActivityAction,
   type CreateDrawingRevInput,
   itemRevLabel,
+  normalizeRevStatus,
   REV_RELEASE_STATUS_LABELS,
   type DrawingRegisterRow,
   type ListDrawingRegisterQuery,
   type ListDrawingRegisterResponse,
-  type RevReleaseStatus,
 } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
@@ -24,7 +25,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
-import { resolveItemRevision } from '../../lib/item-revision';
+import { resolveItemRevision, revStatusSql, revStatusWords } from '../../lib/item-revision';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { newestFirst } from '../../lib/list-order';
 import { emitActivityLog } from '../activity-log/service';
@@ -60,7 +61,7 @@ const ORDERS = sql`
          WHERE l.item_revision_id = ir.id AND l.deleted_at IS NULL AND h.deleted_at IS NULL
       ) o) so ON TRUE`;
 
-/** Open lines / open Job Cards / pending correction (aliases ol, oj, pc). */
+/** Open lines / open Job Cards (aliases ol, oj). */
 const COUNTS = sql`
   LEFT JOIN LATERAL (
     SELECT (
@@ -77,18 +78,10 @@ const COUNTS = sql`
     SELECT COUNT(*)::int AS n FROM public.job_cards jc
       LEFT JOIN public.v_jc_status js ON js.job_card_id = jc.id
      WHERE jc.item_revision_id = ir.id AND jc.deleted_at IS NULL
-       AND COALESCE(js.computed_status, 'open') NOT IN ('complete', 'closed')) oj ON TRUE
-  LEFT JOIN LATERAL (
-    SELECT EXISTS (SELECT 1 FROM public.drawing_corrections c
-                    WHERE c.item_revision_id = ir.id AND c.status = 'pending'
-                      AND c.deleted_at IS NULL) AS pending) pc ON TRUE`;
+       AND COALESCE(js.computed_status, 'open') NOT IN ('complete', 'closed')) oj ON TRUE`;
 
-/** Sort & Filter fields read from COUNTS (sf-columns.ts ol / oj / pc). */
-const COUNT_FIELDS: ReadonlySet<string> = new Set([
-  'openLines',
-  'openJobCards',
-  'pendingCorrection',
-]);
+/** Sort & Filter fields read from COUNTS (sf-columns.ts ol / oj). */
+const COUNT_FIELDS: ReadonlySet<string> = new Set(['openLines', 'openJobCards']);
 
 export async function listDrawingRegister(
   q: ListDrawingRegisterQuery,
@@ -102,7 +95,19 @@ export async function listDrawingRegister(
     const term = q.search ? `%${likeEscape(q.search.trim())}%` : null;
     const where = sql`
       WHERE ir.company_id = ${companyId}::uuid AND ir.deleted_at IS NULL
-        ${q.status ? sql`AND ir.release_status = ${q.status}` : sql``}
+        ${
+          q.status
+            ? // ADR-323 — legacy ADR-290 words match too until 0264.
+              sql`AND ir.release_status = ANY(${sql.param(revStatusWords(q.status))}::text[])`
+            : sql``
+        }
+        ${
+          q.pdf === 'yes'
+            ? sql`AND NULLIF(btrim(ir.drawing_file_path), '') IS NOT NULL`
+            : q.pdf === 'no'
+              ? sql`AND NULLIF(btrim(ir.drawing_file_path), '') IS NULL`
+              : sql``
+        }
         ${
           term
             ? // '\\' in the source = ESCAPE '\' in SQL (a bare '\' in a template
@@ -126,11 +131,11 @@ export async function listDrawingRegister(
       SELECT ir.id, ir.item_id AS "itemId", i.code AS "itemCode", i.name AS "itemName",
              i.customer_part_no AS "customerPartNo", ir.rev, ir.drawing_no AS "drawingNo",
              (NULLIF(btrim(ir.drawing_file_path), '') IS NOT NULL) AS "hasFile",
-             ir.release_status AS "releaseStatus", ir.released_at AS "releasedAt",
+             ${revStatusSql('ir.release_status')} AS "releaseStatus", ir.released_at AS "verifiedAt",
              CASE WHEN ru.id IS NULL THEN NULL
                   ELSE COALESCE(NULLIF(btrim(ru.full_name), ''), split_part(ru.email, '@', 1)) END
-               AS "releasedByName",
-             ol.n AS "openLines", oj.n AS "openJobCards", pc.pending AS "pendingCorrection",
+               AS "verifiedByName",
+             ol.n AS "openLines", oj.n AS "openJobCards",
              so.list AS "orders", ir.updated_at AS "updatedAt",
              ir.created_at AS "createdAt",
              CASE WHEN cu.id IS NULL THEN NULL
@@ -159,12 +164,11 @@ export async function listDrawingRegister(
       label: itemRevLabel(r['itemCode'] as string | null, r['rev'] as string),
       drawingNo: (r['drawingNo'] as string | null) ?? null,
       hasFile: r['hasFile'] === true,
-      releaseStatus: r['releaseStatus'] as RevReleaseStatus,
-      releasedAt: iso(r['releasedAt']),
-      releasedByName: (r['releasedByName'] as string | null) ?? null,
+      releaseStatus: normalizeRevStatus(r['releaseStatus'] as string | null),
+      verifiedAt: iso(r['verifiedAt']),
+      verifiedByName: (r['verifiedByName'] as string | null) ?? null,
       openLines: Number(r['openLines'] ?? 0),
       openJobCards: Number(r['openJobCards'] ?? 0),
-      pendingCorrection: r['pendingCorrection'] === true,
       orders: (r['orders'] as DrawingRegisterRow['orders'] | null) ?? [],
       createdAt: iso(r['createdAt'])!,
       createdByName: (r['createdByName'] as string | null) ?? null,
@@ -178,7 +182,7 @@ export async function listDrawingRegister(
  * ADR-290 — a new Drawing Rev added in the Drawing Register (a customer's
  * ABC/2 that no order names yet). Make items only; the Rev must not exist yet
  * (409 naming the record). Created through resolveItemRevision — the one
- * writer of item_revisions — as 'draft' ("Not released"), source 'register'.
+ * writer of item_revisions — as 'unverified' (ADR-323), source 'register'.
  * Returns the new id (the route re-reads the detail).
  */
 export async function createDrawingRev(
@@ -205,9 +209,9 @@ export async function createDrawingRev(
         SELECT release_status AS status FROM public.item_revisions
          WHERE company_id = ${companyId}::uuid AND item_id = ${input.itemId}::uuid
            AND rev = ${input.rev} AND deleted_at IS NULL
-         LIMIT 1`)) as unknown as Array<{ status: RevReleaseStatus }>;
+         LIMIT 1`)) as unknown as Array<{ status: string }>;
       throw new ConflictError(
-        `${label} already exists${r ? ` (${REV_RELEASE_STATUS_LABELS[r.status]})` : ''} — open it in the Drawing Register`,
+        `${label} already exists${r ? ` (${REV_RELEASE_STATUS_LABELS[normalizeRevStatus(r.status)]})` : ''} — open it in the Drawing Register`,
       );
     };
     const pre = (await tx.execute(sql`
@@ -240,7 +244,7 @@ export async function createDrawingRev(
         refId: label,
         reason: input.changeNote,
         detail: `${label} added in the Drawing Register — ${
-          input.drawingFilePath ? 'Under Review (drawing file attached, ADR-311)' : 'Not released'
+          input.drawingFilePath ? 'Unverified (drawing PDF attached)' : 'Unverified, no PDF yet'
         }`,
       },
       companyId,

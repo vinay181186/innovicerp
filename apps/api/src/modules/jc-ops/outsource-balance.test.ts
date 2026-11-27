@@ -19,9 +19,9 @@ let opId = '';
 
 async function cleanup(): Promise<void> {
   if (jcId) {
-    const ops = (await db.select({ id: jcOps.id }).from(jcOps).where(eq(jcOps.jobCardId, jcId))).map(
-      (o) => o.id,
-    );
+    const ops = (
+      await db.select({ id: jcOps.id }).from(jcOps).where(eq(jcOps.jobCardId, jcId))
+    ).map((o) => o.id);
     for (const id of ops) await db.delete(runningOps).where(eq(runningOps.jcOpId, id));
     await db.delete(jcOps).where(eq(jcOps.jobCardId, jcId));
     await db.delete(jobCards).where(eq(jobCards.id, jcId));

@@ -11,7 +11,13 @@ export const Checkboxes = () => (
 
 export const RadioGroup = () => (
   <div style={column}>
-    <CheckField type="radio" name="grn-type" value="po" defaultChecked label="Against Purchase Order" />
+    <CheckField
+      type="radio"
+      name="grn-type"
+      value="po"
+      defaultChecked
+      label="Against Purchase Order"
+    />
     <CheckField type="radio" name="grn-type" value="direct" label="Direct Purchase" />
     <CheckField type="radio" name="grn-type" value="party" label="Party GRN" />
   </div>

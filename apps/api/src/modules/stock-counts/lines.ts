@@ -71,16 +71,10 @@ export async function writeLines(
   const snap = new Map<string, number>();
   const toRead = lines.filter((l) => {
     const k = keep.get(lineKey(l.itemId, l.itemRevisionId));
-    return !(
-      k &&
-      k.systemQtyAtCount !== null &&
-      roundQty(k.countedQty) === roundQty(l.countedQty)
-    );
+    return !(k && k.systemQtyAtCount !== null && roundQty(k.countedQty) === roundQty(l.countedQty));
   });
   if (toRead.length > 0) {
-    const buckets = await readRevBuckets(tx, companyId, [
-      ...new Set(toRead.map((l) => l.itemId)),
-    ]);
+    const buckets = await readRevBuckets(tx, companyId, [...new Set(toRead.map((l) => l.itemId))]);
     for (const l of toRead) {
       const b = (buckets.get(l.itemId) ?? []).find(
         (x) => x.itemRevisionId === (l.itemRevisionId ?? null),

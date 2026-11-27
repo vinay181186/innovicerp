@@ -58,7 +58,13 @@ export const Cancelled = () => (
   <div style={{ width: 520 }}>
     <Timeline
       events={[
-        { date: '2026-10-28', label: 'PO Approved', code: 'IN-PO-00198', icon: '✓', color: 'var(--blue)' },
+        {
+          date: '2026-10-28',
+          label: 'PO Approved',
+          code: 'IN-PO-00198',
+          icon: '✓',
+          color: 'var(--blue)',
+        },
         {
           date: '2026-10-30',
           label: 'PO Cancelled',

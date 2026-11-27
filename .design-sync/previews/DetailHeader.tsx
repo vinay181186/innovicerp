@@ -12,7 +12,9 @@ import {
 } from '@innovic/web';
 
 const hashLink = ({ to, children, ...rest }: { to: string; children: ReactNode }) => (
-  <a href={`#${to}`} {...rest}>{children}</a>
+  <a href={`#${to}`} {...rest}>
+    {children}
+  </a>
 );
 
 export const SalesOrder = () => (
@@ -25,7 +27,9 @@ export const SalesOrder = () => (
     badges={<StatusBadge kind="so" status="open" />}
     actions={
       <>
-        <Button size="sm" variant="primary">Create Plan</Button>
+        <Button size="sm" variant="primary">
+          Create Plan
+        </Button>
         <ActionMenu
           items={[
             { label: 'Print', icon: 'printer', onClick: () => {} },
@@ -54,13 +58,21 @@ export const VendorMaster = () => (
     code="VND-012"
     name="Sample Heat Treat Works"
     badges={<StatusBadge kind="active" status="active" />}
-    actions={<Button size="sm" variant="ghost">Edit</Button>}
+    actions={
+      <Button size="sm" variant="ghost">
+        Edit
+      </Button>
+    }
   >
     <ReadGrid>
       <ReadField label="Contact Person" size="md" value="Ramesh Patel" />
       <ReadField label="Phone" size="md" mono value="+91 79 2583 0000" />
       <ReadField label="GSTIN" size="md" mono value="24AAAAA0000A1Z5" />
-      <ReadField label="Vendor Address" size="full" value="Plot 14, GIDC Phase II, Vatva, Ahmedabad, Gujarat 382445" />
+      <ReadField
+        label="Vendor Address"
+        size="full"
+        value="Plot 14, GIDC Phase II, Vatva, Ahmedabad, Gujarat 382445"
+      />
     </ReadGrid>
   </DetailHeader>
 );

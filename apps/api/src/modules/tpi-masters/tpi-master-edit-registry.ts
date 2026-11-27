@@ -36,7 +36,11 @@ export const tpiMasterEditRegistryEntry: DocEditRegistryEntry = {
       .select()
       .from(tpiMasters)
       .where(
-        and(eq(tpiMasters.id, id), eq(tpiMasters.companyId, companyId), isNull(tpiMasters.deletedAt)),
+        and(
+          eq(tpiMasters.id, id),
+          eq(tpiMasters.companyId, companyId),
+          isNull(tpiMasters.deletedAt),
+        ),
       )
       .limit(1)
       .for('update');

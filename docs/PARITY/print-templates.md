@@ -1,17 +1,18 @@
 # PARITY — Print Templates + Document Printing (`renderPrintTemplates` + all `printX` functions)
 
 > **Legacy source:** `legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html`
+>
 > - **Template system (A):** infra L14439–14605, editor `renderPrintTemplates` L14660–14800, editor interactions L14884–15029, test print `_pteTestPrint` L15034–15110.
 > - **Template-consuming prints (B):** `printPO` L25913, `printChallan` (OSP DC) L26133, `_jwdcPrint` (JW DC) L24611.
 > - **Fixed-layout prints (C):** shared `printWindow(title, bodyHtml)` L10524, `printJobCard` L10582, `printRouteCard` L10629, `printMachineQueue` L10661 / `showPrintQueueDialog` L10695, `printDispatchRegister` L10789, `printDailyReport` L10918, `_printInvoice` L21314, `printDrawingFile` L10490.
-> **React target:** ❌ **WHOLE FEATURE MISSING.** No `/print-templates` route; no `print_templates` / `print_template_revisions` tables; no `window.print()` anywhere in `apps/web/src`.
-> **Status:** ❌ greenfield. Scope approved by user 2026-05-25 = **A+B+C (everything, incl. fixed-layout prints)**.
+>   **React target:** ❌ **WHOLE FEATURE MISSING.** No `/print-templates` route; no `print_templates` / `print_template_revisions` tables; no `window.print()` anywhere in `apps/web/src`.
+>   **Status:** ❌ greenfield. Scope approved by user 2026-05-25 = **A+B+C (everything, incl. fixed-layout prints)**.
 
 ---
 
 ## 0. What this feature is — three parts
 
-**(A) Print Templates editor + store.** An admin-only WYSIWYG screen that lets the operator customise the *editable text blocks* of three printable documents. The line-items table + meta rows are system-generated; only the surrounding prose (header note, special notes, terms, footer, signature) is editable. Stored per-block with last-5-version rollback.
+**(A) Print Templates editor + store.** An admin-only WYSIWYG screen that lets the operator customise the _editable text blocks_ of three printable documents. The line-items table + meta rows are system-generated; only the surrounding prose (header note, special notes, terms, footer, signature) is editable. Stored per-block with last-5-version rollback.
 
 **(B) Template-consuming prints.** The real Print actions on **PO**, **OSP DC**, **JW DC** that open a print window and inject the customised blocks via `{variable}` substitution. These are the docs vendors actually receive.
 
@@ -23,11 +24,13 @@
 
 Two legacy collections:
 
-**`printTemplates[*]`** — one row per *edited* block (absent row ⇒ factory default used):
+**`printTemplates[*]`** — one row per _edited_ block (absent row ⇒ factory default used):
+
 - `id`, `templateKey` (e.g. `po_terms`), `content` (plain text, `\n` line breaks), `lastEditedBy` (user name string), `lastEditedAt` (ISO).
 
 **`printTemplateRevisions[*]`** — append-only history, capped at **last 5 per `templateKey`**:
-- `id`, `templateKey`, `content` (the *previous* content before an edit), `editedBy`, `editedAt`.
+
+- `id`, `templateKey`, `content` (the _previous_ content before an edit), `editedBy`, `editedAt`.
 
 `_loadTemplate(key)` → returns `printTemplates` row content if present, else `_PT_DEFAULTS[key]` (L14501).
 
@@ -37,19 +40,20 @@ Two legacy collections:
 
 Doc types: **PO** (`po_`), **OSP DC** (`ospdc_`), **JW DC** (`jwdc_`). Blocks per doc (in order):
 
-| key suffix | name | position |
-|---|---|---|
-| `header_note` | Header Note | Top of document, above line items |
-| `special_notes` | Special Notes | Below totals, above Terms (blank by default) |
-| `terms` | Terms & Conditions | Below Special Notes |
-| `footer` | Footer | Bottom of page (jurisdiction, E.&O.E.) |
-| `signature` | Signature Block | Bottom-right corner |
+| key suffix      | name               | position                                     |
+| --------------- | ------------------ | -------------------------------------------- |
+| `header_note`   | Header Note        | Top of document, above line items            |
+| `special_notes` | Special Notes      | Below totals, above Terms (blank by default) |
+| `terms`         | Terms & Conditions | Below Special Notes                          |
+| `footer`        | Footer             | Bottom of page (jurisdiction, E.&O.E.)       |
+| `signature`     | Signature Block    | Bottom-right corner                          |
 
 Factory defaults (verbatim) — port these into a `PRINT_TEMPLATE_DEFAULTS` const so the seedless system has sensible text:
+
 - `po_header_note`: "Please supply the items as per specifications mentioned in this Purchase Order. Quote our PO number {poNo} on all correspondence, invoices and delivery challans."
 - `po_special_notes`: "" (blank)
 - `po_terms`: 6-point list (specs / payment `{paymentTerms}` / delivery / test certs / rejection replacement / V.U. Nagar jurisdiction) — see L14443.
-- `po_footer`: "E. & O.E.   |   Subject to V.U. Nagar (Anand) Jurisdiction   |   This is a computer generated document."
+- `po_footer`: "E. & O.E. | Subject to V.U. Nagar (Anand) Jurisdiction | This is a computer generated document."
 - `po_signature`: "For Innovic Technology\n\n\n\nAuthorised Signatory"
 - `ospdc_*` / `jwdc_*`: analogous returnable-material text — see L14448–14459 (port verbatim).
 
@@ -72,7 +76,7 @@ Factory defaults (verbatim) — port these into a `PRINT_TEMPLATE_DEFAULTS` cons
 
 ## 5. Revisions + restore default (L14544–14597)
 
-- On every save, the *old* content is pushed to revisions; trimmed to last 5 per key (`_saveTemplateRevision` L14544).
+- On every save, the _old_ content is pushed to revisions; trimmed to last 5 per key (`_saveTemplateRevision` L14544).
 - Revisions modal (`_pteShowRevisions` L14989): table of #, date/time, editedBy, 150-char preview, Restore button. Restore loads the old content into the editor (still requires an explicit Save to commit — `_pteRestoreRev` L15017).
 - Restore-to-default (`_pteRestoreDefault` L14977): saves a revision of current, then writes `_PT_DEFAULTS[key]`.
 - **Admin-only** for all writes (`_ptSaveContent` guards `isAdmin()` L14566). Every save logs activity `UPDATE/PrintTemplate`.
@@ -112,15 +116,15 @@ Data each needs is already available from our API detail endpoints (PO detail, J
 
 `printWindow` opens an 980×740 window, writes `<!DOCTYPE>` + a standard stylesheet (company header w/ logo, `.doc-title`, `table` th=`#1a3a6b`, `.badge` colour set, `.info-grid`, `.sign-row` 3-col signatures, `@media print{.no-print{display:none}}`) + Print/Close buttons + `companyBlock` + the caller's `bodyHtml`. Callers just build `bodyHtml`.
 
-| Function | Line | Triggered from | Body content |
-|---|---|---|---|
-| `printJobCard(jcId)` | 10582 | JC detail/list | JC header info-grid + ops table + signature row |
-| `printRouteCard(itemCode)` | 10629 | Route Card list 🖨 (L10117) | RC ops sequence table |
-| `printMachineQueue(machineId)` | 10661 | Machine loading 🖨 (L10439/10467); `showPrintQueueDialog` L10695 picker | per-machine job queue table |
-| `printDispatchRegister()` | 10789 | Dispatch register 🖨 (L10753) | dispatch rows for selected range |
-| `printDailyReport(date,mach)` | 10918 | Daily report 🖨 (L10882/10895) | per-machine op-log summary for a date |
-| `_printInvoice(invId)` | 21314 | Invoice list/detail 🖨 (L21129/21308) | **own window** (not `printWindow`) — tax invoice layout, print btn L21347 |
-| `printDrawingFile(id,type)` | 10490 | Item list/detail 🖨 (L11493/11528) | opens stored drawing image/PDF in a print window |
+| Function                       | Line  | Triggered from                                                          | Body content                                                              |
+| ------------------------------ | ----- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `printJobCard(jcId)`           | 10582 | JC detail/list                                                          | JC header info-grid + ops table + signature row                           |
+| `printRouteCard(itemCode)`     | 10629 | Route Card list 🖨 (L10117)                                             | RC ops sequence table                                                     |
+| `printMachineQueue(machineId)` | 10661 | Machine loading 🖨 (L10439/10467); `showPrintQueueDialog` L10695 picker | per-machine job queue table                                               |
+| `printDispatchRegister()`      | 10789 | Dispatch register 🖨 (L10753)                                           | dispatch rows for selected range                                          |
+| `printDailyReport(date,mach)`  | 10918 | Daily report 🖨 (L10882/10895)                                          | per-machine op-log summary for a date                                     |
+| `_printInvoice(invId)`         | 21314 | Invoice list/detail 🖨 (L21129/21308)                                   | **own window** (not `printWindow`) — tax invoice layout, print btn L21347 |
+| `printDrawingFile(id,type)`    | 10490 | Item list/detail 🖨 (L11493/11528)                                      | opens stored drawing image/PDF in a print window                          |
 
 > Detail of each C function's exact `bodyHtml` is read at its build step (the legacy lines are long minified strings). They depend on data our API already exposes (JC ops, route-card ops, machine queue, dispatch log, op-log, invoices, item drawing path).
 
@@ -129,7 +133,7 @@ Data each needs is already available from our API detail endpoints (PO detail, J
 ## 10. DELTAs for our React + Supabase architecture
 
 1. **Template store moves to Postgres** (`print_templates` + `print_template_revisions`), not a Firebase blob. Service-layer enforces admin-only writes + revision capping (CLAUDE.md Rule #1 — no logic in FE).
-2. **Substitution + print-window HTML are presentation** → live in a web util (`@/lib/print`). Template *content* + *defaults* come from the API; the FE only renders. Defaults const is shared (`packages/shared`) so API seeds/falls back and FE can preview.
+2. **Substitution + print-window HTML are presentation** → live in a web util (`@/lib/print`). Template _content_ + _defaults_ come from the API; the FE only renders. Defaults const is shared (`packages/shared`) so API seeds/falls back and FE can preview.
 3. **Logo:** legacy embeds a base64 data-URI (L10527). We'll use a bundled asset or company-record logo; the company header pulls name/GSTIN/address from the `companies` row (Settings page already edits these), not hard-coded.
 4. **Revisions = dedicated table** matching `route_card_revisions` / `bom_master_revisions` convention (manager/admin-insert policy), capped at 5 per key in the service.
 5. **`window.open` popup** — same UX as legacy; show a toast "Allow popups to print" on null window.

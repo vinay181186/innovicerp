@@ -1,12 +1,4 @@
-import {
-  isRevWorkAllowed,
-  itemRevLabel,
-  opOnHoldMessage,
-  REV_RELEASE_STATUS_LABELS,
-  REV_WORK_ALLOWED,
-  revNotReleasedMessage,
-  type RevReleaseStatus,
-} from '@innovic/shared';
+import { opOnHoldMessage } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import type { AuthContext, DbTransaction } from '../db/with-user-context';
 import { emitActivityLogBatch, type ActivityLogInput } from '../modules/activity-log/service';
@@ -17,13 +9,10 @@ import { ConflictError, ValidationError } from './errors';
 // jc_ops hold columns (hold_kind, hold_reason, held_at, held_by, hold_ecr_id —
 // migration 0250), §20.1, and the ONE check every qty writer calls.
 //
-// Two different things stop work on an op:
-//   1. A stored hold (kind 'ecr' — an Engineering Change is open on the part —
-//      or 'manual'). Placed and released only through here.
-//   2. The Job Card's Drawing Rev is not released (isRevWorkAllowed). That one
-//      is NEVER stored: assertJcOpWorkable reads the Rev's live status, so the
-//      moment Design releases the Rev the op is workable again with nothing to
-//      clear. (A stored copy would go stale the second the Rev changed.)
+// One thing stops work on an op: a stored hold (kind 'ecr' — an Engineering
+// Change is open on the part — or 'manual'). Placed and released only through
+// here. ADR-323 — a drawing status NEVER stops a running Job Card (the Rev is
+// checked only when NEW Plan / PRO / Job Card work is made).
 //
 // LOCK ORDER (ADR-220): jc_ops rows FOR UPDATE, ascending id, and NEVER
 // job_cards first — Op Entry holds the jc_ops row and then updates job_cards
@@ -200,9 +189,6 @@ interface WorkableRow {
   holdReason: string | null;
   heldAt: Date | string | null;
   ecrCode: string | null;
-  revStatus: RevReleaseStatus | null;
-  rev: string | null;
-  itemCode: string | null;
 }
 
 async function readWorkable(
@@ -213,12 +199,9 @@ async function readWorkable(
   const rows = (await tx.execute(sql`
     SELECT o.job_card_id AS "jobCardId", j.code AS "jcCode", o.op_seq AS "opSeq", o.operation,
       o.hold_kind AS "holdKind", o.hold_reason AS "holdReason", o.held_at AS "heldAt",
-      (SELECT e.code FROM public.engineering_changes e WHERE e.id = o.hold_ecr_id) AS "ecrCode",
-      ir.release_status AS "revStatus", ir.rev,
-      (SELECT i.code FROM public.items i WHERE i.id = ir.item_id) AS "itemCode"
+      (SELECT e.code FROM public.engineering_changes e WHERE e.id = o.hold_ecr_id) AS "ecrCode"
     FROM public.jc_ops o
     JOIN public.job_cards j ON j.id = o.job_card_id
-    LEFT JOIN public.item_revisions ir ON ir.id = j.item_revision_id
     WHERE o.id = ${jcOpId}::uuid AND o.company_id = ${companyId}::uuid
     LIMIT 1
   `)) as unknown as WorkableRow[];
@@ -234,10 +217,10 @@ function holdText(r: WorkableRow): string | null {
 }
 
 /**
- * Refuse qty moving on an op that is on hold, or whose Job Card's Drawing Rev
- * is not released (read live). Call AFTER the caller's own jc_ops row lock, so
+ * Refuse qty moving on an op that is on hold (ADR-323: the Drawing Rev status
+ * is not checked here). Call AFTER the caller's own jc_ops row lock, so
  * a hold placed a moment earlier is seen (placeOpHolds takes the same lock).
- * A Job Card with no Rev is allowed. Unknown op → no-op (the caller's own
+ * Unknown op → no-op (the caller's own
  * not-found path answers).
  */
 export async function assertJcOpWorkable(
@@ -247,7 +230,7 @@ export async function assertJcOpWorkable(
   opts: {
     /** Stop of a running session: the pieces it made before the hold was
      *  placed may still be recorded. A session started AFTER held_at (or a
-     *  fresh entry, no session) is refused as before. The Rev check stays. */
+     *  fresh entry, no session) is refused as before. */
     sessionStartedAt?: Date | undefined;
   } = {},
 ): Promise<void> {
@@ -259,16 +242,11 @@ export async function assertJcOpWorkable(
   if (r.holdKind && !madeBeforeHold) {
     throw new ConflictError(opOnHoldMessage(r.jcCode, jcOpRef(r.opSeq, r.operation), holdText(r)));
   }
-  if (r.revStatus && !isRevWorkAllowed(r.revStatus)) {
-    throw new ValidationError(
-      revNotReleasedMessage(itemRevLabel(r.itemCode ?? '', r.rev ?? ''), r.revStatus),
-    );
-  }
 }
 
 /**
  * For a writer that has no jc_ops lock of its own yet: lock the ops (id
- * order, ADR-220) and refuse when any is held / on a not-released Rev.
+ * order, ADR-220) and refuse when any is held.
  */
 export async function lockAndAssertJcOpsWorkable(
   tx: DbTransaction,
@@ -287,7 +265,7 @@ export async function lockAndAssertJcOpsWorkable(
 
 /**
  * For writers that must NOT refuse (goods already physically back from a
- * vendor): the hold / Rev sentence to add to their activity note, or null when
+ * vendor): the hold sentence to add to their activity note, or null when
  * the op is workable.
  */
 export async function jcOpHoldNote(
@@ -308,7 +286,7 @@ export async function jcOpHoldNote(
 
 /**
  * Goods physically back from a vendor are never refused (they are already in
- * the building). When the op is on hold / its Rev is not released, the receipt
+ * the building). When the op is on hold, the receipt
  * goes through and the Job Card's history says so. Returns the note, or null.
  */
 export async function noteReceiptOnHeldOp(
@@ -340,32 +318,22 @@ export async function noteReceiptOnHeldOp(
 
 export interface OpHoldInfo {
   /** The sentence the screens show; null = workable. A stored hold's reason
-   *  (prefixed with its ECR code), else "Drawing Rev X is Not released". */
+   *  (prefixed with its ECR code). */
   holdReason: string | null;
   heldAt: string | null;
   holdEcrCode: string | null;
   holdEcrId: string | null;
 }
 
-/** The status-label CASE, built from the shared map (one source of words). */
-const REV_LABEL_CASE = sql.join(
-  Object.entries(REV_RELEASE_STATUS_LABELS).map(([k, v]) => sql`WHEN ${k} THEN ${v}`),
-  sql` `,
-);
-const REV_ALLOWED_LIST = sql.join(
-  REV_WORK_ALLOWED.map((s) => sql`${s}`),
-  sql`, `,
-);
-
 /**
  * The hold sentence for an op, as a SQL scalar for a list query (one query
  * for the whole page — the jc-ops board). `op` / `jc` are the aliases of
- * jc_ops and its job_cards row in the caller's FROM. Same rule as
- * assertJcOpWorkable: a stored hold first, else the live Rev status.
+ * jc_ops and its job_cards row in the caller's FROM (`jc` kept for the
+ * callers; ADR-323 dropped the Rev part). Same rule as assertJcOpWorkable.
  */
 export function opHoldReasonSql(op: string, jc: string): SQL<string | null> {
   const o = sql.raw(op);
-  const j = sql.raw(jc);
+  void jc;
   return sql<string | null>`(CASE
     WHEN ${o}.hold_kind IS NOT NULL THEN (
       SELECT CASE
@@ -375,16 +343,11 @@ export function opHoldReasonSql(op: string, jc: string): SQL<string | null> {
       END
       FROM (SELECT 1) one
       LEFT JOIN public.engineering_changes e ON e.id = ${o}.hold_ecr_id)
-    ELSE (SELECT 'Drawing Rev ' || ir.rev || ' is ' || CASE ir.release_status ${REV_LABEL_CASE} END
-            FROM public.item_revisions ir
-           WHERE ir.id = ${j}.item_revision_id
-             AND ir.release_status NOT IN (${REV_ALLOWED_LIST}))
   END)`;
 }
 
 /**
- * Hold facts for screens, keyed by op id (only ops that are held or on a
- * not-released Rev are in the map). The Status page's opExtras reads this;
+ * Hold facts for screens, keyed by op id (only held ops are in the map). The Status page's opExtras reads this;
  * a read, no lock.
  */
 export async function readOpHolds(

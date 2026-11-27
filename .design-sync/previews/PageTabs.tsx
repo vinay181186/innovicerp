@@ -7,7 +7,9 @@ const tabs = [
   { key: '/grn', label: 'GRN', icon: '📦', to: '#/grn' },
 ];
 
-export const OpenPages = () => <PageTabs tabs={tabs} activeKey="/sales-orders" onSelect={() => {}} onClose={() => {}} />;
+export const OpenPages = () => (
+  <PageTabs tabs={tabs} activeKey="/sales-orders" onSelect={() => {}} onClose={() => {}} />
+);
 
 export const NotLinked = () => (
   <PageTabs

@@ -109,19 +109,25 @@ describe('effective perms', () => {
     expect(canAdvanceForm(access({ departments: { production: 'L1' } }), PRO)).toBe(false);
   });
 
-  it('only the page\'s own department counts', () => {
+  it("only the page's own department counts", () => {
     // Production L2 says nothing about NC Register (QC).
     expect(canAdvanceForm(access({ departments: { production: 'L2' } }), NC)).toBe(false);
   });
 
   it('an Advance tick grants it below the tier, on that page only', () => {
-    const eff = access({ departments: { production: 'L1' }, forms: { [PRO]: ticks({ advance: true }) } });
+    const eff = access({
+      departments: { production: 'L1' },
+      forms: { [PRO]: ticks({ advance: true }) },
+    });
     expect(canAdvanceForm(eff, PRO)).toBe(true);
     expect(canAdvanceForm(eff, 'jc_create')).toBe(false);
   });
 
   it('"No advance" takes Advance away from the tier — and only Advance', () => {
-    const eff = access({ departments: { production: 'L2' }, forms: { [PRO]: ticks({ advanceOff: true }) } });
+    const eff = access({
+      departments: { production: 'L2' },
+      forms: { [PRO]: ticks({ advanceOff: true }) },
+    });
     const p = effectiveFormPerms(eff, PRO);
     expect(p).toMatchObject({ view: true, entry: true, advance: false });
     // other pages in the same department keep it
@@ -129,17 +135,30 @@ describe('effective perms', () => {
   });
 
   it('"No edit" on an L3 leaves Advance — can close, cannot correct', () => {
-    const eff = access({ departments: { production: 'L3' }, forms: { [PRO]: ticks({ editOff: true }) } });
+    const eff = access({
+      departments: { production: 'L3' },
+      forms: { [PRO]: ticks({ editOff: true }) },
+    });
     expect(effectiveFormPerms(eff, PRO)).toMatchObject({ advance: true, edit: false });
   });
 
   it('"Hide page" removes Advance with everything else', () => {
-    const eff = access({ departments: { production: 'L5' }, forms: { [PRO]: ticks({ viewOff: true }) } });
-    expect(effectiveFormPerms(eff, PRO)).toMatchObject({ view: false, advance: false, edit: false });
+    const eff = access({
+      departments: { production: 'L5' },
+      forms: { [PRO]: ticks({ viewOff: true }) },
+    });
+    expect(effectiveFormPerms(eff, PRO)).toMatchObject({
+      view: false,
+      advance: false,
+      edit: false,
+    });
   });
 
   it('an old Edit tick on an L1 still grants Advance', () => {
-    const eff = access({ departments: { production: 'L1' }, forms: { [PRO]: ticks({ edit: true }) } });
+    const eff = access({
+      departments: { production: 'L1' },
+      forms: { [PRO]: ticks({ edit: true }) },
+    });
     expect(canAdvanceForm(eff, PRO)).toBe(true);
   });
 

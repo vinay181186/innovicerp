@@ -1,4 +1,5 @@
 Card view for every document list — the SO and GRN lists already share this exact anatomy (each had a local QtyBox copy).
+
 ```jsx
 <DocCard accent="var(--amber)" code="IN-GRN-26-0142" title="Precision Heat Treat" badges={<Badge tone="amber">QC Pending</Badge>}
   metrics={<QtyStrip items={[{label:'Received',value:60},{label:'Accepted',value:0},{label:'Rejected',value:0},{label:'Lines',value:2}]} />}

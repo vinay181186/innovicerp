@@ -134,7 +134,7 @@ async function card(item: string, rev: string, key: string): Promise<void> {
   }
 }
 
-/** Item + Revs 1 (released) / 2 (released), cards for both, an SO line on
+/** Item + Revs 1 (verified) / 2 (verified), cards for both, an SO line on
  *  Rev 1, a plan and a PRO for `qty` on Rev 1. */
 async function makePart(key: string, qty: number): Promise<Part> {
   const [it] = await db
@@ -161,7 +161,7 @@ async function makePart(key: string, qty: number): Promise<Part> {
           rev: r,
           sourceType: 'legacy',
           sourceRef: `${P}test`,
-          releaseStatus: 'released',
+          releaseStatus: 'verified',
           createdBy: admin.id,
           updatedBy: admin.id,
         })
@@ -376,9 +376,7 @@ describe('ADR-291 Engineering Change', () => {
     expect((holdErr as Error).message).toContain(
       `is on hold (ECR ${draft.code}) — release the hold first.`,
     );
-    const holdInfo = await withUserContext(admin, (tx) =>
-      readOpHolds(tx, companyId, [heldOp!.id]),
-    );
+    const holdInfo = await withUserContext(admin, (tx) => readOpHolds(tx, companyId, [heldOp!.id]));
     expect(holdInfo.get(heldOp!.id)?.holdReason).toBe(`ECR ${draft.code}`);
 
     // Self-approval refused.

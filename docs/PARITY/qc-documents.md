@@ -26,6 +26,7 @@ Storage (`supabase.storage.from('qc-docs').upload`), then registers metadata via
 QC Documents is a **file repository**: attach + browse MIR / MCR / Inspection Reports / TPI Reports / Drawings per JC / SO, with category filters, upload, and download. Its core is **binary file upload/download** — legacy uploads to Firebase Storage (`_fsUploadAndRegister`) and registers each file in `db.fileRegistry` (category, docType, fileName, downloadUrl), with a base64 local fallback.
 
 ### Infra gap (verified 2026-05-23)
+
 The React app has **no file-upload / Supabase Storage wiring anywhere** — no `storage.from(...).upload(...)`, no signed-URL helper, and **no document/attachment table** in the schema (only `drawing_file_path` text columns on `items`/`job_cards`, with no uploader behind them). So QC Documents cannot be built faithfully without first standing up Storage as a **foundational capability**:
 
 1. **Supabase Storage bucket** (e.g. `qc-docs`) + RLS / signed-URL access policy (Mumbai region per CLAUDE.md).
@@ -33,12 +34,14 @@ The React app has **no file-upload / Supabase Storage wiring anywhere** — no `
 3. A **`qc_documents`** table: company_id, jc/so ref, category, doc_type, file_name, storage_path, uploaded_by + standard cols + RLS (migration ~`0039`).
 
 ### Build plan (dedicated slice — foundational)
+
 1. Storage bucket + api signed-URL endpoints (`POST /files/sign-upload`, `GET /files/sign-download`) + web `useFileUpload` hook. **This is the long pole** — it's app-wide file infra, not QC-specific.
 2. `qc_documents` table + `modules/qc-documents` CRUD (list by JC/SO, register on upload).
 3. Web `/qc-docs`: category filter + per-doc cards/table (type, name, JC/SO, download) + upload (drag/drop or picker).
 4. Sidebar QC → Report "QC Documents" + router. Backfill the QC-doc attach points already stubbed in the JC modal / Incoming-QC / TPI / QC-Call-Register submit forms.
 
 ### Interim option (no Storage)
+
 A **QC-document register** (metadata only — track which doc types are required/received per JC/SO, no binary) is buildable now with just the `qc_documents` table. Lower value (the point is the files), so deferred in favour of doing the Storage capability properly.
 
 > Recommend a focused session to build the **file-Storage capability** first (it unblocks QC Documents + JC drawings + GRN/TPI report attachments + Design files across the app), then this page is a thin layer on top.

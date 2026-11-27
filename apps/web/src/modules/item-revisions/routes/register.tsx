@@ -1,13 +1,14 @@
-// Drawing Register (ADR-290, SOP INN-ERP-SOP-ENG-001 §4) — every Item +
-// Drawing Rev ("ABC/1") with its release status. Design sends a Rev for
-// review, the Drawing Register approver approves / rejects it, a person with
-// the Drawing Release switch releases it; only then may Plan, PRO and Job
-// Card use it. The row ⋯ offers only what this user may do and the status
-// allows; the server checks every action again (409 when someone acted first).
+// Drawing Register (ADR-290 / ADR-323, SOP INN-ERP-SOP-ENG-001 §4) — every
+// Item + Drawing Rev ("ABC/1") with its PDF and its Drawing Rev Status
+// (Unverified / Verified / Obsolete). Design opens the PDF and clicks Verify.
+// The row ⋯ offers only what this user may do and the status allows; the
+// server checks every action again (409 when someone acted first).
 //
 // ADR-201: 25 rows a page from the server. Search (URL `search`, debounced,
-// back to page 1), the Drawing Rev Status filter and the column ▾ Sort &
-// Filter all run on the server and narrow together.
+// back to page 1), the Drawing Rev Status filter, the PDF filter and the
+// column ▾ Sort & Filter all run on the server and narrow together.
+// `?new=1&itemId=<uuid>&rev=<rev>` (Route Card "Click here to add it") opens
+// + New Drawing Rev prefilled.
 
 import {
   REV_RELEASE_STATUSES,
@@ -49,13 +50,25 @@ export const drawingRegisterRoute = createRoute({
     page: pageSearchParam,
     search: z.string().optional().catch(undefined),
     status: z.enum(REV_RELEASE_STATUSES).optional().catch(undefined),
+    pdf: z.enum(['yes', 'no']).optional().catch(undefined),
+    new: z.coerce.number().optional().catch(undefined),
+    itemId: z.string().uuid().optional().catch(undefined),
+    rev: z.string().max(32).optional().catch(undefined),
   }),
   component: DrawingRegisterPage,
 });
 
 function DrawingRegisterPage(): React.JSX.Element {
   const navigate = drawingRegisterRoute.useNavigate();
-  const { page, search: term, status } = drawingRegisterRoute.useSearch();
+  const {
+    page,
+    search: term,
+    status,
+    pdf,
+    new: openNew,
+    itemId: newItemId,
+    rev: newRev,
+  } = drawingRegisterRoute.useSearch();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'drawingreg_create');
   const rights = useRevActionRights();
@@ -64,7 +77,23 @@ function DrawingRegisterPage(): React.JSX.Element {
     null,
   );
   const [replacing, setReplacing] = useState<DrawingRegisterRow | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<{ itemId?: string; rev?: string } | null>(null);
+  // ?new=1 — open + New Drawing Rev prefilled, once access is known (Entry
+  // right), then drop the flags so Back / refresh does not open it again.
+  const mayAdd = perms.entry;
+  useEffect(() => {
+    if (openNew !== 1 || !eff) return;
+    if (mayAdd) {
+      setAdding({
+        ...(newItemId ? { itemId: newItemId } : {}),
+        ...(newRev ? { rev: newRev } : {}),
+      });
+    }
+    void navigate({
+      search: (prev) => ({ ...prev, new: undefined, itemId: undefined, rev: undefined }),
+      replace: true,
+    });
+  }, [openNew, eff, mayAdd, newItemId, newRev, navigate]);
 
   const gotoPage = useCallback(
     (p: number): void => {
@@ -91,6 +120,7 @@ function DrawingRegisterPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = useDrawingRegister({
     search: term,
     status,
+    pdf,
     sf: sf.param,
     limit: LIST_PAGE_SIZE,
     offset: pageOffset(page),
@@ -107,9 +137,17 @@ function DrawingRegisterPage(): React.JSX.Element {
     tableKey: TABLE_KEYS.drawingRegister,
     search: term,
     status,
+    pdf,
     sfParam: sf.param,
   });
-  const filtering = Boolean(term) || Boolean(status) || sf.filtering;
+  const filtering = Boolean(term) || Boolean(status) || Boolean(pdf) || sf.filtering;
+  const filterNote =
+    [
+      status ? REV_RELEASE_STATUS_LABELS[status] : null,
+      pdf ? (pdf === 'yes' ? 'PDF Available' : 'PDF Missing') : null,
+    ]
+      .filter((w): w is string => w !== null)
+      .join(' · ') || undefined;
 
   // "Hide page": no View → the no-access panel. `eff` undefined only while
   // access loads — don't block then.
@@ -130,31 +168,49 @@ function DrawingRegisterPage(): React.JSX.Element {
         icon="📐"
         count={total}
         noun="Drawing Rev"
-        filterNote={status ? REV_RELEASE_STATUS_LABELS[status] : undefined}
+        filterNote={filterNote}
         search={input}
         onSearch={setInput}
         searchPlaceholder="Search item code, item name, customer part no., drawing no.…"
         updating={isFetching && !isLoading}
         exportSpec={exportSpec}
         filters={
-          <Select
-            aria-label="Drawing Rev Status"
-            value={status ?? ''}
-            onChange={(e) => {
-              const v = e.target.value as RevReleaseStatus | '';
-              void navigate({
-                search: (prev) => ({ ...prev, status: v || undefined, page: 1 }),
-                replace: true,
-              });
-            }}
-            options={[
-              { value: '', label: 'All Drawing Rev Status' },
-              ...REV_RELEASE_STATUSES.map((s) => ({
-                value: s,
-                label: REV_RELEASE_STATUS_LABELS[s],
-              })),
-            ]}
-          />
+          <>
+            <Select
+              aria-label="Drawing Rev Status"
+              value={status ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as RevReleaseStatus | '';
+                void navigate({
+                  search: (prev) => ({ ...prev, status: v || undefined, page: 1 }),
+                  replace: true,
+                });
+              }}
+              options={[
+                { value: '', label: 'All Drawing Rev Status' },
+                ...REV_RELEASE_STATUSES.map((s) => ({
+                  value: s,
+                  label: REV_RELEASE_STATUS_LABELS[s],
+                })),
+              ]}
+            />
+            <Select
+              aria-label="PDF"
+              value={pdf ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as 'yes' | 'no' | '';
+                void navigate({
+                  search: (prev) => ({ ...prev, pdf: v || undefined, page: 1 }),
+                  replace: true,
+                });
+              }}
+              options={[
+                { value: '', label: 'All PDF' },
+                { value: 'yes', label: 'PDF Available' },
+                { value: 'no', label: 'PDF Missing' },
+              ]}
+            />
+          </>
         }
         onClearFilters={() => {
           setInput('');
@@ -164,7 +220,7 @@ function DrawingRegisterPage(): React.JSX.Element {
         filtersActive={filtering}
         primary={
           perms.entry ? (
-            <button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>
+            <button type="button" className="btn btn-primary" onClick={() => setAdding({})}>
               + New Drawing Rev
             </button>
           ) : undefined
@@ -222,9 +278,11 @@ function DrawingRegisterPage(): React.JSX.Element {
       ) : null}
       {adding ? (
         <NewDrawingRevDialog
-          onClose={() => setAdding(false)}
+          initialItemId={adding.itemId}
+          initialRev={adding.rev}
+          onClose={() => setAdding(null)}
           onCreated={(created) => {
-            setAdding(false);
+            setAdding(null);
             void navigate({
               to: '/drawings/$itemRevisionId',
               params: { itemRevisionId: created.id },

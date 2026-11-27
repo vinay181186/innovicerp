@@ -18,12 +18,20 @@ export const UnsavedEdit = () => (
     backLabel="Back to SO Master"
     onBack={() => {}}
     dirty
-    actions={<Button size="sm" variant="ghost">Print</Button>}
+    actions={
+      <Button size="sm" variant="ghost">
+        Print
+      </Button>
+    }
   />
 );
 
 export const SettingsWithTabs = () => (
-  <PageHeader title="Approval Limits" icon="⚙️" subtitle="Who may approve which document, up to what amount.">
+  <PageHeader
+    title="Approval Limits"
+    icon="⚙️"
+    subtitle="Who may approve which document, up to what amount."
+  >
     <TabStrip
       activeKey="po"
       tabs={[

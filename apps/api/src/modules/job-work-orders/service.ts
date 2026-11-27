@@ -1241,8 +1241,7 @@ export async function createJobWorkOrder(
           // line without asking a human have no Rev to give; those land on '0',
           // the column's DB default. ADR-177: stored upper-cased.
           revision: l.revision !== undefined ? normalizeRevision(l.revision) : '0',
-          drawingFilePath:
-            lr.drawingFilePath !== undefined ? lr.drawingFilePath : (l.drawingFilePath ?? null),
+          drawingFilePath: lr.drawingFilePath ?? null,
           itemRevisionId: lr.itemRevisionId,
           ...(l.drawingNo ? {} : lr.registerDrawingNo ? { drawingNo: lr.registerDrawingNo } : {}),
           // ADR-236: the CUSTOMER's PO line number (required) and the
@@ -1871,8 +1870,8 @@ async function mergeLines(
       }
       lineUpdate['revision'] = nextRevision;
     }
-    if (u.data.drawingFilePath !== undefined)
-      lineUpdate['drawingFilePath'] = u.data.drawingFilePath ?? null;
+    // ADR-323 — the JWSO line takes no drawing file: its copy follows the
+    // Drawing Register only (a sent drawingFilePath is ignored).
     // Item + Drawing Rev register (0232) + D1 — the line links to ABC/<rev>; a
     // Rev change moves OPEN Job Cards / plans / PROs, refused when all its Job
     // Cards are closed (item-revisions/line-rev.ts). File copy follows.
@@ -1982,8 +1981,7 @@ async function mergeLines(
         // Same as the create path: the Rev the user typed, or '0' when nobody
         // was asked. ADR-177: stored upper-cased.
         revision: l.revision !== undefined ? normalizeRevision(l.revision) : '0',
-        drawingFilePath:
-          lr.drawingFilePath !== undefined ? lr.drawingFilePath : (l.drawingFilePath ?? null),
+        drawingFilePath: lr.drawingFilePath ?? null,
         itemRevisionId: lr.itemRevisionId,
         ...(l.drawingNo ? {} : lr.registerDrawingNo ? { drawingNo: lr.registerDrawingNo } : {}),
         // ADR-236: same as the create path.

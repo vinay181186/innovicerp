@@ -15105,6 +15105,7 @@ Owner 2026-11-02: "remove this rule — no compulsory fill of back-dated entries
 **Status:** Accepted (owner) — supersedes the 31-Oct "own number + own date FIRST" amendment
 
 ### Decision
+
 - Locked block on every SO-linked list (`leadColumns`): **Sr No · SO No. · Internal SO No. · POL · Item Code · Item Name · own No. · Created On**. Sr No = row counter continuing across server pages (`firstRowNo` = offset + 1); added to every list (owner chose "Sr No on all").
 - Created On = the entry date (`<table>.created_at`, set by the system at Save). The typed document date (PO Date, JC Date …) is no longer locked — it is the first ordinary column after the block.
 - **Created Time** (India-time HH:MM of the same created_at): unlocked, OFF by default (new column flag `hiddenByDefault`); ticked in Columns ▾ it returns to its slot next to Created On. The classic DataTable (no Columns menu) does not draw it.
@@ -15341,6 +15342,7 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 **Before:** a reply on a saved entry raised no task. A reply on a blank date raised a task without the reply text, and a second Super Admin's reply never reached their own Outbox.
 
 **Decisions:**
+
 - One OPEN task per entry / blank date **per sender**, linked_ref_type `day_log_entry` (new) or `day_log_date`. Unique index `tasks_day_log_reply_open_uq` (0242) is the backstop under the day header lock. A blank-date task still closes when the day is entered; an entry task never closes by itself.
 - The reply text is never copied to `tasks`, `task_comments`, `task_history` or the activity log: those are readable company-wide and it would go stale on an edit (ADR-255 keeps it private). `tasks/day-log-replies.ts` reads it live into `TaskRow.dayLogReplies`. So Task Board search finds the title, not the reply text.
 - A task holds its own sender's replies from when it was raised until that sender's next task on the same entry / date. `sent_at` is `clock_timestamp()` under the day lock, so each reply falls in one task. The end is not `updated_at`, which comes from the API's clock.
@@ -15354,6 +15356,7 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - A blank-date task reassigned before this change shows no reply text to the new assignee.
 
 **Known limits:**
+
 - Pending Entries shows one Task No. per date, so with two senders on one date it names only one of the two tasks.
 - Editing a reply of a completed task, while a newer task from the same sender is open, puts the dot on the newer task.
 - A blank-date task seen in the minutes between migration 0242 and the API deploy can keep its dot until completed.
@@ -15364,6 +15367,7 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 **Date:** 2026-11-06. **Owner decided:** the name in the Route Card header follows the last user who saved the card, Last Updated shows its time, Revision History gets a time column, and long Remarks / Tool Details wrap.
 
 **Decisions:**
+
 - Detail and edit pages, Route row: Plan Type · Operations · Last Updated By · Last Updated (date + time). Name and time come from the same write (`updated_by`, `updated_at`).
 - The owner called this name "Created By". It is labelled `Last Updated By` because `Created By` means the person who entered the record on every list (ADR-261 rev, §18).
 - Route Card Master list: new `Created By` column (the person who entered the card); Last Updated shows date + time and sorts by exact time; its filter stays by India-time day.
@@ -15371,6 +15375,7 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - New opt-in cell class `td-prose`: the one exception to "one line per row" (ADR-199). Used on Remarks and Tool Details in the Route Card operation tables, which also appear on Create Production Order.
 
 **Known limits:**
+
 - Every write to the card moves Last Updated By: approving, returning, a new revision, and raw material filled in from a plan, not only the Save button. An edit that went through approval names the approver.
 - No migration.
 
@@ -15381,6 +15386,7 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 **Before, on real PROD data:** SO-517 (IN-SO-00005) read Not Started with 71 pieces completed on earlier operations and 296 at the vendor. IN-JC-26-00018 Op 3 read Sent 98 (62 new + 36 rework). All 10 NCs had a blank SO. IN-JC-26-00030 read At Vendor 30 on the Job Card and, by the old sum, 60 on SO Status.
 
 **Decisions:**
+
 - **SO started.** After Hold, Completed, Delayed and the unchanged On Track rule: any operation with work on it reads In Progress (`opHasStartedWork`). Work = pieces completed, QC accepted or rejected, machine rejects, running, physically sent or received. A PR or PO raised, a job card created, material issued, or a first-operation QC Pending with no work do not count. Overdue still reads Delayed. The port from the old ERP had dropped this condition.
 - **Vendor columns. Replaces the combined figure of ADR-212.** `Sent to Vendor` | `Received` | `Returned to Vendor` | `Re-received` | `At Vendor` on the Job Card, popup, At-Vendor Register and report. `vendorSentQty` is removed. `vendorReceivedQty` now counts first lots only (GRNs with no NC): with the gross figure the columns stop adding up when rework comes back (62 − 72 + 36 − 36 = −10; real answer 26). The name `Re-sent` stays banned.
 - **NC order number.** Owner's heading `SO No. / JWSO No.` on NC list, detail, print and two reports, one server definition `ncOrderCodeSql`, also used by sort, filter and search. **This differs from ADR-267**, where other mixed lists keep the heading `SO No.`: owner's call for the NC screens. JC No. comes from the server on detail and is a list column.
@@ -15388,6 +15394,7 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - **Bulk Return to Vendor.** Tick on the NC list, needs the NC Dispose Advance right, confirm popup lists each NC. Disposition only, full open quantity, one request per NC through `disposeNcCascade` (§20.1), the existing row lock and `WHERE status='pending'` apply (§20.2). A failure stays ticked with its server message, the rest stay saved. The DC stays a separate step.
 
 **Consequences:**
+
 - Identity: Sent to Vendor − Received + Returned to Vendor − Re-received = At Vendor. Checked: all 11 PROD vendor rows and all TEST rows, 0 breaks. It can drift if an NC closes with sent ≠ received, or an operation is over-received.
 - A wrong bulk Return to Vendor cannot be undone in the app (`status-moves.ts`), same as single.
 - Bulk leaves Sent on DC No. blank (ADR-217: asked, never guessed), so those NCs are traced by PO No. only. Single Dispose auto-fills when only one challan exists.
@@ -15395,11 +15402,13 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - Rework child job cards stay excluded from SO Status and SO Overview, so a child at the vendor shows on its own Job Card only.
 
 **Known limits, not touched:** Blocked status can never appear; a short-closed line can stop an SO reading Completed; the server's today is UTC and the screen's IST.
+
 ## ADR-277: Route Card Draft; a card with the approver is locked
 
 **Date:** 2026-11-06. **Owner decided:** a Route Card gets a new status, Draft. Save keeps it with the creator; Save & Submit sends it for approval. While Pending Approval nobody may edit or delete it until the approver decides.
 
 **Decisions:**
+
 - **Save / Save & Submit.** `submitForApproval` false = Save, true or left out = sent (a tab open across the release keeps today's rule). New card: `draft` / `pending`. Draft: stays / `pending`. Rejected: stays, reason and stamps kept / `pending`, stamps cleared. Approved: the flag is ignored. `POST /route-cards/:id/submit` does the same move from the detail page and the ⋯ menu.
 - **Locked while pending, for everybody, admins included.** `ROUTE_CARD_LOCKED_MESSAGE` (409) on save, on a form opened before the card was sent (checked ahead of the stale-form check) and on Move to Trash, each under the card's row lock. A Job Card / Plan auto-save already left a not-approved card alone.
 - **Rev 0 in Draft.** While the card is a Draft, also on the save that submits it, `current_revision` stays at its number and that revision's ops snapshot is overwritten. Each save is in the activity log with its op changes, with no Route Card Rev change. A Rejected or Approved card keeps the bump.
@@ -15419,6 +15428,7 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 **Date:** 2026-11-06. **Owner decided:** Team Day Logs › row ⋯ › History › Month or Particular Date › Generate PDF › Preview (Print, Download). Super Admin only. The PDF shows everything, including Working On and every edit, in a logical order. Mockup: https://claude.ai/artifact/DvrDUWBQ2rhEs4FTBEFDQ6 (Option A).
 
 **Decisions:**
+
 - One read, `GET /day-logs/person-history`, one month or one date, in ONE statement, so an edit in flight cannot give a half-old PDF. No migration. Nothing is written or logged.
 - The server decides every day state and total (`DayLogHistory`). Working hours, First start, Last stop and Entries read as Team Day Logs does (`summaryOf`); Not entered is `isNotEntered`. A blank date the rule does not count prints `Not counted`.
 - PDF order: Summary › Points to check › Date by date (more than one date) › Day detail › each edit and reply, oldest first, removed words struck out, added words underlined.
@@ -15427,6 +15437,7 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - Paginator additions are opt-in by attribute (several carried heading rows, keep with next, page break, page reference, page foot); a document without them splits as before.
 
 **Known limits:**
+
 - Download makes page pictures, as every ERP PDF does: text cannot be searched or copied.
 - A reply keeps only its latest text and the time it was edited.
 - A person who is not on the Team Day Logs list has no ⋯, so no History.
@@ -15436,6 +15447,7 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 **Date:** 2026-11-06. **Owner decided:** Home > Planning lists the JWSO lines whose Party GRN is received and whose plan is pending; clicking one opens the Create Plan popup for that line. The Planning list shows Party GRN done or not done. A line with only part of the material received reads Part Done and still appears on the check (Way 1 of the plan; the owner replied "go" without naming a Way, so the recommended one was built).
 
 **Decisions:**
+
 - **One rule.** `partyGrnStatus` (shared, `customer-rm-status.ts`) follows `GRN Pending`: 0 = Done; below the required qty = Part Done; equal to it = Not Done; nothing to receive = —. Pieces QC rejected with no NC still pending do not count, because the customer must send them again. The Home check reads the same fact through `partyCommittedQtySql` (ADR-247). Nothing stored, no new sum.
 - **Receipt, not QC.** Material waiting Incoming QC counts as received; the owner said "received". Issue to JC still needs QC.
 - **No block.** Planning before a Party GRN stays allowed. The column only informs.
@@ -15448,11 +15460,13 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 **Refresh:** same PC: Party GRN create, edit, QC and Cancel, an NC decision and a JWSO line short close refresh Planning; plan create, batch create, edit and delete, Party GRN create and edit and a short close refresh Home. Other PCs: `nc_register` changes are live; the rest wait for the 60-second poll (`party_grn`, `plans` and JWSO lines are not live tables).
 
 **No migration.**
+
 ## ADR-280: One alignment across the ERP; Route Card long text goes under the row
 
 **Date:** 2026-11-06. **Owner decided:** text left, Qty centre, across the system. Replaces "everything centred, numbers right" (2026-09-26). Mockup: Claude Design canvas "Innovic ERP - Alignment Rule Mockup".
 
 **Decisions:**
+
 - Owner accepted the recommended answers: money stays right, so rupees and paise line up; dates, statuses, UOM, Sr No, POL, Op, Rev and actions are centred; Excel and Job Card print follow the rule.
 - One rule, `columnAlign` in `packages/shared`, read by the fit table and by Excel. It reads the column's kind and heading, so 156 column files follow without being edited. `align` on a column no longer sets alignment; it still marks a column numeric when it has no `kind`.
 - New `money: true` on a column for money under a plain heading ("Total"). New classes `th-money` / `td-money`, `th-ctr` / `td-ctr`; `th-num` / `td-num` now mean centre.
@@ -15460,6 +15474,7 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - Route Card Operation Sequence and the routing kept with a revision: Tool Details and Remarks leave the table and sit under their row, in a 720 px column that grows downward, with Show / Hide per row and Show all / Hide all. A row with text opens by itself and Hide is not remembered. Operation names wrap, which was the real cause of the sideways scroll on RC-14. This replaces the `td-prose` columns of ADR-275 on those two tables.
 
 **Known limits:**
+
 - With Qty centred, digits no longer line up down a column (1250, 12.5, 8). The owner accepted this.
 - `columnAlign` reads headings, so a new money column under a heading with no money word needs `money: true`; the check catches money words, not plain headings. A report column that only says "number" uses the same heading test.
 - 545 `align:` props stay in the column files; they are harmless, and removing them now would collide with other open work.
@@ -15470,6 +15485,7 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 **Date:** 2026-11-06. **Owner decided:** a planner inside a JWSO must see whether Party GRN is done for each line. Supersedes the "First list only" point of ADR-279.
 
 **Decisions:**
+
 - **One field.** `partyGrnStatus` moves into `planningLineSchema`, so the first list and the order's lines carry the same field. `partyGrnStatusByLine` (`job-work-orders/customer-rm.ts`) is the one read both use; a line it does not return, and every SO line, reads —.
 - **One column.** `party-grn-status-column.tsx` serves both tables. The first list adds its server Sort & Filter on top.
 - **Width.** On a JWSO order Plan Status, Party GRN Status and Plans are pinned, as on the first list; other columns leave first. A user's saved layout still gets the new column, pinned (`use-table-layout` `normalize`). An SO order shows no column.
@@ -15484,6 +15500,7 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 **Date:** 2026-11-07. **Owner decided:** a line can be added between two operations and the series stays 10, 20, 30 (no 15, no 100 series). A Job Card routing change must reach the Route Card with the Route Card Rev kept the standard way, by approval. Change Machine and the schedule drag do not update the card.
 
 **Decisions:**
+
 - **Add and move.** Each row on the Route Card form has a ⋯ menu: Add Operation Below, Add Inspection Below, Add Outsourced Op Below, Move Up, Move Down, Remove. Op numbers come from position, so they renumber. Rows carry a browser-only `rowKey`.
 - **One comparison.** `routingsMatch` compares machine and vendor by identity (id, or code when one side is text only). A Job Card that changed nothing no longer reads as different.
 - **Lead Days and Remarks stay.** `carryStepDetails` keeps what a Job Card or plan cannot carry, before comparing, staging or writing. A step is matched by name + kind when unique; with duplicates, by position + name + kind + machine + vendor; otherwise nothing is carried.
@@ -15492,6 +15509,7 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - **Nothing is lost silently.** Every Job Card save says what happened to the Route Card. A change held back (card Draft / Pending / Returned, or a change already waiting) sets `route_card_not_sent`; the detail page shows Differs from Route Card and offers Send to Route Card when the card is free. A Job Card on an older Rev does not read as different. After Change Machine it does, with no Send button.
 
 **Known limits:**
+
 - Requests staged before this release name no Job Card, so approving one moves no Job Card's Rev.
 - If the Job Card row is locked at the moment of approval it stays on its older Rev (`SKIP LOCKED`, to avoid a deadlock). The approval still succeeds.
 - Plan Create and Edit Plan still add lines at the end only; not asked for.
@@ -15591,6 +15609,7 @@ The saved Item + Drawing Rev record keeps the number from the first line that cr
 **Date:** 2026-11-07. **Owner decided:** Created On and Created Time stay in their fixed place and are shown by default, and each user may hide them. On the QC Call Register, the GRN Type filter becomes an Operation filter, Called Date goes, Stage reads Incoming or In-Process, and Operation shows the short name. Amends ADR-261 (3-Nov "locked and always shown") and ADR-251.
 
 **Decisions:**
+
 - **Hideable lead columns.** `leadHideable` on `created_on` and `created_time`, every `leadColumns` list. They accept hide and show only; move and pin stay refused. Every other lead column stays fully locked.
 - **Stage.** Two values on screen. Every job-card call reads In-Process, including the last op and Final Inspection. New filter value `stage=process`; `inprocess` and `final` stay for the Home checks.
 - **Operation.** A job-card call shows `jc_ops.operation` as stored; hover keeps `Op 20 DIR`, because two DIRs on one card look the same in the cell. An incoming call shows its GRN Type label. The ▾ filter and the Excel Operation cell read the same words.
@@ -15600,6 +15619,7 @@ The saved Item + Drawing Rev record keeps the number from the first line that cr
 - **Called Date.** No column on either table. The server keeps the `calledDate` Sort & Filter field, because a tab still sorted on it would otherwise get an error with no way to clear it.
 
 **Known limits:**
+
 - A user with a saved layout keeps their column order, so Operation and Stage may sit further right. Reset to default moves them.
 - With Created On hidden, the created date has no ▾ until it is ticked again, because Created Time has none of its own.
 - A filter or sort on Created On keeps applying after the column is hidden, as on any hidden column; Clear Filters removes it.
@@ -15612,6 +15632,7 @@ The saved Item + Drawing Rev record keeps the number from the first line that cr
 **Date:** 2026-11-07. **Owner decided (mockups):** a Super Admin picks From Date and To Date, not Month or Particular Date. The PDF opens with the user's name, then Period, Work and Changes in titled columns as on the Job Card header (Option B). Points to check is removed. Each date in a range starts a new page, in the Particular Date layout. Supersedes the query and PDF order in ADR-278.
 
 **Decisions:**
+
 - `GET /day-logs/person-history` takes `from` and `to`. `month` and `date` are gone; one date is the same date in both. A browser tab left open across the release answers an error until it is refreshed.
 - `dayLogHistoryRangeError` in `packages/shared` is the one rule, asked by the screen and the server. Longest range 92 days (`DAY_LOG_HISTORY_MAX_DAYS`): any 3 calendar months fit, and the PDF is page pictures, so a year would be too heavy.
 - The server sends `totals.avgDailyWorkMin` (Total Working Hours / the dates with work, to the minute, 0 with none), `days[].editedEntries`, and each date's `breakMin` and `leaveMin`. Not entered dates do not lower the average, by the owner's choice. Total Entry Days is `filledDays`, so a date holding only an old Others or Break row counts there but not in the average; new entries are always Work.
@@ -15875,10 +15896,10 @@ never cleared and a fresher one was not taken in.
 
 ### Decision
 
-- `GET /items/code-check?code=` (item_create entry tier) answers taken / in Trash / holder code + name.
+- `GET /items/code-check?code=` (item*create entry tier) answers taken / in Trash / holder code + name.
   The browser asks 500 ms after typing stops (same shape as the Client PO No. check, ADR-245). Under the
   box: `Already used by <code> · <name>`, or the Trash message, or `"/" not allowed in Item Code. Use
-  letters, numbers, . _ -`. Save (and Ctrl+S / Enter) stays greyed while one shows.
+  letters, numbers, . * -`. Save (and Ctrl+S / Enter) stays greyed while one shows.
 - The symbol hint uses `itemCodeBadChars` in `packages/shared/src/schemas/item.ts`, next to the code
   rule itself. The rule is unchanged: letters, numbers, `.`, `_`, `-`.
 - Save and the live check use one lookup, `findItemByCode`, comparing `lower(code)`: `ITM-5` and
@@ -16084,7 +16105,6 @@ three forms, the two detail pages' "Value" chips, two prints).
   line's value.
 - Negative: the longer headings take two lines on the narrow print columns.
 
-
 ## ADR-303: Document master lists show one row per document again
 
 **Status:** Accepted (owner, 2026-11-16 — Option 2 mockup approved; supersedes the
@@ -16143,6 +16163,7 @@ its content, so with 25 rows the page was taller than `#content` and the table n
 scroll inside. ADR-202 worked only while a list had fewer rows than the screen.
 
 **Decision:**
+
 - `.page-fill` is `height: 100%` (one shared line, every list on `page-fill` + `<Panel fill>`).
 - A fill panel that is a page root gets a floor: the table toolbar plus six rows (the sum rc-form.css
   already measured). `.panel` clips (`overflow: hidden`), so without the floor a small screen
@@ -16156,6 +16177,7 @@ scroll inside. ADR-202 worked only while a list had fewer rows than the screen.
   table in `<Panel fill>`. Daily Report does not: it shows one table per machine and scrolls as a page.
 
 **Consequences:**
+
 - Positive: one scrollbar, inside the table; title, search, filters, header and the Prev/Next bar stay
   on screen on every list.
 - Negative: on a screen too small for the chrome plus six rows there are two scrollbars again (page
@@ -16178,6 +16200,7 @@ screen into a side scroll, and no ▾ sort/filter or Columns button. Separately,
 put every part's plan side by side, cut off with "…".
 
 **Decision:**
+
 - `planning-line-expand.tsx` draws the per-item rows on the shared `DataTable` (fit engine,
   `TABLE_KEYS.planningParts`, nested `compact` density, ▾ on), as BOM Master's part list. Same columns
   and names; a part with no plan reads "No plan yet" in Plan No. (was a 10-column span); the part's
@@ -16256,7 +16279,7 @@ second column. CLAUDE.md §18 says live series are never renumbered — the owne
 - Risk: a Playwright flow that types the old `SO-…` text into the box needs its spec updated
   (owner's say before editing specs).
 - Rollback: before anyone renames by hand, `UPDATE sales_orders SET internal_so_no = code,
-  code = split_part(legacy_code,' ',1) WHERE legacy_code IS NOT NULL` (the trigger moves the
+code = split_part(legacy_code,' ',1) WHERE legacy_code IS NOT NULL` (the trigger moves the
   copies back), then drop the trigger, both functions and `legacy_code`.
 
 ## ADR-307: Customer-supplied BOM parts on an Equipment SO
@@ -16285,7 +16308,7 @@ can never be store-issued.
 - Kept in the existing zero-value party store; every movement carries
   `party_stock_ledger.sales_order_id`.
 - Issued to the SO's assembly from the Assembly Tracker (`POST /assemblies/:soId/customer-part-
-  issues`, `party_material_issues.sales_order_id`). `readPartsOutMany` counts these issues, so
+issues`, `party_material_issues.sales_order_id`). `readPartsOutMany` counts these issues, so
   assembly Complete fits customer parts exactly like store-issued parts
   (`assembly_unit_consumptions`). No separate `consume` ledger row: the register balance already
   dropped at issue (same model as JWSO issue to JC).
@@ -16533,6 +16556,7 @@ The Drawing Register shows **SO No.** after Sr No: every live SO / JWSO line nam
 order) and "+N" for more; the tooltip and Excel list them all. Register search matches SO / JWSO
 No.; Sort & Filter on `orders` (`so.codes`). Field `orders: {kind, id, code}[]` on
 `DrawingRegisterRow`. No migration — reuses the SO / JWSO line → Rev link (`item_revision_id`).
+
 ## ADR-313: A page stays as you left it when you switch tabs
 
 **Date:** 2026-11-23
@@ -16576,7 +16600,6 @@ refetch made 60+ screens early-return on `isError` and replace the loaded screen
 - Positive: coming back through a tab shows the same list view, sub-tab, scroll and half-typed form.
 - Negative: a draft is per browser tab; closing the Chrome tab still loses it (browser prompt warns).
 - Risk: a form whose `apply` misses a field restores partially — each wired form was opened on TEST.
-
 
 ## ADR-314: Per-person Desktop Pop-ups switch (owner 2026-11-23)
 
@@ -16682,7 +16705,7 @@ WIP by Operation, Affected WIP (WIP part only). "Sr No from 14" was Queue No. be
    overrides) · Created On · Item Code (ABC/1 link) · Item Name, `createdByColumn` last. Row gains
    `createdAt` / `createdByName` (item_revisions.created_at / created_by). The register has no own
    document number, so it joins the guard's no-own-No. list. Fixes the lead-columns guard.
-No migration.
+   No migration.
 
 ## ADR-318: Every list opens newest first — by Created On time (owner 2026-11-24)
 
@@ -16747,6 +16770,7 @@ Without that file SO can be saved."
 **Status:** Accepted
 
 ### Context
+
 PROD SO-517 (30 lines) showed PO Raised 170 / 34 on Ln 1. `so-status/service.ts` summed every
 `purchase_order_lines.qty` on the SO line: one line per outsourced operation (4), plus cancelled
 IN-JWPO-00003/4/5 and their 13 draft replacements. GRN target used that sum; QC target was
@@ -16754,6 +16778,7 @@ IN-JWPO-00003/4/5 and their 13 draft replacements. GRN target used that sum; QC 
 (empty) as the vendor; the op chip ✓ meant "QC required" and was read as "done".
 
 ### Decision (owner answers 24-11-2026)
+
 1. PO Raised = per outsourced operation, APPROVED POs only (draft never counted, cancelled never),
    capped at the JC qty; JC = lowest op; line = Σ JCs, capped at order qty. Hover shows each op.
 2. An approved PO edited back to draft keeps counting its last approved qty — new column
@@ -16767,6 +16792,7 @@ IN-JWPO-00003/4/5 and their 13 draft replacements. GRN target used that sum; QC 
 8. New project rule CLAUDE.md §26 "Numbers that are read".
 
 ### Alternatives considered
+
 - Count drafts — rejected by owner (not sent to the vendor; can still be cancelled).
 - Add op figures together — rejected: not pieces (gave 170).
 - Keep last approved qty from the activity log — rejected: fragile; one column is smaller.
@@ -16799,3 +16825,22 @@ file is now gone on both. `item-revisions/line-rev.ts` no longer refuses a line 
 form no longer runs the drawing-file check on Save. A line saved with no file leaves its Rev as Draft
 ("Not released") until Design uploads the drawing in the Drawing Register (ADR-319). The release gate
 before Plan / PRO / Job Card is unchanged.
+
+## ADR-323 — Drawing Register: Unverified / Verified only, no Release; Route Card needs the PDF (owner 26-Nov-2026)
+
+**Status:** Accepted (owner "approve" + refinements, 26-Nov-2026). Supersedes the Review/Approve/Release steps of ADR-290/311 and the drawing-correction approval.
+
+### Decision
+
+- Three statuses on `item_revisions.release_status`: `unverified` (no PDF, or not checked), `verified` (Design opened the PDF and pressed Verify — needs a PDF), `obsolete` (retired, kept). Actions: Verify, Undo verify (reason), Mark Obsolete (reason) — all on the Drawing Register **Approve** tick. The per-person "Drawing Release" switch is no longer used or shown.
+- Replacing the PDF applies at once; a different file turns a Verified Rev back to Unverified (same file hash keeps the status). Verify carries the file the person saw — a file replaced meanwhile is refused (409).
+- Plan / PRO / Job Card may use an Unverified Rev (orange warning); only Obsolete is refused. Running Job Cards are never stopped by a drawing status (jc-op-hold no longer checks it).
+- SO / JWSO take no drawing file any more (Drawing No. + Rev only, no status tag on the line). The line's Drawing No. is copied onto the register record when blank.
+- A NEW Route Card needs its Item + Rev already in the Drawing Register with a PDF; the form says so at once with "Click here to upload it" / "Click here to add it" (new tab). The Route Card has no file box. Old Route Cards are left as they are.
+- Uploading a first PDF needs Drawing Register Entry; replacing needs Drawing Register Edit.
+- Migration 0263 maps old data (released/superseded/approved → verified; draft/under_review/rejected → unverified), closes waiting corrections, copies SO/JWSO Drawing Nos., and keeps the old words allowed in the CHECK for the release window. **0264 (next release) removes the old words** after a check that none remain.
+
+### Alternatives considered
+
+- Block new Plan/PRO/JC on Unverified (D1 = B) — rejected by owner: 117 PROD SO lines (110 without PDF) would stop.
+- Keep a separate release right — rejected (D2): one right (Approve tick) is enough.

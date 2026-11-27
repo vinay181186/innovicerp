@@ -16,14 +16,16 @@ export async function assertReplacementItem(
   replacementId: string | null | undefined,
 ): Promise<void> {
   if (!replacementId) return;
-  if (replacementId === selfId) throw new ValidationError('An item cannot be its own Replacement Item');
+  if (replacementId === selfId)
+    throw new ValidationError('An item cannot be its own Replacement Item');
   const [r] = await tx
     .select({ code: items.code, deletedAt: items.deletedAt })
     .from(items)
     .where(and(eq(items.id, replacementId), eq(items.companyId, companyId)))
     .limit(1);
   if (!r) throw new ValidationError('Replacement Item not found in Item Master');
-  if (r.deletedAt) throw new ValidationError(`Replacement Item ${r.code} is in Trash — pick a live item`);
+  if (r.deletedAt)
+    throw new ValidationError(`Replacement Item ${r.code} is in Trash — pick a live item`);
 }
 
 /** id → code for the given replacement ids (one read). */

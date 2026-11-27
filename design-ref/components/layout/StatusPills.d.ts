@@ -12,5 +12,10 @@ export interface StatusPillsProps {
 }
 export declare function StatusPills(props: StatusPillsProps): React.JSX.Element;
 /** Expand all / Collapse all + ☰ List View / ▦ Card View toggle. */
-export interface ViewToggleProps { value?: 'list' | 'card'; onChange?: (v: 'list' | 'card') => void; expandAll?: boolean; onExpandAll?: () => void; }
+export interface ViewToggleProps {
+  value?: 'list' | 'card';
+  onChange?: (v: 'list' | 'card') => void;
+  expandAll?: boolean;
+  onExpandAll?: () => void;
+}
 export declare function ViewToggle(props: ViewToggleProps): React.JSX.Element;

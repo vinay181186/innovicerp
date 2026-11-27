@@ -1,4 +1,5 @@
 Use for every non-data state; never write your own "Loading…" div.
+
 ```jsx
 <PageState state="loading" />
 <PageState state="empty" message="No orders — click + New SO/WO" />

@@ -36,8 +36,6 @@ export {
   canDownloadDrawings,
   // ADR-289 — "may this person PRINT a drawing"; same whole-account shape.
   canPrintDrawings,
-  // ADR-290 — "may this person RELEASE a Drawing Rev / approve a correction".
-  canReleaseDrawings,
   canAdvanceForm,
   canDeleteRecords,
   canEditForm,

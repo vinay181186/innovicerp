@@ -14,7 +14,12 @@ export const PageSize = () => (
 
 export const CodeOnly = () => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-    <ItemBadge code="BRKT-101" revision="A" name="Mounting Bracket, MS Plate 10 mm" showImage={false} />
+    <ItemBadge
+      code="BRKT-101"
+      revision="A"
+      name="Mounting Bracket, MS Plate 10 mm"
+      showImage={false}
+    />
     <ItemBadge code="FLNG-118" name="Weld Neck Flange, SS304" showImage={false} />
   </div>
 );

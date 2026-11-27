@@ -59,6 +59,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 import { useItemRevisionLookup } from '@/modules/item-revisions/api';
 import { ReplaceDrawingDialog } from '@/modules/item-revisions/components/replace-drawing-dialog';
+import { RevUnverifiedNote } from '@/modules/item-revisions/components/rev-unverified-note';
 import { useDefaultRouteOps } from '@/modules/plans/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import {
@@ -476,12 +477,12 @@ export function JobCardForm({
   // ADR-289 (point 15) — a card whose JWSO line names an Item + Drawing Rev
   // (ABC/1) shows THAT record's drawing; the server refuses a direct upload on
   // it. A wrong file is fixed only through the register's "Replace drawing…"
-  // (Route Card Master Edit holders — the same right DrawingRevField checks).
+  // (ADR-323: Drawing Register Edit holders — the right the server checks).
   // A card with no Drawing Rev keeps its own Attach / Replace, unchanged.
   const srcRev = selectedSource?.itemId ? (selectedSource.itemRevision ?? null) : null;
   const revLookup = useItemRevisionLookup(srcRev ? pickedItemId : null, srcRev);
   const { data: eff } = useMyAccess();
-  const canReplaceRevDrawing = effectiveFormPerms(eff, 'routecard_create').edit;
+  const canReplaceRevDrawing = effectiveFormPerms(eff, 'drawingreg_create').edit;
   // True ONLY once the lookup has answered with a register record. While it
   // loads, or when the line's Rev text has no record, the card behaves like one
   // with no Drawing Rev (Attach allowed, nothing cleared) — the server refuses
@@ -920,6 +921,8 @@ export function JobCardForm({
             {error}
           </Banner>
         ) : null}
+        {/* ADR-323 — orange, never blocks. */}
+        {jcRevision ? <RevUnverifiedNote itemRevisionId={jcRevision.id} /> : null}
         {staleSeed ? (
           <Banner tone="warn" role="status">
             <span>

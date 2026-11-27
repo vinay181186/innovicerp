@@ -164,7 +164,7 @@ describe('ADR-289 Rev change through edit approval', () => {
         partName: 'Rev part',
         clientPoLineNo: '10',
         revision: rev,
-        drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
+        drawingFilePath: 'test/adr311-drawing.pdf', // ADR-323: ignored — no file from an SO line
         itemId,
         uom: 'NOS',
         orderQty: 2,
@@ -213,14 +213,14 @@ describe('ADR-289 Rev change through edit approval', () => {
       } as never)
       .returning({ id: plans.id });
 
-    // ADR-290 — the line's open work moves to Rev 2, so Rev 2 must be released.
+    // ADR-323 — the line's open work moves to Rev 2 (not Obsolete; Verified here).
     await db.insert(itemRevisions).values({
       companyId,
       itemId,
       rev: '2',
       sourceType: 'so_line',
       sourceRef: `${P}test`,
-      releaseStatus: 'released',
+      releaseStatus: 'verified',
       createdBy: admin.id,
       updatedBy: admin.id,
     });

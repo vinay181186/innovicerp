@@ -7,18 +7,18 @@
 
 ## Inventory
 
-| # | Legacy item | Legacy fn (line) | React route | Status after this build |
-|---|---|---|---|---|
-| 1 | User Management | `renderUsers` L13435 | `/users` | ✅ (added Approver chip column 2026-05-31) |
-| 2 | Access Control | `renderAccessControl` L13861 | `/access-control` | ✅ shipped 2026-05-30 |
-| 3 | Alerts Dashboard | `renderAlerts` L22323 | `/alerts` | ✅ existing |
-| 4 | Alert Configuration | `renderAlertConfig` L22427 | `/alerts/config` | ✅ existing |
-| 5 | **Approval Configuration** | `renderApprovalConfig` L21608 | `/approval-config` | **✅ NEW 2026-05-31** |
-| 6 | Print Templates | `renderPrintTemplates` L14660 | `/print-templates` | ✅ shipped 2026-05-25 |
-| 7 | **Operation Log** | `renderOpLog` L13194 | `/op-log` | **✅ NEW 2026-05-31** (read-only) |
-| 8 | **Trash** | `renderTrash` L11309 | `/trash` | **✅ NEW 2026-05-31** |
-| 9 | Settings | `renderSettings` L13351 | `/settings` | ✅ extended (OSP + Data Integrity panels added 2026-05-31) |
-| 10 | **Backup & Export** | `renderBackup` L21963 | `/backup` | **✅ NEW 2026-05-31** (stats + JSON download; restore/factory-reset deferred) |
+| #   | Legacy item                | Legacy fn (line)              | React route        | Status after this build                                                       |
+| --- | -------------------------- | ----------------------------- | ------------------ | ----------------------------------------------------------------------------- |
+| 1   | User Management            | `renderUsers` L13435          | `/users`           | ✅ (added Approver chip column 2026-05-31)                                    |
+| 2   | Access Control             | `renderAccessControl` L13861  | `/access-control`  | ✅ shipped 2026-05-30                                                         |
+| 3   | Alerts Dashboard           | `renderAlerts` L22323         | `/alerts`          | ✅ existing                                                                   |
+| 4   | Alert Configuration        | `renderAlertConfig` L22427    | `/alerts/config`   | ✅ existing                                                                   |
+| 5   | **Approval Configuration** | `renderApprovalConfig` L21608 | `/approval-config` | **✅ NEW 2026-05-31**                                                         |
+| 6   | Print Templates            | `renderPrintTemplates` L14660 | `/print-templates` | ✅ shipped 2026-05-25                                                         |
+| 7   | **Operation Log**          | `renderOpLog` L13194          | `/op-log`          | **✅ NEW 2026-05-31** (read-only)                                             |
+| 8   | **Trash**                  | `renderTrash` L11309          | `/trash`           | **✅ NEW 2026-05-31**                                                         |
+| 9   | Settings                   | `renderSettings` L13351       | `/settings`        | ✅ extended (OSP + Data Integrity panels added 2026-05-31)                    |
+| 10  | **Backup & Export**        | `renderBackup` L21963         | `/backup`          | **✅ NEW 2026-05-31** (stats + JSON download; restore/factory-reset deferred) |
 
 Sidebar now mirrors the legacy ⚙ System Settings block (HTML L516) with all 10 items present.
 
@@ -45,6 +45,7 @@ Mirror of legacy db.approvalConfig (single JSON blob) + per-user `approvalLimit`
 - **Recent Approval Activity** — last 20 `APPROVE`/`REJECT`/`PAYMENT` rows from `activity_log`.
 
 Data shape:
+
 ```ts
 {
   poApproval: boolean,
@@ -64,6 +65,7 @@ API: `GET /approval-config`, `PUT /approval-config` (admin), `GET /approval-conf
 Read-only paginated viewer of `op_log` joined with `jc_ops` + `job_cards` + `items` + `machines` + `users`. Filters: JC code, log type (start/complete/qc), shift, date range.
 
 **DELTA from legacy:** no delete action. Legacy `delLog` (L13224) hard-deleted log rows which:
+
 1. Violates CLAUDE.md Rule #8 (no hard deletes from app code).
 2. Breaks every downstream qty-done calc that aggregates `op_log` SUMs.
 
@@ -74,8 +76,9 @@ Corrections happen by recording a new offsetting log entry, not by deletion. If 
 UNION ALL query across 17 soft-deletable entity tables (`sales_orders`, `job_work_orders`, `job_cards`, `items`, `clients`, `vendors`, `machines`, `operators`, `purchase_requests`, `purchase_orders`, `goods_receipt_notes`, `delivery_challans`, `nc_register`, `bom_masters`, `route_cards`, `cost_centers`, `qc_processes`). Per-type counts in the filter dropdown.
 
 Actions:
+
 - **Restore** — clears `deleted_at` on the row (admin only).
-- **Permanently Delete** — HARD DELETE (admin only). This is the documented admin path per CLAUDE.md Rule #8 — typed confirmation in the UI, audit log emitted *before* the row vanishes so the trail survives.
+- **Permanently Delete** — HARD DELETE (admin only). This is the documented admin path per CLAUDE.md Rule #8 — typed confirmation in the UI, audit log emitted _before_ the row vanishes so the trail survives.
 - **Empty All** — typed "DELETE" confirmation; hard-deletes everything in trash company-wide.
 
 API: `GET /trash`, `POST /trash/restore`, `POST /trash/perm-delete`, `POST /trash/empty`.
@@ -92,6 +95,7 @@ Existing Company info panel kept. Two new panels appended:
 ### 10. Backup & Export (NEW, simplified)
 
 Three panels:
+
 - **Summary cards** — collection count, total record count, backup-schedule chip pointing at the daily pg_dump → B2 chain.
 - **📤 Export** — single "Download JSON Backup" button. Streams a JSON dump of every collection (admin only). Capped at 5,000 rows per table on the on-demand path so big tables don't OOM the browser.
 - **📥 Restore / Factory Reset** — informational only. Restore is the runbook path (cut traffic → pg_dump restore → DNS cutover); Factory Reset is not exposed in-app.

@@ -19,10 +19,10 @@ Connects to: regular `items` (deducts stock on outward, restores on inward), `pu
 
 ## 1. Tab bar (L24440–24443)
 
-| tab | label | colour | active set |
-|---|---|---|---|
-| `outward` | 📤 Outward (to Vendor) | purple | `window._jwdcTab='outward'` |
-| `inward` | 📥 Inward (Return from Vendor) | green | `window._jwdcTab='inward'` |
+| tab       | label                          | colour | active set                  |
+| --------- | ------------------------------ | ------ | --------------------------- |
+| `outward` | 📤 Outward (to Vendor)         | purple | `window._jwdcTab='outward'` |
+| `inward`  | 📥 Inward (Return from Vendor) | green  | `window._jwdcTab='inward'`  |
 
 ---
 
@@ -32,18 +32,18 @@ Header: `📤 Outward Register (Returnable Gate Pass)` + "+ New Outward DC" prim
 
 Table — 10 cols:
 
-| col | header | colour |
-|---|---|---|
-| 1 | DC No. | purple mono bold, click→print |
-| 2 | Date | 11px |
-| 3 | JWPO | cyan mono |
-| 4 | Vendor | bold |
-| 5 | Items | line count |
-| 6 | **Sent** | purple mono bold |
-| 7 | **Returned** | green mono |
-| 8 | **Pending** | red if >0, green if 0 |
-| 9 | Status | "Fully Returned" green / "Partial" cyan / "Out" red |
-| 10 | Actions | 🖨 print + 👁 view |
+| col | header       | colour                                              |
+| --- | ------------ | --------------------------------------------------- |
+| 1   | DC No.       | purple mono bold, click→print                       |
+| 2   | Date         | 11px                                                |
+| 3   | JWPO         | cyan mono                                           |
+| 4   | Vendor       | bold                                                |
+| 5   | Items        | line count                                          |
+| 6   | **Sent**     | purple mono bold                                    |
+| 7   | **Returned** | green mono                                          |
+| 8   | **Pending**  | red if >0, green if 0                               |
+| 9   | Status       | "Fully Returned" green / "Partial" cyan / "Out" red |
+| 10  | Actions      | 🖨 print + 👁 view                                  |
 
 Footer hint: `💡 Click DC No. to print. Material returns are tracked in 📥 Inward tab. ⚠ RETURNABLE — material comes back after processing.`
 
@@ -52,6 +52,7 @@ Footer hint: `💡 Click DC No. to print. Material returns are tracked in 📥 I
 ## 3. New Outward DC modal (L24489–24546)
 
 **Header:**
+
 - DC No. (auto `JWDC-OUT-NNNN`)
 - Date
 - **JWPO ★** (select of distinct `poNo` where `poType==='Job Work'`, status≠Cancelled)
@@ -61,12 +62,14 @@ Footer hint: `💡 Click DC No. to print. Material returns are tracked in 📥 I
 Each line shows: itemCode · itemName · process · poQty · checkbox + send-qty input.
 
 **Footer fields:**
+
 - Vehicle No.
 - Remarks
 
 Validation: ≥1 line checked with `sendQty > 0`.
 
 **Side effects on save:**
+
 - Pushes `jw_dc_outward` row with lines `[{poLineId, itemCode, itemName, process, poQty, sentQty}]`
 - For each line: deducts `item.stockQty` (max 0), pushes `store_transactions` (`type='OUT'`, `source='JW DC Outward'`)
 - `logActivity('CREATE','JW DC Outward', ...)`
@@ -121,6 +124,7 @@ jw_dc_inward_lines (
 ## 6. Summary — building from scratch
 
 ### BLOCKERs
+
 1. Schema (4 tables + indexes + RLS).
 2. Outward + Inward CRUD endpoints.
 3. Two-tab page chrome.
@@ -130,15 +134,18 @@ jw_dc_inward_lines (
 7. Sidebar entry "📋 JW Delivery Challan" under Store → Entry.
 
 ### DELTAs
+
 8. Outstanding-at-vendor rollup (consumed by Item Tracker, At-Vendor column).
 
 ### POLISH
+
 - Vehicle No on DC form.
 - Print auto-open after save.
 
 ---
 
 **Sign-off needed:**
+
 - Confirm scope (~1500 LOC, the largest single Store module).
 - Decide single-tab vs two-route structure: legacy is one route with tab switcher; React could be `/jw-dc/outward` + `/jw-dc/inward` (cleaner URLs).
 - Confirm prefix conventions `JWDC-OUT-NNNN` / `JWDC-IN-NNNN`.

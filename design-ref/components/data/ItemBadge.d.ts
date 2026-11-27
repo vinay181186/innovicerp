@@ -17,5 +17,10 @@ export interface ItemBadgeProps {
   children?: React.ReactNode;
 }
 export declare function ItemBadge(props: ItemBadgeProps): React.JSX.Element;
-export interface ItemImageBoxProps { src?: string; size?: 'row' | 'card' | 'page' | 'tile'; fill?: boolean; onOpen?: () => void; }
+export interface ItemImageBoxProps {
+  src?: string;
+  size?: 'row' | 'card' | 'page' | 'tile';
+  fill?: boolean;
+  onOpen?: () => void;
+}
 export declare function ItemImageBox(props: ItemImageBoxProps): React.JSX.Element;

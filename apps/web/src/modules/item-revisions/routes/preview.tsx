@@ -7,24 +7,20 @@
 // everyone else anyway. Below: the drawing's history and the documents that
 // name this Item + Rev, each linking to its own page.
 //
-// ADR-290: the Drawing Rev Status chip, change note, Released On / By and the
-// release "File check" (first 12 characters of the stored file hash); the
-// same release actions as the Drawing Register's row ⋯; and the drawing
-// corrections asked on a released Rev (Approve / Reject for the Drawing
-// Release switch).
+// ADR-323: the Drawing Rev Status chip, change note, Verified On / By and the
+// "File check" (first 12 characters of the file hash stored at Verify); the
+// same actions as the Drawing Register's row ⋯ (Verify, Undo verify, Upload /
+// Replace, Mark Obsolete); an orange strip while the Rev is Unverified.
+// `?upload=1` (Route Card "Click here to upload it") opens Upload at once.
 
 import type { RevStatusAction } from '@innovic/shared';
 import { Icon } from '@/ui/core';
 import { createRoute, useRouter } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { z } from 'zod';
 import { fileNameFromPath, useFullscreen } from '@/components/shared/file-preview-modal';
-import {
-  canDownloadDrawings,
-  canPrintDrawings,
-  canReleaseDrawings,
-  useMyAccess,
-} from '@/lib/access-control';
+import { canDownloadDrawings, canPrintDrawings, useMyAccess } from '@/lib/access-control';
 import { fmtDateTime } from '@/lib/date';
 import { logDrawingPrint, saveDrawing } from '@/lib/drawing-url';
 import { useSession } from '@/lib/session';
@@ -36,7 +32,6 @@ import { DocIdent, IdentCode, IdentSep } from '@/ui/forms';
 import { PageState } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useItemRevision } from '../api';
-import { DrawingCorrectionsTable } from '../components/drawing-corrections-table';
 import { DrawingHistoryTable, LinkedDocsTable } from '../components/drawing-history-tables';
 import { DrawingViewer, drawingFileKind, useDrawingViewUrl } from '../components/drawing-viewer';
 import { ReplaceDrawingDialog } from '../components/replace-drawing-dialog';
@@ -44,6 +39,7 @@ import { RevStatusBadge } from '../components/rev-status-badge';
 import {
   RevActionDialog,
   revActionsFor,
+  revUploadChoice,
   useRevActionRights,
   type RevActionTarget,
 } from '../components/rev-status-actions';
@@ -54,13 +50,19 @@ import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 export const itemRevisionPreviewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'drawings/$itemRevisionId',
+  validateSearch: z.object({
+    /** 1 = open Upload / Replace drawing at once (Route Card banner link). */
+    upload: z.coerce.number().optional().catch(undefined),
+  }),
   component: DrawingPage,
 });
 
-type TabKey = 'drawing' | 'history' | 'linked' | 'corrections';
+type TabKey = 'drawing' | 'history' | 'linked';
 
 function DrawingPage(): React.JSX.Element {
   const { itemRevisionId } = itemRevisionPreviewRoute.useParams();
+  const { upload } = itemRevisionPreviewRoute.useSearch();
+  const navigate = itemRevisionPreviewRoute.useNavigate();
   const router = useRouter();
   const query = useItemRevision(itemRevisionId);
   const { data: rev, isLoading, isError, error } = query;
@@ -76,15 +78,22 @@ function DrawingPage(): React.JSX.Element {
   const [tab, setTab] = usePersistentState<TabKey>(
     `rev-preview:${itemRevisionId}:tab`,
     'drawing',
-    oneOf(['drawing', 'history', 'linked', 'corrections']),
+    oneOf(['drawing', 'history', 'linked']),
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [printing, setPrinting] = useState(false);
   const rights = useRevActionRights();
-  const mayRelease = canReleaseDrawings(eff, me?.role);
   const [acting, setActing] = useState<RevStatusAction | null>(null);
   const [replacing, setReplacing] = useState(false);
+  // ?upload=1 — open Upload / Replace once the Rev is loaded, then drop the
+  // flag so Back / refresh does not open it again.
+  const loaded = Boolean(rev);
+  useEffect(() => {
+    if (upload !== 1 || !loaded) return;
+    setReplacing(true);
+    void navigate({ search: {}, replace: true });
+  }, [upload, loaded, navigate]);
   const fs = useFullscreen<HTMLDivElement>();
   const [showDetails, setShowDetails] = useState(false);
 
@@ -106,9 +115,10 @@ function DrawingPage(): React.JSX.Element {
     hasFile: Boolean(path),
   };
   const actions = revActionsFor(target, rights);
-  const corrections = rev.corrections ?? [];
   // ADR-319 — also on a Rev with no file: "Upload drawing…" gives it its first file.
-  const mayReplace = rights.replace && rev.releaseStatus !== 'obsolete';
+  const uploadLabel = revUploadChoice(target, rights);
+  const verifyAction = actions.find((a) => a.action === 'verify');
+  const otherActions = actions.filter((a) => a.action !== 'verify');
   const fileKind = path ? drawingFileKind(path) : 'none';
   const fullScreenOff = !path
     ? 'This Drawing Rev has no drawing file'
@@ -175,27 +185,32 @@ function DrawingPage(): React.JSX.Element {
         </span>
         <span className="panel-title">Drawing</span>
         <span style={{ flex: 1 }} />
-        {actions.map((a) => (
+        {verifyAction ? (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setActing('verify')}
+            disabled={Boolean(verifyAction.disabledReason)}
+            title={verifyAction.disabledReason}
+          >
+            {verifyAction.label}
+          </button>
+        ) : null}
+        {uploadLabel ? (
+          <button type="button" className="btn btn-ghost" onClick={() => setReplacing(true)}>
+            {uploadLabel}
+          </button>
+        ) : null}
+        {otherActions.map((a) => (
           <button
             key={a.action}
             type="button"
-            className={
-              a.action === 'reject' || a.action === 'obsolete'
-                ? 'btn btn-ghost red'
-                : 'btn btn-ghost'
-            }
+            className={a.action === 'obsolete' ? 'btn btn-ghost red' : 'btn btn-ghost'}
             onClick={() => setActing(a.action)}
-            disabled={Boolean(a.disabledReason)}
-            title={a.disabledReason}
           >
             {a.label}
           </button>
         ))}
-        {mayReplace ? (
-          <button type="button" className="btn btn-ghost" onClick={() => setReplacing(true)}>
-            {path ? 'Replace drawing…' : 'Upload drawing…'}
-          </button>
-        ) : null}
         {mayPrint ? (
           <button
             type="button"
@@ -227,6 +242,16 @@ function DrawingPage(): React.JSX.Element {
           ⛶ Full screen
         </button>
       </div>
+
+      {rev.releaseStatus === 'unverified' ? (
+        <div style={{ marginBottom: 'var(--panel-gap)' }}>
+          <Banner tone="warn" flush>
+            {path
+              ? 'Unverified — open the PDF, check it, then click Verify.'
+              : 'Unverified — no drawing PDF yet. Upload it, then Design checks it and clicks Verify.'}
+          </Banner>
+        </div>
+      ) : null}
 
       {notice ? (
         <div style={{ marginBottom: 'var(--panel-gap)' }}>
@@ -261,11 +286,11 @@ function DrawingPage(): React.JSX.Element {
             <span className="text3">Drawing No.</span>
             <span className="mono fw-700">{rev.drawingNo ?? '—'}</span>
             <IdentSep />
-            <span className="text3">Released On</span>
-            <span className="mono">{fmtDateTime(rev.releasedAt)}</span>
+            <span className="text3">Verified On</span>
+            <span className="mono">{fmtDateTime(rev.verifiedAt)}</span>
             <IdentSep />
-            <span className="text3">Released By</span>
-            <span>{rev.releasedByName ?? '—'}</span>
+            <span className="text3">Verified By</span>
+            <span>{rev.verifiedByName ?? '—'}</span>
             <IdentSep />
             <span className="text3">File check</span>
             <span className="mono" title={rev.fileHash ?? undefined}>
@@ -290,7 +315,6 @@ function DrawingPage(): React.JSX.Element {
           { key: 'drawing', label: 'Drawing' },
           { key: 'history', label: 'Drawing History', count: rev.history.length },
           { key: 'linked', label: 'Linked Documents', count: rev.linkedDocs.length },
-          { key: 'corrections', label: 'Drawing corrections', count: corrections.length },
         ]}
       />
 
@@ -311,15 +335,12 @@ function DrawingPage(): React.JSX.Element {
         ) : null}
         {tab === 'history' ? <DrawingHistoryTable rows={rev.history} /> : null}
         {tab === 'linked' ? <LinkedDocsTable rows={rev.linkedDocs} /> : null}
-        {tab === 'corrections' ? (
-          <DrawingCorrectionsTable rows={corrections} label={rev.label} mayDecide={mayRelease} />
-        ) : null}
       </Panel>
 
       {acting ? (
         <RevActionDialog target={target} action={acting} onClose={() => setActing(null)} />
       ) : null}
-      {replacing ? (
+      {replacing && uploadLabel ? (
         <ReplaceDrawingDialog
           revision={rev}
           firstFile={!path}

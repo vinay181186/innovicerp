@@ -18,13 +18,19 @@ export const UnsavedWithDraft = () => (
 export const SaveBlockedWithNote = () => (
   <FormActions note="Pick a Customer and add at least one line to save.">
     <Button variant="ghost">Cancel</Button>
-    <Button variant="primary" disabled title="Pick a Customer first">Save SO</Button>
+    <Button variant="primary" disabled title="Pick a Customer first">
+      Save SO
+    </Button>
   </FormActions>
 );
 
 export const Saving = () => (
   <FormActions dirty>
-    <Button variant="ghost" disabled>Cancel</Button>
-    <Button variant="primary" loading>Save GRN</Button>
+    <Button variant="ghost" disabled>
+      Cancel
+    </Button>
+    <Button variant="primary" loading>
+      Save GRN
+    </Button>
   </FormActions>
 );

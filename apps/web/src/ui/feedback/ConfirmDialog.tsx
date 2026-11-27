@@ -60,6 +60,8 @@ export interface ConfirmDialogProps {
   onCancel?: () => void;
   /** Confirm stays disabled until this exact word is typed (e.g. "DELETE"). */
   requireTyped?: string;
+  /** Confirm stays disabled while true (e.g. a required tick not ticked). */
+  confirmDisabled?: boolean;
   /** Overrides the "Type DELETE to confirm" label above that box. */
   requireTypedLabel?: string;
   /** A caller-owned error to show in the dialog (in place of closing it). */
@@ -83,6 +85,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   requireTyped,
+  confirmDisabled = false,
   requireTypedLabel,
   errorText,
   elevated = true,
@@ -110,11 +113,11 @@ export function ConfirmDialog({
     }
   }, [open]);
 
-  const typedOk = requireTyped === undefined || typed === requireTyped;
+  const typedOk = (requireTyped === undefined || typed === requireTyped) && !confirmDisabled;
 
   const handleConfirm = useCallback(async (): Promise<void> => {
     if (!onConfirm || pending) return;
-    if (requireTyped !== undefined && typed !== requireTyped) return;
+    if ((requireTyped !== undefined && typed !== requireTyped) || confirmDisabled) return;
     setFailure(null);
     try {
       const result = onConfirm();
@@ -128,7 +131,7 @@ export function ConfirmDialog({
     } finally {
       if (alive.current) setPending(false);
     }
-  }, [onConfirm, pending, requireTyped, typed]);
+  }, [onConfirm, pending, requireTyped, typed, confirmDisabled]);
 
   if (!open) return null;
 

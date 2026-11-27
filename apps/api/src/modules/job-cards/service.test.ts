@@ -154,9 +154,11 @@ describe('job-cards service', () => {
     const model = await service.getJobCardEditModel(target.id, admin);
     if (target.sourceLink) {
       expect(model.linkedSourceOption).not.toBeNull();
-      expect(model.linkedSourceOption?.lineId).toBe(target.sourceLink.type === 'so'
-        ? target.sourceLink.salesOrderLineId
-        : target.sourceLink.jobWorkOrderLineId);
+      expect(model.linkedSourceOption?.lineId).toBe(
+        target.sourceLink.type === 'so'
+          ? target.sourceLink.salesOrderLineId
+          : target.sourceLink.jobWorkOrderLineId,
+      );
       expect(model.linkedSourceOption?.code).toBe(target.sourceLink.code);
       expect(model.linkedSourceOption?.remaining).toBeGreaterThanOrEqual(0);
     } else {
@@ -361,7 +363,13 @@ describe('job-cards service — writes (ADR-051)', () => {
             qcRequired: false,
             outsourceCost: 0,
           },
-          { operation: 'Final Inspection', opType: 'qc', cycleTimeMin: 0, qcRequired: true, outsourceCost: 0 },
+          {
+            operation: 'Final Inspection',
+            opType: 'qc',
+            cycleTimeMin: 0,
+            qcRequired: true,
+            outsourceCost: 0,
+          },
         ],
         qcDocs: [],
       },
@@ -384,8 +392,22 @@ describe('job-cards service — writes (ADR-051)', () => {
         priority: 'normal',
         sourceJwLineId: jwLineId,
         ops: [
-          { operation: 'Op A', opType: 'process', machineCode, cycleTimeMin: 1, qcRequired: false, outsourceCost: 0 },
-          { operation: 'Op B', opType: 'process', machineCode, cycleTimeMin: 2, qcRequired: false, outsourceCost: 0 },
+          {
+            operation: 'Op A',
+            opType: 'process',
+            machineCode,
+            cycleTimeMin: 1,
+            qcRequired: false,
+            outsourceCost: 0,
+          },
+          {
+            operation: 'Op B',
+            opType: 'process',
+            machineCode,
+            cycleTimeMin: 2,
+            qcRequired: false,
+            outsourceCost: 0,
+          },
         ],
         qcDocs: [],
       },
@@ -403,7 +425,14 @@ describe('job-cards service — writes (ADR-051)', () => {
         orderQty: 9,
         priority: 'high',
         ops: [
-          { operation: 'Op A only', opType: 'process', machineCode, cycleTimeMin: 3, qcRequired: false, outsourceCost: 0 },
+          {
+            operation: 'Op A only',
+            opType: 'process',
+            machineCode,
+            cycleTimeMin: 3,
+            qcRequired: false,
+            outsourceCost: 0,
+          },
           fi,
         ],
         qcDocs: [],
@@ -426,7 +455,12 @@ describe('job-cards service — writes (ADR-051)', () => {
   // Helper: current (non-deleted) ops of a JC, ordered by op_seq.
   async function opsOf(jcId: string) {
     return db
-      .select({ id: jcOps.id, opSeq: jcOps.opSeq, operation: jcOps.operation, opType: jcOps.opType })
+      .select({
+        id: jcOps.id,
+        opSeq: jcOps.opSeq,
+        operation: jcOps.operation,
+        opType: jcOps.opType,
+      })
       .from(jcOps)
       .where(and(eq(jcOps.jobCardId, jcId), isNull(jcOps.deletedAt)))
       .orderBy(jcOps.opSeq);
@@ -510,7 +544,15 @@ describe('job-cards service — writes (ADR-051)', () => {
   it('updateJobCard blocks re-sequencing an op that has logged work', async () => {
     if (!itemCode || !machineCode || !jwLineId) return;
     const jc = await service.createJobCard(
-      { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', sourceJwLineId: jwLineId, ops: [proc('Op A', machineCode), proc('Op B', machineCode)], qcDocs: [] },
+      {
+        jcDate: '2026-06-13',
+        itemCode,
+        orderQty: 5,
+        priority: 'normal',
+        sourceJwLineId: jwLineId,
+        ops: [proc('Op A', machineCode), proc('Op B', machineCode)],
+        qcDocs: [],
+      },
       admin,
     );
     createdIds.push(jc.id);
@@ -557,10 +599,7 @@ describe('job-cards service — writes (ADR-051)', () => {
   /** Stamp an existing op as a committed OSP op backed by a real PR row, the
    *  shape plan-execute / JC-edit actually produce. `prStatus` drives whether
    *  that PR is live ('open') or dead ('cancelled') — the ADR-101 distinction. */
-  async function stampOspPr(
-    opId: string,
-    prStatus: 'open' | 'cancelled',
-  ): Promise<string> {
+  async function stampOspPr(opId: string, prStatus: 'open' | 'cancelled'): Promise<string> {
     const pr = (
       await db
         .insert(purchaseRequests)
@@ -591,7 +630,15 @@ describe('job-cards service — writes (ADR-051)', () => {
   it('updateJobCard blocks removing an outsource op that already has a PR/PO', async () => {
     if (!itemCode || !itemId || !machineCode || !jwLineId) return;
     const jc = await service.createJobCard(
-      { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', sourceJwLineId: jwLineId, ops: [proc('Op A', machineCode), proc('Op B', machineCode)], qcDocs: [] },
+      {
+        jcDate: '2026-06-13',
+        itemCode,
+        orderQty: 5,
+        priority: 'normal',
+        sourceJwLineId: jwLineId,
+        ops: [proc('Op A', machineCode), proc('Op B', machineCode)],
+        qcDocs: [],
+      },
       admin,
     );
     createdIds.push(jc.id);
@@ -607,7 +654,14 @@ describe('job-cards service — writes (ADR-051)', () => {
     const e = await refusal(
       service.updateJobCard(
         jc.id,
-        { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', ops: [{ id: opB.id, ...proc('Op B', machineCode) }, fi], qcDocs: [] },
+        {
+          jcDate: '2026-06-13',
+          itemCode,
+          orderQty: 5,
+          priority: 'normal',
+          ops: [{ id: opB.id, ...proc('Op B', machineCode) }, fi],
+          qcDocs: [],
+        },
         admin,
       ),
     );
@@ -620,7 +674,15 @@ describe('job-cards service — writes (ADR-051)', () => {
   it('updateJobCard allows retyping an outsource op to in-house once its PR is cancelled', async () => {
     if (!itemCode || !itemId || !machineCode || !jwLineId) return;
     const jc = await service.createJobCard(
-      { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', sourceJwLineId: jwLineId, ops: [proc('Op A', machineCode), proc('Op B', machineCode)], qcDocs: [] },
+      {
+        jcDate: '2026-06-13',
+        itemCode,
+        orderQty: 5,
+        priority: 'normal',
+        sourceJwLineId: jwLineId,
+        ops: [proc('Op A', machineCode), proc('Op B', machineCode)],
+        qcDocs: [],
+      },
       admin,
     );
     createdIds.push(jc.id);
@@ -639,7 +701,11 @@ describe('job-cards service — writes (ADR-051)', () => {
         itemCode,
         orderQty: 5,
         priority: 'normal',
-        ops: [{ id: opA.id, ...proc('Op A', machineCode) }, { id: opB.id, ...proc('Op B', machineCode) }, fi],
+        ops: [
+          { id: opA.id, ...proc('Op A', machineCode) },
+          { id: opB.id, ...proc('Op B', machineCode) },
+          fi,
+        ],
         qcDocs: [],
       },
       admin,
@@ -654,7 +720,15 @@ describe('job-cards service — writes (ADR-051)', () => {
   it('updateJobCard freezes operations once the JC is closed', async () => {
     if (!itemCode || !machineCode || !jwLineId) return;
     const jc = await service.createJobCard(
-      { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', sourceJwLineId: jwLineId, ops: [proc('Op A', machineCode)], qcDocs: [] },
+      {
+        jcDate: '2026-06-13',
+        itemCode,
+        orderQty: 5,
+        priority: 'normal',
+        sourceJwLineId: jwLineId,
+        ops: [proc('Op A', machineCode)],
+        qcDocs: [],
+      },
       admin,
     );
     createdIds.push(jc.id);
@@ -722,7 +796,15 @@ describe('job-cards service — writes (ADR-051)', () => {
    *  system's Final Inspection. Returns the op and that Final Inspection. */
   async function jcWithStartedOpA(logNo: string) {
     const jc = await service.createJobCard(
-      { jcDate: '2026-06-13', itemCode: itemCode!, orderQty: 5, priority: 'normal', sourceJwLineId: jwLineId!, ops: [proc('Op A', machineCode!)], qcDocs: [] },
+      {
+        jcDate: '2026-06-13',
+        itemCode: itemCode!,
+        orderQty: 5,
+        priority: 'normal',
+        sourceJwLineId: jwLineId!,
+        ops: [proc('Op A', machineCode!)],
+        qcDocs: [],
+      },
       admin,
     );
     createdIds.push(jc.id);
@@ -761,7 +843,14 @@ describe('job-cards service — writes (ADR-051)', () => {
     // because the pieces already made keep their own machine in op_log.
     await service.updateJobCard(
       jcId,
-      { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', ops: [{ id: opA.id, ...proc('Op A', machine2) }, fi], qcDocs: [] },
+      {
+        jcDate: '2026-06-13',
+        itemCode,
+        orderQty: 5,
+        priority: 'normal',
+        ops: [{ id: opA.id, ...proc('Op A', machine2) }, fi],
+        qcDocs: [],
+      },
       admin,
     );
     // It really moved — and it is still the same op row, not a replacement.
@@ -795,7 +884,14 @@ describe('job-cards service — writes (ADR-051)', () => {
     const e = await refusal(
       service.updateJobCard(
         jcId,
-        { jcDate: '2026-06-13', itemCode, orderQty: 5, priority: 'normal', ops: [{ id: opA.id, ...proc('Op A', machine2) }, fi], qcDocs: [] },
+        {
+          jcDate: '2026-06-13',
+          itemCode,
+          orderQty: 5,
+          priority: 'normal',
+          ops: [{ id: opA.id, ...proc('Op A', machine2) }, fi],
+          qcDocs: [],
+        },
         admin,
       ),
     );
@@ -815,7 +911,14 @@ describe('job-cards service — writes (ADR-051)', () => {
         priority: 'normal',
         sourceJwLineId: jwLineId,
         ops: [
-          { operation: 'Op A', opType: 'process', machineCode, cycleTimeMin: 1, qcRequired: false, outsourceCost: 0 },
+          {
+            operation: 'Op A',
+            opType: 'process',
+            machineCode,
+            cycleTimeMin: 1,
+            qcRequired: false,
+            outsourceCost: 0,
+          },
         ],
         qcDocs: [],
       },
@@ -832,7 +935,13 @@ describe('job-cards service — writes (ADR-051)', () => {
       await db
         .select({ id: items.id })
         .from(items)
-        .where(and(eq(items.code, itemCode), eq(items.companyId, admin.companyId!), isNull(items.deletedAt)))
+        .where(
+          and(
+            eq(items.code, itemCode),
+            eq(items.companyId, admin.companyId!),
+            isNull(items.deletedAt),
+          ),
+        )
         .limit(1)
     )[0]!;
     const otherLine = (
@@ -870,7 +979,14 @@ describe('job-cards service — writes (ADR-051)', () => {
         priority: 'high',
         sourceJwLineId: otherLine.id,
         ops: [
-          { operation: 'Op A', opType: 'process', machineCode, cycleTimeMin: 1, qcRequired: false, outsourceCost: 0 },
+          {
+            operation: 'Op A',
+            opType: 'process',
+            machineCode,
+            cycleTimeMin: 1,
+            qcRequired: false,
+            outsourceCost: 0,
+          },
           fi,
         ],
         qcDocs: [],
@@ -879,7 +995,8 @@ describe('job-cards service — writes (ADR-051)', () => {
     );
     expect(relinked.orderQty).toBe(4);
     expect(relinked.sourceLink?.type).toBe('jw');
-    if (relinked.sourceLink?.type === 'jw') expect(relinked.sourceLink.jobWorkOrderLineId).toBe(jwLineId);
+    if (relinked.sourceLink?.type === 'jw')
+      expect(relinked.sourceLink.jobWorkOrderLineId).toBe(jwLineId);
 
     // 2) Edit that OMITS the source entirely — the link must NOT be nulled.
     const omitted = await service.updateJobCard(
@@ -890,7 +1007,14 @@ describe('job-cards service — writes (ADR-051)', () => {
         orderQty: 2,
         priority: 'normal',
         ops: [
-          { operation: 'Op A', opType: 'process', machineCode, cycleTimeMin: 1, qcRequired: false, outsourceCost: 0 },
+          {
+            operation: 'Op A',
+            opType: 'process',
+            machineCode,
+            cycleTimeMin: 1,
+            qcRequired: false,
+            outsourceCost: 0,
+          },
           fi,
         ],
         qcDocs: [],
@@ -899,7 +1023,8 @@ describe('job-cards service — writes (ADR-051)', () => {
     );
     expect(omitted.sourceLink).not.toBeNull();
     expect(omitted.sourceLink?.type).toBe('jw');
-    if (omitted.sourceLink?.type === 'jw') expect(omitted.sourceLink.jobWorkOrderLineId).toBe(jwLineId);
+    if (omitted.sourceLink?.type === 'jw')
+      expect(omitted.sourceLink.jobWorkOrderLineId).toBe(jwLineId);
   });
 
   it('createJobCard rejects a direct (non-JW) Job Card (governance)', async () => {

@@ -45,10 +45,7 @@ describe('qcProcesses service', () => {
 
   it('createQcProcess rejects duplicate code in same company', async () => {
     const code = `${TEST_PREFIX}DUP`;
-    await service.createQcProcess(
-      { code, defaultCycleTimeMin: 0, isActive: true },
-      admin,
-    );
+    await service.createQcProcess({ code, defaultCycleTimeMin: 0, isActive: true }, admin);
     await expect(
       service.createQcProcess({ code, defaultCycleTimeMin: 0, isActive: true }, admin),
     ).rejects.toBeInstanceOf(ConflictError);

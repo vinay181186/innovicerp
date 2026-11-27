@@ -5,6 +5,7 @@
 > Source of gaps: 4-agent re-audit 2026-05-27 (each read the legacy `render*` directly). Decisions taken via AskUserQuestion 2026-05-27 — see below.
 
 ## Decisions (locked)
+
 - **QC report attachments → FULL.** Migrations on `op_log` + `goods_receipt_note_lines` (done, 0043) + upload on QC/TPI submit (qc-docs bucket) + Report/download columns on Incoming QC, QC History, QC Call Register, TPI, SO QC Status.
 - **QC Documents → REBUILD to legacy SO-pivoted matrix** (per-QC-op columns, serial-range, mandatory/optional gating). Schema done (0043: `qc_documents.jc_op_id/qc_op_name/sr_from/sr_to`).
 - **QC Process Master std-time → KEEP minutes** (intentional DELTA, no change).
@@ -12,6 +13,7 @@
 - Defaults applied w/o asking: drop Inspector "Avg Hrs/Inspection" (no hours data); keep current RBAC on Pick-Up / add-permission (DELTA); keep 4-digit CAPA codes; NC↔CAPA via `capa_records.ncRefs` lookup (no schema).
 
 ## Build chunks (commit each)
+
 - [x] **0. Schema foundation** — migrations 0043+0044, schema.ts, SHIFTS, SCHEMA.md. Commit `0c8567f`.
 - [ ] **1. Shift 'general' UI** — add to QC Call Register + TPI + Op-Entry shift dropdowns (SHIFTS already widened). Small.
 - [x] **2. QC report attachments (cross-cutting)** — DONE. New `apps/web/src/components/shared/qc-report-attach.tsx` (`QcReportAttach` 📎 upload → `uploadFile` qc-docs bucket; `QcReportLink` 📄 → `signedUrl`). Threaded `qcReportPath`/`qcReportName` through `submitQcLogInputSchema` + op-entry op_log write (covers QC/TPI/Call-Register) AND the GRN-QC line write. Exposed on read shapes: qc-history log, tpi completed, incoming-qc completed, so-qc-status GRN+TPI detail. Attach control on all 4 QC submit forms; ⬇ Report link on all 5 completed surfaces. typecheck+lint clean; affected suites pass.
@@ -27,14 +29,17 @@
 - [x] **12. TPI** — Excel export of completed records DONE (xlsx, dynamic import). Shift General done (chunk 1). Attach report + Report col → chunk 2.
 
 ## Pages already at parity (no action)
+
 QC Dashboard (QC Engineer) — only optional cosmetic "Go to QC Register" button. Report / Document Master — 1:1.
 
 ## Notes / DELTAs to record at the end
+
 - Inspector "Avg Hrs/Inspection" dropped — `op_log` has no hours column (legacy itself flagged mobile-entry dependency).
 - Pick-Up / QC-Process add-permission keep current RBAC (admin/manager/qc) vs legacy's looser gate — intentional security DELTA.
 - QC Process Master std-time stays minutes (DELTA from legacy hours).
 
 ## Pre-existing test/env issues (NOT caused by this QC build — verified by stashing)
+
 - `goods-receipt-notes/service.test.ts` + `routes.test.ts`: 10 tests fail with "Goods receipt note <id> not found" after create — fail identically with the QC changes STASHED (GRN code at committed 42c1a20, untouched by QC). Environmental dev-DB state (the create→read cascade / migration lag per [[environment_dev_db_migration_gap]]). Re-test on a clean/seeded DB.
 - `reports/service.test.ts` "items-on-hand": one item has negative computed on-hand in the dev DB → fails `>= 0`. Report definition untouched.
 - qc-command service.test.ts + routes.test.ts collide on a shared `testOpId` under vitest file-parallelism — run per-file (pass in isolation).

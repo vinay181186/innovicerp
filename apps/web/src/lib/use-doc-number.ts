@@ -75,7 +75,8 @@ export function useDocNumber(
   // Default / suggested next code (code omitted) — fetched once per type+series.
   const nextQ = useQuery<CheckDocNumberResponse>({
     queryKey: ['doc-number', type, poType ?? null, '__next__'],
-    queryFn: () => apiFetch<CheckDocNumberResponse>(`/doc-numbers/check?type=${type}${poTypeParam}`),
+    queryFn: () =>
+      apiFetch<CheckDocNumberResponse>(`/doc-numbers/check?type=${type}${poTypeParam}`),
     staleTime: 0,
   });
 

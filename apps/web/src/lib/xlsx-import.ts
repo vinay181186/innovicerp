@@ -17,12 +17,7 @@ import * as XLSX from 'xlsx';
  *  required-marker and stray dots, lowercase. Used for BOTH the sheet's header
  *  cells and the alias list, so matching is spelling/spacing/case tolerant. */
 export function normalizeHeaderKey(key: string): string {
-  return key
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .replace(/[*.]/g, '')
-    .trim();
+  return key.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[*.]/g, '').trim();
 }
 
 /** A sheet row with header keys already normalized (see normalizeHeaderKey) and
@@ -96,8 +91,18 @@ export interface CoercionResult<T> {
 }
 
 const INACTIVE_TOKENS = new Set([
-  'inactive', 'inact', 'no', 'n', 'false', '0', 'disabled',
-  'deactivated', 'closed', 'dormant', 'archived', 'off',
+  'inactive',
+  'inact',
+  'no',
+  'n',
+  'false',
+  '0',
+  'disabled',
+  'deactivated',
+  'closed',
+  'dormant',
+  'archived',
+  'off',
 ]);
 const ACTIVE_TOKENS = new Set(['active', 'act', 'yes', 'y', 'true', '1', 'enabled', 'on', '']);
 

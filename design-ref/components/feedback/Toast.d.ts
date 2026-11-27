@@ -5,5 +5,7 @@ export interface ToastProps {
   children?: React.ReactNode;
 }
 export declare function Toast(props: ToastProps): React.JSX.Element;
-export interface ToastStackProps { children?: React.ReactNode; }
+export interface ToastStackProps {
+  children?: React.ReactNode;
+}
 export declare function ToastStack(props: ToastStackProps): React.JSX.Element;

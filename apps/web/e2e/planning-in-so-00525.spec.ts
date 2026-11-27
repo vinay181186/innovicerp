@@ -34,15 +34,13 @@ test.describe('Planning · IN-SO-00525', () => {
     await soRow.click();
 
     // Right pane header confirms the SO opened.
-    await expect(
-      page.getByText(new RegExp(`Planning:\\s*${SO_CODE}`)),
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(new RegExp(`Planning:\\s*${SO_CODE}`))).toBeVisible({
+      timeout: 15_000,
+    });
 
     // Locate the LINE 2 card. Each line renders in a `.card`; the header shows
     // an exact "LINE 2" label — anchor on that to avoid matching LINE 20+.
-    const line2Card = page
-      .locator('.card')
-      .filter({ has: page.getByText(/^LINE 2$/) });
+    const line2Card = page.locator('.card').filter({ has: page.getByText(/^LINE 2$/) });
     await expect(line2Card).toBeVisible();
 
     // Assert the item on line 2.

@@ -1,421 +1,138 @@
-// DrawingRevField — the drawing control for anything that names an Item +
-// Drawing Rev: the Route Card form and the SO / JWSO line cells.
+// DrawingRevInfo — what an SO / JWSO line or a Route Card shows about its
+// Item + Drawing Rev (ADR-323). READ-ONLY: the drawing PDF is uploaded only in
+// the Drawing Register (Drawing Register Entry right), never on an order line
+// or a Route Card.
 //
-// "ABC/1" is ONE register record holding one drawing (owner model 2026-10-31).
 // As soon as the item and a valid Rev are both filled this looks ABC/<rev> up:
 //
-//   exists, has a file  → that file is shown read-only (📎 view) and written
-//                         into the form, so the save carries the same path the
-//                         server holds. A wrong file is fixed only through
-//                         "Replace drawing…" (Route Card Master Edit holders).
-//   exists, no file     → upload box; the uploaded file is adopted by ABC/<rev>.
-//   does not exist      → upload box; saving creates ABC/<rev>.
-//   Rev changed on a saved line and the new ABC/<rev> does not exist
-//                       → two choices: "Use as is" (carry the old drawing to
-//                         the new Rev) or "Upload new".
-//   Buy item / RM (revRequired false), or no valid Rev yet
-//                       → the plain upload box the line always had.
+//   register has a PDF   → "📎 View drawing" (opens the drawing page, new tab)
+//   latest verified Rev of the item is a DIFFERENT one
+//                        → orange "Latest verified drawing is ABC/2. This line
+//                          specifies ABC/1. Confirm with the customer." + the
+//                          Confirmed tick (owned by the form's useRevConfirmGate)
+//   line's Drawing No. differs from the register's
+//                        → small orange note (never blocks the save)
 //
-// The server enforces every one of these rules; this only stops the user from
-// building a save the server will refuse ("Drawing differs from ABC/1 …").
+// No status chip on the line (owner 2026-11-26: "no need to show any tag").
 
-import { Icon } from '@/ui/core';
-import type { DrawingSource, ItemRevision, LookupItemRevisionResponse } from '@innovic/shared';
-import { drawingFileRequiredMessage, itemRevLabel } from '@innovic/shared';
-import { useQueryClient } from '@tanstack/react-query';
+import { itemRevLabel } from '@innovic/shared';
+import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiFetch } from '@/lib/api';
-import { FilePreviewModal } from '@/components/shared/file-preview-modal';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { useSession } from '@/lib/session';
-import { uploadFile } from '@/lib/storage';
-import { cleanDrawingRev, itemRevisionKeys, useItemRevisionLookup } from '../api';
-import { ITEM_REVISION_DRAWING_FOLDER, ReplaceDrawingDialog } from './replace-drawing-dialog';
-import { RevStatusBadge } from './rev-status-badge';
+import { fileNameFromPath } from '@/components/shared/file-preview-modal';
+import { CheckField } from '@/ui/forms';
+import { cleanDrawingRev, useItemRevisionLookup } from '../api';
 
-export interface DrawingRevFieldProps {
+export interface DrawingRevInfoProps {
   itemId: string | null | undefined;
   /** Shown in "ABC/1" while the record does not exist yet. */
   itemCode: string | null | undefined;
   /** The Drawing Rev as typed on the form. */
   rev: string | null | undefined;
-  /** The form's current drawing file path. */
-  value: string | null | undefined;
-  onChange: (path: string | null) => void;
-  /** Access-log source for a file not yet in the register (the line's own). */
-  source: DrawingSource;
-  /** Access-log reference ("IN-SO-26-00521 L3"). */
-  refCode?: string | undefined;
-  /** Saved line only: the Rev and file the line was LOADED with — drives the
-   *  "Use as is / Upload new" choice when the Rev is changed. */
-  savedRev?: string | null | undefined;
-  savedPath?: string | null | undefined;
-  /** ADR-290 — the "Confirmed" tick under "Latest released drawing is …".
-   *  Owned by the form's useRevConfirmGate (so a collapsed line is still
-   *  checked at Save). Without it the note shows with no tick (Route Card). */
+  /** SO / JWSO line: the Drawing No. typed on the line, compared with the
+   *  register's. Omitted = no comparison (Route Card). */
+  drawingNo?: string | null | undefined;
+  /** Route Card: show the PDF's file name beside the link. */
+  showFileName?: boolean | undefined;
+  /** The "Confirmed" tick under "Latest verified drawing is …". Owned by the
+   *  form's useRevConfirmGate. Without it the note is not shown. */
   confirm?: { checked: boolean; onChange: (checked: boolean) => void } | undefined;
 }
 
-/** One order line as the ADR-311 drawing-file check sees it. */
-export interface DrawingFileCheckLine {
-  /** 1-based line number for the message. */
-  lineNo: number;
-  itemId: string | null | undefined;
-  itemCode: string | null | undefined;
-  rev: string | null | undefined;
-  drawingFilePath: string | null | undefined;
-  /** Saved line only: the Item and Rev it was loaded with. Absent = new line. */
-  saved?:
-    | {
-        itemId: string | null | undefined;
-        rev: string | null | undefined;
-        drawingFilePath?: string | null | undefined;
-      }
-    | undefined;
-}
-
-/** ADR-311 — the drawing file is compulsory on a NEW JWSO line of a make
- *  item (ADR-321: no longer on SO lines — the SO form does not call this), and on a saved line whose Item or Rev changed. A saved line where
- *  only other fields changed is never refused. Make or buy is answered by the
- *  same lookup the drawing control already runs (`revRequired`), read from its
- *  cache when warm. Returns the first refusal sentence (shared with the
- *  server), or null. `force` skips the make check (new Equipment SO line). */
-export function useDrawingFileCheck(): (
-  lines: readonly DrawingFileCheckLine[],
-  opts?: { force?: boolean },
-) => Promise<string | null> {
-  const qc = useQueryClient();
-  return useCallback(
-    async (lines: readonly DrawingFileCheckLine[], opts?: { force?: boolean }) => {
-      for (const l of lines) {
-        if (l.drawingFilePath) continue;
-        const cleaned = cleanDrawingRev(l.rev);
-        const id = l.itemId ?? '';
-        const changed =
-          !l.saved ||
-          (l.saved.itemId ?? '') !== id ||
-          cleanDrawingRev(l.saved.rev) !== cleaned ||
-          // A saved file the user cleared — the server refuses that too.
-          Boolean(l.saved.drawingFilePath);
-        if (!changed) continue;
-        if (!opts?.force) {
-          // No item picked = not an Item Master line; the item check refuses it.
-          if (!id || !cleaned) continue;
-          let needs = true;
-          try {
-            const data = await qc.fetchQuery<LookupItemRevisionResponse>({
-              queryKey: itemRevisionKeys.lookup(id, cleaned),
-              queryFn: () => {
-                const p = new URLSearchParams({ itemId: id, rev: cleaned });
-                return apiFetch<LookupItemRevisionResponse>(
-                  `/item-revisions/lookup?${p.toString()}`,
-                );
-              },
-              staleTime: 30_000,
-            });
-            // The register already holds a file → the line inherits it (server: sent ?? register).
-            needs = data.revRequired && !data.revision?.drawingFilePath;
-          } catch {
-            // Lookup failed: let the save go; the server applies the same rule.
-            needs = false;
-          }
-          if (!needs) continue;
-        }
-        return drawingFileRequiredMessage(l.lineNo, itemRevLabel(l.itemCode ?? '', cleaned));
-      }
-      return null;
-    },
-    [qc],
+/** "📎 View drawing" — opens the drawing page in a new tab. */
+export function ViewDrawingLink({ itemRevisionId }: { itemRevisionId: string }): React.JSX.Element {
+  return (
+    <Link
+      to="/drawings/$itemRevisionId"
+      params={{ itemRevisionId }}
+      target="_blank"
+      rel="noopener"
+      title="Open the drawing page in a new tab"
+      onClick={(e) => e.stopPropagation()}
+    >
+      📎 View drawing
+    </Link>
   );
 }
 
-export function DrawingRevField(props: DrawingRevFieldProps): React.JSX.Element {
-  const { itemId, itemCode, rev, value, onChange, source, refCode, savedRev, savedPath } = props;
-  const { confirm } = props;
-  const { data: me } = useSession();
-  const { data: eff } = useMyAccess();
-  const canReplace = effectiveFormPerms(eff, 'routecard_create').edit;
+const NOTE_STYLE: React.CSSProperties = {
+  fontSize: 'var(--fs-xs)',
+  marginTop: 'var(--sp-0)',
+  whiteSpace: 'normal',
+};
+
+export function DrawingRevInfo(props: DrawingRevInfoProps): React.JSX.Element | null {
+  const { itemId, itemCode, rev, drawingNo, showFileName, confirm } = props;
   const lookup = useItemRevisionLookup(itemId, rev);
   const cleaned = cleanDrawingRev(rev);
   const active = Boolean(itemId && cleaned);
   const data = active ? lookup.data : undefined;
-  const revision: ItemRevision | null = data?.revision ?? null;
-  const registerFile = revision?.drawingFilePath ?? null;
-
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [preview, setPreview] = useState<{ path: string; src: DrawingSource; ref?: string } | null>(
-    null,
-  );
-  const [replacing, setReplacing] = useState(false);
-  // The path THIS control wrote from the register, so a later Rev with no file
-  // clears it again instead of quietly carrying ABC/1's drawing to ABC/2.
-  const autoFilled = useRef<string | null>(null);
-  // "Use as is" / "Upload new" on a Rev change.
-  const [revChoice, setRevChoice] = useState<'keep' | 'new' | null>(null);
-
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
-
-  // ADR-290 — status of this Rev and the item's latest released Rev.
-  const release = data?.release;
-  const latestLabel = release?.latestReleasedLabel ?? null;
-
-  useEffect(() => {
-    if (!data) return;
-    if (registerFile) {
-      if (value !== registerFile) {
-        autoFilled.current = registerFile;
-        onChangeRef.current(registerFile);
-      }
-      return;
-    }
-    // No file in the register for this Item + Rev: drop a drawing this control
-    // filled in for a DIFFERENT Rev (dependent field sync).
-    if (autoFilled.current && value === autoFilled.current) {
-      autoFilled.current = null;
-      onChangeRef.current(null);
-    }
-  }, [data, registerFile, value]);
-
-  // A new Rev typed → ask the keep/new question again.
-  useEffect(() => {
-    setRevChoice(null);
-  }, [cleaned]);
-
-  async function onPick(file: File | null): Promise<void> {
-    if (!file) return;
-    if (!me?.companyId) {
-      setErr('No company on session');
-      return;
-    }
-    setErr(null);
-    setBusy(true);
-    try {
-      onChange(await uploadFile(file, me.companyId, { folder: ITEM_REVISION_DRAWING_FOLDER }));
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not upload file. Try again.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
+  const revision = data?.revision ?? null;
+  const file = revision?.drawingFilePath ?? null;
   const label = revision?.label ?? itemRevLabel(itemCode, cleaned);
-  const revRequired = data?.revRequired ?? true;
-  const inRegister = active && revRequired;
-  const checking = active && lookup.isFetching && !lookup.data;
+  const latestLabel = data?.release?.latestReleasedLabel ?? null;
+  const registerDno = revision?.drawingNo?.trim() ?? '';
+  const dnoDiffers =
+    drawingNo !== undefined &&
+    registerDno !== '' &&
+    registerDno.toUpperCase() !== (drawingNo ?? '').trim().toUpperCase();
 
-  const uploadBox = (
-    <input
-      type="file"
-      className="innovic-input"
-      accept="image/*,.pdf"
-      aria-label="Drawing file"
-      onChange={(e) => void onPick(e.target.files?.[0] ?? null)}
-    />
-  );
-
-  const viewButtons = (path: string, fromRegister: boolean): React.JSX.Element => (
-    <span style={{ display: 'inline-flex', gap: 'var(--sp-1)', alignItems: 'center' }}>
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        title="Preview drawing"
-        onClick={() =>
-          setPreview(
-            fromRegister
-              ? { path, src: 'item_revision', ref: label }
-              : { path, src: source, ...(refCode ? { ref: refCode } : {}) },
-          )
-        }
-      >
-        📎 view
-      </button>
-      {fromRegister ? null : (
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm red"
-          title="Clear drawing"
-          aria-label="Clear drawing"
-          onClick={() => {
-            autoFilled.current = null;
-            onChange(null);
-          }}
-        >
-          <Icon name="x" size={12} />
-        </button>
-      )}
-    </span>
-  );
-
-  // Rev changed on a saved line, the new Item + Rev does not exist, and the
-  // line still holds the old drawing → ask what to do with it.
-  const savedClean = cleanDrawingRev(savedRev);
-  const revChanged =
-    inRegister && Boolean(savedClean) && savedClean !== cleaned && !revision && Boolean(savedPath);
-
-  let body: React.ReactNode;
-  let note: React.ReactNode = null;
-  if (busy) {
-    body = (
-      <span className="text3">
-        <Loader2 size={12} className="inline animate-spin" /> uploading…
-      </span>
-    );
-  } else if (checking) {
-    body = (
-      <span className="text3">
+  if (!active) return null;
+  if (lookup.isFetching && !lookup.data) {
+    return (
+      <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         <Loader2 size={12} className="inline animate-spin" /> checking {label}…
       </span>
     );
-  } else if (inRegister && registerFile) {
-    body = (
-      <>
-        {viewButtons(registerFile, true)}
-        {canReplace && revision ? (
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setReplacing(true)}>
-            Replace drawing…
-          </button>
-        ) : null}
-      </>
-    );
-    note = (
-      <>
-        <b className="mono">{label}</b>
-        {revision?.sourceRef ? ` · drawing from ${revision.sourceRef}` : ' · drawing on file'}
-      </>
-    );
-  } else if (revChanged && revChoice !== 'new') {
-    body = (
-      <>
-        <button
-          type="button"
-          className={`btn btn-sm ${revChoice === 'keep' ? 'btn-primary' : 'btn-ghost'}`}
-          title={`Carry the drawing of ${itemRevLabel(itemCode, savedClean)} to ${label}`}
-          onClick={() => {
-            setRevChoice('keep');
-            onChange(savedPath ?? null);
-          }}
-        >
-          Use as is
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => {
-            setRevChoice('new');
-            onChange(null);
-          }}
-        >
-          Upload new
-        </button>
-        {value ? viewButtons(value, false) : null}
-      </>
-    );
-    note = (
-      <>
-        new — <b className="mono">{label}</b> will be created
-      </>
-    );
-  } else {
-    body = value ? viewButtons(value, false) : uploadBox;
-    if (inRegister && data) {
-      note = revision ? (
-        <>
-          <b className="mono">{label}</b> has no drawing yet — the file uploaded here becomes its
-          drawing
-        </>
-      ) : (
-        <>
-          new — <b className="mono">{label}</b> will be created
-        </>
-      );
-    } else if (active && lookup.isError) {
-      note = <span className="red">Could not check {label}</span>;
-    }
   }
-
+  if (lookup.isError && !lookup.data) {
+    return (
+      <span className="red" style={{ fontSize: 'var(--fs-xs)' }}>
+        Could not check {label}
+      </span>
+    );
+  }
+  if (!file && !(latestLabel && confirm) && !dnoDiffers) return null;
   return (
     <div style={{ minWidth: 0 }}>
-      <div
-        style={{
-          display: 'flex',
-          gap: 'var(--sp-1)',
-          alignItems: 'center',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {body}
-      </div>
-      {note ? (
-        <div
-          className="text3"
+      {file && revision ? (
+        <span
           style={{
-            fontSize: 'var(--fs-xs)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
+            display: 'inline-flex',
+            gap: 'var(--sp-1)',
+            alignItems: 'center',
             whiteSpace: 'nowrap',
           }}
-          title={typeof note === 'string' ? note : undefined}
         >
-          {note}
-        </div>
+          {showFileName ? (
+            <span className="mono" title={fileNameFromPath(file)}>
+              {fileNameFromPath(file)}
+            </span>
+          ) : null}
+          <ViewDrawingLink itemRevisionId={revision.id} />
+        </span>
       ) : null}
-      {release?.releaseStatus ? (
-        <div style={{ marginTop: 'var(--sp-0)' }}>
-          <RevStatusBadge
-            status={release.releaseStatus}
-            {...(release.releaseStatus === 'draft'
-              ? { text: 'Not released — Plan/PRO/Job Card wait for Design' }
-              : release.releaseStatus === 'under_review'
-                ? { text: 'Under Review — waiting for Design approval' }
-                : {})}
+      {latestLabel && confirm ? (
+        <div className="amber" style={NOTE_STYLE}>
+          <div>
+            Latest verified drawing is <b className="mono">{latestLabel}</b>. This line specifies{' '}
+            <b className="mono">{label}</b>. Confirm with the customer.
+          </div>
+          <CheckField
+            label={
+              <>
+                <span className="fw-700">Confirmed</span> <span className="red">*</span>
+              </>
+            }
+            checked={confirm.checked}
+            onChange={confirm.onChange}
           />
         </div>
       ) : null}
-      {latestLabel ? (
-        <div className="amber" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}>
-          <div style={{ whiteSpace: 'normal' }}>
-            Latest released drawing is <b className="mono">{latestLabel}</b>. This line specifies{' '}
-            <b className="mono">{label}</b>. Confirm with the customer.
-          </div>
-          {confirm ? (
-            <label style={{ display: 'inline-flex', gap: 'var(--sp-1)', alignItems: 'center' }}>
-              <input
-                type="checkbox"
-                checked={confirm.checked}
-                onChange={(e) => confirm.onChange(e.target.checked)}
-              />
-              <span className="fw-700">Confirmed</span>
-              <span className="red">*</span>
-            </label>
-          ) : null}
+      {dnoDiffers ? (
+        <div className="amber" style={NOTE_STYLE}>
+          Drawing Register has Drawing No. <b className="mono">{registerDno}</b> for{' '}
+          <b className="mono">{label}</b>.
         </div>
-      ) : null}
-      {err ? <div className="form-error">{err}</div> : null}
-      {preview ? (
-        <FilePreviewModal
-          storagePath={preview.path}
-          kind="drawing"
-          source={preview.src}
-          {...(preview.ref ? { refCode: preview.ref } : {})}
-          onClose={() => setPreview(null)}
-        />
-      ) : null}
-      {replacing && revision ? (
-        <ReplaceDrawingDialog
-          revision={revision}
-          onCancel={() => setReplacing(false)}
-          onDone={(path) => {
-            setReplacing(false);
-            // null = a correction was filed on a released Rev; the drawing has
-            // not changed, so the form keeps the file it holds.
-            if (!path) return;
-            autoFilled.current = path;
-            onChange(path);
-          }}
-        />
       ) : null}
     </div>
   );

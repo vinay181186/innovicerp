@@ -13,6 +13,7 @@
 A single-customer drill view: customer header + 6 KPI tiles + two-column body (Recent Orders | Communications timeline). The sales rep uses it to walk into a meeting knowing the customer's full status at a glance.
 
 Required data sources:
+
 - `db.clients` (customer master)
 - `db.salesOrders` (filtered by `clientCode === cust.code` OR `client === cust.name`)
 - `db.communications` (filtered by `customerCode === cust.code`) — **NEW MODEL not in current schema**
@@ -22,11 +23,11 @@ Required data sources:
 
 ## 1. Page chrome
 
-| # | Element | Legacy (line) | Tag |
-|---|---|---|---|
-| 1 | Section header | `👤 Customer 360° View` (L16456) | needs port |
-| 2 | Customer picker | `<select>` with all clients sorted by name; sets `window._crm360CustCode` (L16457) | **BLOCKER** (the page's primary nav) |
-| 3 | Empty state | when no clients exist — friendly 👤 prompt (L16431–16438) | **POLISH** |
+| #   | Element         | Legacy (line)                                                                      | Tag                                  |
+| --- | --------------- | ---------------------------------------------------------------------------------- | ------------------------------------ |
+| 1   | Section header  | `👤 Customer 360° View` (L16456)                                                   | needs port                           |
+| 2   | Customer picker | `<select>` with all clients sorted by name; sets `window._crm360CustCode` (L16457) | **BLOCKER** (the page's primary nav) |
+| 3   | Empty state     | when no clients exist — friendly 👤 prompt (L16431–16438)                          | **POLISH**                           |
 
 ---
 
@@ -35,12 +36,14 @@ Required data sources:
 A `bg2` panel with a 4px sig-info left border + 2 columns:
 
 **Left block:**
+
 - Customer name (18px bold)
 - Code + optional `· GST: <gst>` (11px muted)
 - Optional contact row: `👤 <contactPerson> · 📞 <phone> · 📧 <email>` (12px)
 - Optional `📍 <address>` (11px muted)
 
 **Right block (action buttons, when canEntry):**
+
 - **💬 Log Communication** (primary) → `_crmLogComm(custCode, null)`
 - **⏰ Add Reminder** (ghost) → `_crmAddReminderForCust(custCode)` (opens reminder form with `customerCode` prefilled)
 
@@ -52,14 +55,14 @@ A `bg2` panel with a 4px sig-info left border + 2 columns:
 
 Auto-fit grid:
 
-| # | Label | Formula |
-|---|---|---|
-| 1 | Total Business | Σ `salesOrders.totalAmount \|\| amount` (₹, sig-info, IN-formatted) |
-| 2 | YTD Business | same Σ filtered to FY (`>= currentYear-04-01`), sig-ok green |
-| 3 | Total Orders | `sos.length` |
-| 4 | Open Orders | count where `status not in {Closed, Cancelled}`, sig-warn |
-| 5 | Last Order | most recent `soDate` formatted |
-| 6 | Open Reminders | count `openRems`, sig-warn if > 0 else text3 |
+| #   | Label          | Formula                                                             |
+| --- | -------------- | ------------------------------------------------------------------- |
+| 1   | Total Business | Σ `salesOrders.totalAmount \|\| amount` (₹, sig-info, IN-formatted) |
+| 2   | YTD Business   | same Σ filtered to FY (`>= currentYear-04-01`), sig-ok green        |
+| 3   | Total Orders   | `sos.length`                                                        |
+| 4   | Open Orders    | count where `status not in {Closed, Cancelled}`, sig-warn           |
+| 5   | Last Order     | most recent `soDate` formatted                                      |
+| 6   | Open Reminders | count `openRems`, sig-warn if > 0 else text3                        |
 
 **Tag:** **BLOCKER**.
 
@@ -71,12 +74,12 @@ Auto-fit grid:
 
 `<table>` with 4 columns:
 
-| col | header | data | format |
-|---|---|---|---|
-| 1 | SO/JW No. | `s.soNo \|\| s.jwNo` | mono cyan 11px bold |
-| 2 | Date | `fmt(s.soDate \|\| s.date)` | 11px |
-| 3 | Amount | `₹ <amount>` IN-formatted | mono, right-aligned, 11px |
-| 4 | Status | `s.status` | colour-coded text (sig-ok / text3 / sig-warn) |
+| col | header    | data                        | format                                        |
+| --- | --------- | --------------------------- | --------------------------------------------- |
+| 1   | SO/JW No. | `s.soNo \|\| s.jwNo`        | mono cyan 11px bold                           |
+| 2   | Date      | `fmt(s.soDate \|\| s.date)` | 11px                                          |
+| 3   | Amount    | `₹ <amount>` IN-formatted   | mono, right-aligned, 11px                     |
+| 4   | Status    | `s.status`                  | colour-coded text (sig-ok / text3 / sig-warn) |
 
 Sort: `soDate` desc. Slice to **top 10**. Empty state: "No orders yet".
 
@@ -144,6 +147,7 @@ communications (
 ## 6. Summary — building from scratch
 
 ### BLOCKERs
+
 1. New `communications` table + Drizzle schema + RLS.
 2. Customer picker (with URL search-state, not `window._crm360CustCode`).
 3. Customer header card.
@@ -154,16 +158,19 @@ communications (
 8. Add Reminder action with `customerCode` pre-filled (links to `crm-reminders.md`).
 
 ### DELTAs
+
 - FY start hard-coded to `April 1` — confirm with finance/sales.
 - Communications-as-side-effect (`auto_logged=true`) is a cross-cutting concern — best done as a service helper invoked by other modules.
 
 ### POLISH
+
 - 32px 👤 icon in empty state.
 - IN-style ₹ formatting.
 
 ---
 
 **Sign-off needed:**
+
 - Confirm scope. Estimate: ~800–1000 LOC (page + comm table + service + side-effect emitters).
 - Confirm FY start: `04-01` per the file, or company-configurable?
 - Decide: communications table standalone, or part of a broader "activity_log"-style table?

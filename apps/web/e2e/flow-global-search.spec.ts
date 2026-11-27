@@ -30,7 +30,10 @@ const HEADERS = ['Date', 'Type', 'Doc No.', 'Party', 'Particulars', 'Qty', 'Stat
 const HOST_PAGE = '/purchase-requests';
 
 // Kinds without a detail page (lib/global-search.ts LANDINGS) and where each lands.
-const REGISTER_KINDS: Record<string, { to: string; params: (docNo: string, id: string) => Record<string, string> }> = {
+const REGISTER_KINDS: Record<
+  string,
+  { to: string; params: (docNo: string, id: string) => Record<string, string> }
+> = {
   'customer-dispatch': { to: '/customer-dispatches', params: (d) => ({ tab: 'so', search: d }) },
   'jw-return': { to: '/customer-dispatches', params: (d) => ({ tab: 'jw', search: d }) },
   'jw-invoice': { to: '/invoices', params: (d) => ({ tab: 'jw', search: d }) },
@@ -63,7 +66,8 @@ interface Resp {
 
 // ── Locators ────────────────────────────────────────────────────────────────
 type Scope = Page | Locator;
-const box = (page: Page): Locator => page.locator('input.innovic-input.gs-input[aria-label="Search anything"]');
+const box = (page: Page): Locator =>
+  page.locator('input.innovic-input.gs-input[aria-label="Search anything"]');
 const overlay = (page: Page): Locator => page.locator('.overlay.gs-overlay');
 const modal = (page: Page): Locator => overlay(page).locator('.modal[role="dialog"]');
 const table = (s: Scope): Locator => s.locator('.gs-results table.innovic-table');
@@ -73,11 +77,18 @@ const docNoOf = (row: Locator): Locator => row.locator('td').nth(2).locator('spa
 /** `filter({ has })` inner locators must be page-rooted — one built from the
  *  modal locator is evaluated as a chain (modal >> x) relative to the row and
  *  never matches. */
-const pageOf = (s: Scope): Page => (typeof (s as Locator).page === 'function' ? (s as Locator).page() : (s as Page));
+const pageOf = (s: Scope): Page =>
+  typeof (s as Locator).page === 'function' ? (s as Locator).page() : (s as Page);
 const rowByDocNo = (s: Scope, docNo: string): Locator =>
-  rows(s).filter({ has: pageOf(s).locator('span.mono.fw-700', { hasText: new RegExp('^' + docNo.replace(/[/.]/g, '\\$&') + '$') }) });
+  rows(s).filter({
+    has: pageOf(s).locator('span.mono.fw-700', {
+      hasText: new RegExp('^' + docNo.replace(/[/.]/g, '\\$&') + '$'),
+    }),
+  });
 const stripButton = (s: Scope, label: string): Locator =>
-  s.locator('div.panel button').filter({ has: pageOf(s).locator('div', { hasText: new RegExp('^' + label + '$') }) });
+  s
+    .locator('div.panel button')
+    .filter({ has: pageOf(s).locator('div', { hasText: new RegExp('^' + label + '$') }) });
 const stripCount = async (s: Scope, label: string): Promise<number> =>
   Number((await stripButton(s, label).locator('div.mono.fw-700').textContent())?.trim());
 
@@ -121,7 +132,11 @@ async function bearer(page: Page): Promise<string> {
   }
   throw new Error('no Supabase session token in the storage state');
 }
-async function api(page: Page, q: string, kind?: string): Promise<{ status: number; json: Resp | null }> {
+async function api(
+  page: Page,
+  q: string,
+  kind?: string,
+): Promise<{ status: number; json: Resp | null }> {
   const res = await page.request.get(
     API_BASE + '/global-search?' + new URLSearchParams({ q, ...(kind ? { kind } : {}) }).toString(),
     { headers: { authorization: 'Bearer ' + (await bearer(page)) } },
@@ -137,18 +152,30 @@ async function assertHeaderLayout(page: Page, path: string): Promise<void> {
   const sync = page.locator('#topbar .tb-sync', { hasText: 'SYNCED' });
   await expect(title).toBeVisible();
   await expect(sync).toBeVisible();
-  const [t, b, s, bar] = await Promise.all([title.boundingBox(), input.boundingBox(), sync.boundingBox(), page.locator('#topbar').boundingBox()]);
+  const [t, b, s, bar] = await Promise.all([
+    title.boundingBox(),
+    input.boundingBox(),
+    sync.boundingBox(),
+    page.locator('#topbar').boundingBox(),
+  ]);
   expect(t && b && s && bar, 'header boxes measurable').toBeTruthy();
   expect(b!.x, `${path}: box right of title`).toBeGreaterThanOrEqual(t!.x + t!.width - 1);
   expect(b!.x + b!.width, `${path}: box left of SYNCED`).toBeLessThanOrEqual(s!.x + 1);
   const offset = b!.x + b!.width / 2 - (bar!.x + bar!.width / 2);
-  console.log(`${path}: topbar centre x=${(bar!.x + bar!.width / 2).toFixed(1)}, box centre x=${(b!.x + b!.width / 2).toFixed(1)}, offset=${offset.toFixed(1)} px`);
+  console.log(
+    `${path}: topbar centre x=${(bar!.x + bar!.width / 2).toFixed(1)}, box centre x=${(b!.x + b!.width / 2).toFixed(1)}, offset=${offset.toFixed(1)} px`,
+  );
   expect(Math.abs(offset), `${path}: box centred (±40 px)`).toBeLessThanOrEqual(40);
 }
 
 async function noHorizontalScroll(page: Page, label: string): Promise<void> {
-  const o = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
-  expect(o.scrollWidth, `${label}: no horizontal page scrollbar`).toBeLessThanOrEqual(o.clientWidth);
+  const o = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(o.scrollWidth, `${label}: no horizontal page scrollbar`).toBeLessThanOrEqual(
+    o.clientWidth,
+  );
 }
 
 test.describe.configure({ mode: 'default' });
@@ -160,20 +187,40 @@ test.describe('Global Search v3 — popup under the top bar', () => {
   });
 
   // ── 0. API contract ──────────────────────────────────────────────────────
-  test('0. API returns counts; kind filter narrows items but keeps the same counts', async ({ page }) => {
+  test('0. API returns counts; kind filter narrows items but keeps the same counts', async ({
+    page,
+  }) => {
     test.setTimeout(400_000);
     await gotoPage(page, '/');
     const deadline = Date.now() + 5 * 60_000;
     let r = await api(page, 'IN-PR');
-    while (!(r.status === 200 && r.json && typeof r.json.counts === 'object' && r.json.counts !== null) && Date.now() < deadline) {
+    while (
+      !(
+        r.status === 200 &&
+        r.json &&
+        typeof r.json.counts === 'object' &&
+        r.json.counts !== null
+      ) &&
+      Date.now() < deadline
+    ) {
       console.log('API has no counts yet (status ' + r.status + ') — waiting 20 s');
       await page.waitForTimeout(20_000);
       r = await api(page, 'IN-PR');
     }
     expect(r.status).toBe(200);
-    expect(r.json && typeof r.json.counts === 'object' && r.json.counts !== null, 'response has counts').toBe(true);
+    expect(
+      r.json && typeof r.json.counts === 'object' && r.json.counts !== null,
+      'response has counts',
+    ).toBe(true);
     const all = r.json!;
-    console.log('IN-PR counts: ' + JSON.stringify(all.counts) + ' items=' + all.items.length + ' truncated=' + all.truncated);
+    console.log(
+      'IN-PR counts: ' +
+        JSON.stringify(all.counts) +
+        ' items=' +
+        all.items.length +
+        ' truncated=' +
+        all.truncated,
+    );
     expect(all.counts['purchase-request']).toBeGreaterThanOrEqual(1);
     for (const it of all.items) {
       for (const k of ['kind', 'id', 'docNo', 'date', 'party', 'lines', 'qty', 'status', 'hit']) {
@@ -189,7 +236,9 @@ test.describe('Global Search v3 — popup under the top bar', () => {
   });
 
   // ── 1. Header box opens the popup; URL unchanged; Enter at once; Ctrl+K ──
-  test('1. typing opens the popup under the top bar without changing the URL; Enter opens at once; box keeps focus; Ctrl+K', async ({ page }, testInfo) => {
+  test('1. typing opens the popup under the top bar without changing the URL; Enter opens at once; box keeps focus; Ctrl+K', async ({
+    page,
+  }, testInfo) => {
     await gotoPage(page, HOST_PAGE);
     await assertHeaderLayout(page, HOST_PAGE);
     const urlBefore = page.url();
@@ -206,9 +255,23 @@ test.describe('Global Search v3 — popup under the top bar', () => {
     expect(page.url(), 'URL still unchanged after rows').toBe(urlBefore);
 
     // Popup sits below the top bar; the box stays visible and focused above it.
-    const [bar, m] = await Promise.all([page.locator('#topbar').boundingBox(), modal(page).boundingBox()]);
-    console.log('topbar bottom=' + (bar!.y + bar!.height).toFixed(1) + ' popup top=' + m!.y.toFixed(1) + ' popup size=' + m!.width.toFixed(0) + '×' + m!.height.toFixed(0));
-    expect(m!.y, 'popup top at/below the topbar bottom').toBeGreaterThanOrEqual(bar!.y + bar!.height - 0.5);
+    const [bar, m] = await Promise.all([
+      page.locator('#topbar').boundingBox(),
+      modal(page).boundingBox(),
+    ]);
+    console.log(
+      'topbar bottom=' +
+        (bar!.y + bar!.height).toFixed(1) +
+        ' popup top=' +
+        m!.y.toFixed(1) +
+        ' popup size=' +
+        m!.width.toFixed(0) +
+        '×' +
+        m!.height.toFixed(0),
+    );
+    expect(m!.y, 'popup top at/below the topbar bottom').toBeGreaterThanOrEqual(
+      bar!.y + bar!.height - 0.5,
+    );
     await expect(box(page)).toBeVisible();
     expect(await isBoxActive(page)).toBe(true);
     await assertHeaderLayout(page, HOST_PAGE + ' (popup open)');
@@ -251,7 +314,9 @@ test.describe('Global Search v3 — popup under the top bar', () => {
   });
 
   // ── 2. Popup content ─────────────────────────────────────────────────────
-  test('2. popup: header, summary, count strip, 7 columns, prefix rank, dates, party/qty/status; table is the only scroller', async ({ page }) => {
+  test('2. popup: header, summary, count strip, 7 columns, prefix rank, dates, party/qty/status; table is the only scroller', async ({
+    page,
+  }) => {
     const { json } = await api(page, 'IN-PR');
     const total = Object.values(json!.counts).reduce((s, n) => s + n, 0);
     await gotoPage(page, HOST_PAGE);
@@ -304,7 +369,9 @@ test.describe('Global Search v3 — popup under the top bar', () => {
   });
 
   // ── 3. Particulars on separate lines ─────────────────────────────────────
-  test('3. Particulars: one block line per linked doc / item (IN-PR-00001, IN-DC-00002)', async ({ page }) => {
+  test('3. Particulars: one block line per linked doc / item (IN-PR-00001, IN-DC-00002)', async ({
+    page,
+  }) => {
     await gotoPage(page, HOST_PAGE);
     await openPopup(page, 'IN-PR');
     const m = modal(page);
@@ -334,7 +401,9 @@ test.describe('Global Search v3 — popup under the top bar', () => {
   });
 
   // ── 4. Search anything ───────────────────────────────────────────────────
-  test('4. search anything: an item on line 3, a vendor city (matched: line), a status word', async ({ page }) => {
+  test('4. search anything: an item on line 3, a vendor city (matched: line), a status word', async ({
+    page,
+  }) => {
     const prt = await api(page, 'E2E-PRT-003');
     await gotoPage(page, HOST_PAGE);
     await openPopup(page, 'E2E-PRT-003');
@@ -349,8 +418,13 @@ test.describe('Global Search v3 — popup under the top bar', () => {
       if (apiRow?.hit) await expect(matched).toContainText('E2E-PRT-003');
       else {
         await expect(matched).toHaveCount(0);
-        expect(await row.locator('td.gs-lines > div', { hasText: /^E2E-PRT-003 / }).count()).toBe(1);
-        console.log(code + ': hit=null from the API (item is a visible line) → no "matched:" line, by contract');
+        expect(await row.locator('td.gs-lines > div', { hasText: /^E2E-PRT-003 / }).count()).toBe(
+          1,
+        );
+        console.log(
+          code +
+            ': hit=null from the API (item is a visible line) → no "matched:" line, by contract',
+        );
       }
     }
 
@@ -360,19 +434,27 @@ test.describe('Global Search v3 — popup under the top bar', () => {
     const v = rowByDocNo(m, VENDOR_CODE);
     await expect(v).toHaveCount(1);
     await expect(v.locator('td').nth(1)).toHaveText('Vendor');
-    await expect(v.locator('td.gs-lines div.text3', { hasText: /^matched: / })).toContainText('Anand');
+    await expect(v.locator('td.gs-lines div.text3', { hasText: /^matched: / })).toContainText(
+      'Anand',
+    );
 
     await box(page).press('Escape');
     await openPopup(page, 'closed');
     await waitRows(m);
-    const closedRows = rows(m).filter({ has: page.locator('td:nth-child(7) .badge', { hasText: /^closed$/ }) });
+    const closedRows = rows(m).filter({
+      has: page.locator('td:nth-child(7) .badge', { hasText: /^closed$/ }),
+    });
     const c = await closedRows.count();
-    console.log('"closed": ' + (await rows(m).count()) + ' rows, ' + c + ' with Status badge "closed"');
+    console.log(
+      '"closed": ' + (await rows(m).count()) + ' rows, ' + c + ' with Status badge "closed"',
+    );
     expect(c).toBeGreaterThanOrEqual(1);
   });
 
   // ── 5. Count strip filter (inside the popup, URL untouched) ──────────────
-  test('5. strip item filters by kind inside the popup and keeps the strip; click again clears; URL untouched', async ({ page }) => {
+  test('5. strip item filters by kind inside the popup and keeps the strip; click again clears; URL untouched', async ({
+    page,
+  }) => {
     const { json } = await api(page, 'IN-PR');
     await gotoPage(page, HOST_PAGE);
     const urlBefore = page.url();
@@ -384,7 +466,11 @@ test.describe('Global Search v3 — popup under the top bar', () => {
     await stripButton(m, 'Purchase Order').click();
     await expect(m.getByText(/Purchase Order.*only/)).toBeVisible({ timeout: 10_000 });
     await expect
-      .poll(async () => (await rows(m).locator('td:nth-child(2)').allTextContents()).map((s) => s.trim()), { timeout: 15_000 })
+      .poll(
+        async () =>
+          (await rows(m).locator('td:nth-child(2)').allTextContents()).map((s) => s.trim()),
+        { timeout: 15_000 },
+      )
       .toEqual(new Array(json!.counts['purchase-order']).fill('Purchase Order'));
     await expect(stripButton(m, 'Purchase Request')).toBeVisible();
     expect(await stripCount(m, 'Purchase Request')).toBe(prCount);
@@ -397,7 +483,9 @@ test.describe('Global Search v3 — popup under the top bar', () => {
   });
 
   // ── 6. Row click → detail; popup gone; box empty ─────────────────────────
-  test('6. row click opens the detail page, closes the popup and empties the box', async ({ page }, testInfo) => {
+  test('6. row click opens the detail page, closes the popup and empties the box', async ({
+    page,
+  }, testInfo) => {
     await gotoPage(page, HOST_PAGE);
     await openPopup(page, 'IN-PR');
     await waitRows(modal(page));
@@ -439,7 +527,9 @@ test.describe('Global Search v3 — popup under the top bar', () => {
   });
 
   // ── 7. Register landings ─────────────────────────────────────────────────
-  test('7. register kinds open their host list filtered to the code; popup gone', async ({ page }, testInfo) => {
+  test('7. register kinds open their host list filtered to the code; popup gone', async ({
+    page,
+  }, testInfo) => {
     const found: Record<string, Row> = {};
     const missing: string[] = [];
     for (const kind of Object.keys(REGISTER_KINDS)) {
@@ -452,7 +542,10 @@ test.describe('Global Search v3 — popup under the top bar', () => {
       if (hit) found[kind] = hit;
       else missing.push(kind);
     }
-    console.log('register kinds with data: ' + JSON.stringify(Object.fromEntries(Object.entries(found).map(([k, v]) => [k, v.docNo]))));
+    console.log(
+      'register kinds with data: ' +
+        JSON.stringify(Object.fromEntries(Object.entries(found).map(([k, v]) => [k, v.docNo]))),
+    );
     console.log('register kinds with NO rows on the test DB: ' + missing.join(', '));
     expect(Object.keys(found).length, 'at least one register kind has data').toBeGreaterThan(0);
 
@@ -467,20 +560,32 @@ test.describe('Global Search v3 — popup under the top bar', () => {
       await expect(row).toBeVisible();
       await expect(row).toHaveAttribute('title', 'Open in its register');
       await row.click();
-      await expect(page).toHaveURL(new RegExp(spec.to.replace(/\//g, '\\/') + '\\?'), { timeout: 20_000 });
+      await expect(page).toHaveURL(new RegExp(spec.to.replace(/\//g, '\\/') + '\\?'), {
+        timeout: 20_000,
+      });
       await expect(overlay(page)).toHaveCount(0);
       const url = new URL(page.url());
-      for (const [k, v] of Object.entries(spec.params(r.docNo, r.id))) expect(url.searchParams.get(k), `${kind}: ?${k}`).toBe(v);
+      for (const [k, v] of Object.entries(spec.params(r.docNo, r.id)))
+        expect(url.searchParams.get(k), `${kind}: ?${k}`).toBe(v);
       expect(url.searchParams.has('q'), `${kind}: no ?q leak`).toBe(false);
       await expect(box(page)).toHaveValue('');
       if (kind === 'task') {
         await expect(page.locator('[role=dialog]').first()).toBeVisible({ timeout: 20_000 });
       } else {
         await expect
-          .poll(() => page.locator('input').evaluateAll((els, v) => els.some((e) => (e as HTMLInputElement).value === v), r.docNo), {
-            timeout: 20_000,
-            message: `${kind}: host page search box pre-filled with ${r.docNo}`,
-          })
+          .poll(
+            () =>
+              page
+                .locator('input')
+                .evaluateAll(
+                  (els, v) => els.some((e) => (e as HTMLInputElement).value === v),
+                  r.docNo,
+                ),
+            {
+              timeout: 20_000,
+              message: `${kind}: host page search box pre-filled with ${r.docNo}`,
+            },
+          )
           .toBe(true);
       }
       console.log(`${kind}: ${r.docNo} → ${url.pathname}${url.search}`);
@@ -494,7 +599,9 @@ test.describe('Global Search v3 — popup under the top bar', () => {
   });
 
   // ── 8. Close paths ───────────────────────────────────────────────────────
-  test('8. close paths: ✕ and backdrop keep the text and refocus; Escape clears; ✕ within the debounce does not reopen; Enter reopens', async ({ page }) => {
+  test('8. close paths: ✕ and backdrop keep the text and refocus; Escape clears; ✕ within the debounce does not reopen; Enter reopens', async ({
+    page,
+  }) => {
     await gotoPage(page, HOST_PAGE);
     const urlBefore = page.url();
 
@@ -518,7 +625,9 @@ test.describe('Global Search v3 — popup under the top bar', () => {
     await overlay(page).click({ position: { x: 2, y: 2 } });
     await expect(overlay(page)).toHaveCount(0);
     await expect(box(page)).toHaveValue('IN-PR');
-    await expect.poll(() => isBoxActive(page), { message: 'box focused after backdrop click' }).toBe(true);
+    await expect
+      .poll(() => isBoxActive(page), { message: 'box focused after backdrop click' })
+      .toBe(true);
 
     // Escape in the box: closed AND empty.
     await box(page).press('Enter');
@@ -538,7 +647,14 @@ test.describe('Global Search v3 — popup under the top bar', () => {
     await expect(overlay(page)).toHaveCount(0);
     await page.waitForTimeout(600);
     await expect(overlay(page), 'popup stays closed 600 ms after ✕').toHaveCount(0);
-    console.log('Enter → ✕ took ' + closedAt + ' ms after the term was set' + (closedAt <= 300 ? ' (inside the debounce)' : ' (after the debounce — reopen guard not exercised)'));
+    console.log(
+      'Enter → ✕ took ' +
+        closedAt +
+        ' ms after the term was set' +
+        (closedAt <= 300
+          ? ' (inside the debounce)'
+          : ' (after the debounce — reopen guard not exercised)'),
+    );
     await expect(box(page)).toHaveValue('IN-PR');
     await box(page).press('Enter');
     await expect(overlay(page)).toBeVisible({ timeout: 3_000 });
@@ -547,7 +663,9 @@ test.describe('Global Search v3 — popup under the top bar', () => {
   });
 
   // ── 9. Navigation with the popup open ────────────────────────────────────
-  test('9. navigating with the popup open closes it (topbar link); what a sidebar click does while the popup is open', async ({ page }) => {
+  test('9. navigating with the popup open closes it (topbar link); what a sidebar click does while the popup is open', async ({
+    page,
+  }) => {
     await gotoPage(page, HOST_PAGE);
     await openPopup(page, 'IN-PR');
     await waitRows(modal(page));
@@ -571,11 +689,22 @@ test.describe('Global Search v3 — popup under the top bar', () => {
     const hit = await page.evaluate(
       ({ x, y }) => {
         const el = document.elementFromPoint(x, y);
-        return { inOverlay: el?.closest('.gs-overlay') !== null, inModal: el?.closest('.gs-overlay .modal') !== null, tag: el?.tagName ?? null };
+        return {
+          inOverlay: el?.closest('.gs-overlay') !== null,
+          inModal: el?.closest('.gs-overlay .modal') !== null,
+          tag: el?.tagName ?? null,
+        };
       },
       { x: db!.x + db!.width / 2, y: db!.y + db!.height / 2 },
     );
-    console.log('sidebar Dashboard link at (' + Math.round(db!.x + db!.width / 2) + ',' + Math.round(db!.y + db!.height / 2) + ') is under: ' + JSON.stringify(hit));
+    console.log(
+      'sidebar Dashboard link at (' +
+        Math.round(db!.x + db!.width / 2) +
+        ',' +
+        Math.round(db!.y + db!.height / 2) +
+        ') is under: ' +
+        JSON.stringify(hit),
+    );
     await page.mouse.click(db!.x + db!.width / 2, db!.y + db!.height / 2);
     await page.waitForTimeout(500);
     if (!hit.inOverlay) {
@@ -585,7 +714,9 @@ test.describe('Global Search v3 — popup under the top bar', () => {
     } else if (hit.inModal) {
       await expect(overlay(page), 'click swallowed by the popup body').toHaveCount(1);
       expect(page.url()).toContain(HOST_PAGE);
-      console.log('SIDEBAR NOT REACHABLE: the popup body covers the sidebar; the click did nothing (popup open, URL unchanged). Close the popup first (✕ / Escape / backdrop).');
+      console.log(
+        'SIDEBAR NOT REACHABLE: the popup body covers the sidebar; the click did nothing (popup open, URL unchanged). Close the popup first (✕ / Escape / backdrop).',
+      );
       await box(page).press('Escape');
       await expect(overlay(page)).toHaveCount(0);
       await dash.click();
@@ -593,28 +724,38 @@ test.describe('Global Search v3 — popup under the top bar', () => {
     } else {
       await expect(overlay(page), 'backdrop took the click → popup closed').toHaveCount(0);
       expect(page.url()).toContain(HOST_PAGE);
-      console.log('sidebar covered by the BACKDROP: first click closes the popup, second follows the link');
+      console.log(
+        'sidebar covered by the BACKDROP: first click closes the popup, second follows the link',
+      );
       await dash.click();
       await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
     }
   });
 
   // ── 10. Deep link /search still renders the page layout ──────────────────
-  test('10. /search?q=IN-PR deep link keeps the page layout (sticky band + strip + table)', async ({ page }) => {
+  test('10. /search?q=IN-PR deep link keeps the page layout (sticky band + strip + table)', async ({
+    page,
+  }) => {
     await gotoPage(page, '/search?q=IN-PR');
     await expect(overlay(page)).toHaveCount(0);
     await expect(page.locator('.section-hdr', { hasText: /^Search$/ })).toBeVisible();
-    await expect(page.getByText(/Results for “IN-PR” — \d+ match/)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/Results for “IN-PR” — \d+ match/)).toBeVisible({
+      timeout: 20_000,
+    });
     await expect(stripButton(page, 'Purchase Request')).toBeVisible();
     await expect(table(page).locator('thead th')).toHaveText(HEADERS);
     await waitRows(page);
-    const sticky = await page.locator('.section-hdr', { hasText: /^Search$/ }).evaluate((el) => getComputedStyle(el.parentElement!.parentElement!).position);
+    const sticky = await page
+      .locator('.section-hdr', { hasText: /^Search$/ })
+      .evaluate((el) => getComputedStyle(el.parentElement!.parentElement!).position);
     expect(sticky).toBe('sticky');
     await noHorizontalScroll(page, '/search?q=IN-PR');
   });
 
   // ── 11. Guards + stale guard ─────────────────────────────────────────────
-  test('11. guards: one letter opens nothing, no results, truncation note follows the API flag; stale guard', async ({ page }) => {
+  test('11. guards: one letter opens nothing, no results, truncation note follows the API flag; stale guard', async ({
+    page,
+  }) => {
     await gotoPage(page, HOST_PAGE);
     await box(page).click();
     await box(page).fill('I');
@@ -630,10 +771,15 @@ test.describe('Global Search v3 — popup under the top bar', () => {
     await box(page).fill('heat');
     await expect(modal(page).locator('.modal-hdr')).toContainText('Search — “heat”');
     await waitRows(modal(page));
-    await expect.poll(() => rows(modal(page)).count(), { timeout: 15_000 }).toBe(heat.json!.items.length);
+    await expect
+      .poll(() => rows(modal(page)).count(), { timeout: 15_000 })
+      .toBe(heat.json!.items.length);
     const note = modal(page).getByText(/^Showing the first \d+ — narrow it down/);
-    console.log('"heat": API items=' + heat.json!.items.length + ' truncated=' + heat.json!.truncated);
-    if (heat.json!.truncated) await expect(note).toContainText('Showing the first ' + heat.json!.items.length);
+    console.log(
+      '"heat": API items=' + heat.json!.items.length + ' truncated=' + heat.json!.truncated,
+    );
+    if (heat.json!.truncated)
+      await expect(note).toContainText('Showing the first ' + heat.json!.items.length);
     else await expect(note).toHaveCount(0);
 
     // Stale guard: IN-PR rows → retype zzqq; once the popup header says zzqq,
@@ -651,7 +797,9 @@ test.describe('Global Search v3 — popup under the top bar', () => {
         const hdr = document.querySelector('.gs-overlay .modal-hdr')?.textContent ?? '';
         const tbody = document.querySelector('.gs-overlay .gs-results tbody');
         const stale = tbody
-          ? Array.from(tbody.querySelectorAll('tr[title] td:nth-child(3) span.mono.fw-700')).filter((s) => (s.textContent ?? '').startsWith('IN-PR')).length
+          ? Array.from(tbody.querySelectorAll('tr[title] td:nth-child(3) span.mono.fw-700')).filter(
+              (s) => (s.textContent ?? '').startsWith('IN-PR'),
+            ).length
           : 0;
         return { hdr, text: tbody?.textContent ?? '', stale };
       });
@@ -659,11 +807,17 @@ test.describe('Global Search v3 — popup under the top bar', () => {
         expect(st.stale, `poll ${polls}: no IN-PR row once the term is zzqq`).toBe(0);
         const searching = st.text.includes('Searching…');
         const none = st.text.includes('No results for “zzqq”');
-        expect(searching || none, `poll ${polls}: Searching… or No results (got: ${st.text.slice(0, 100)})`).toBe(true);
+        expect(
+          searching || none,
+          `poll ${polls}: Searching… or No results (got: ${st.text.slice(0, 100)})`,
+        ).toBe(true);
         if (searching) sawSearching = true;
         if (none) break;
       }
-      if (Date.now() > deadline) throw new Error('never reached No results for "zzqq" (' + st.hdr + ' / ' + st.text.slice(0, 100) + ')');
+      if (Date.now() > deadline)
+        throw new Error(
+          'never reached No results for "zzqq" (' + st.hdr + ' / ' + st.text.slice(0, 100) + ')',
+        );
       await page.waitForTimeout(25);
     }
     console.log('stale-guard polls: ' + polls + ', saw "Searching…": ' + sawSearching);
@@ -673,33 +827,46 @@ test.describe('Global Search v3 — popup under the top bar', () => {
   // ── 12. API gate ─────────────────────────────────────────────────────────
   test('12. API: q too short → 400, no token → 401', async ({ page }) => {
     await gotoPage(page, '/');
-    const short = await page.request.get(API_BASE + '/global-search?q=a', { headers: { authorization: 'Bearer ' + (await bearer(page)) } });
+    const short = await page.request.get(API_BASE + '/global-search?q=a', {
+      headers: { authorization: 'Bearer ' + (await bearer(page)) },
+    });
     expect(short.status()).toBe(400);
     const anon = await page.request.get(API_BASE + '/global-search?q=ab');
     expect(anon.status()).toBe(401);
   });
 
   // ── 13. Layout at 1280×800 ───────────────────────────────────────────────
-  test('13. no horizontal scrollbar on the page under the popup nor inside the popup; every Doc No. inside the viewport', async ({ page }) => {
+  test('13. no horizontal scrollbar on the page under the popup nor inside the popup; every Doc No. inside the viewport', async ({
+    page,
+  }) => {
     await gotoPage(page, HOST_PAGE);
     await openPopup(page, 'IN-PR');
     await waitRows(modal(page));
     await noHorizontalScroll(page, HOST_PAGE + ' under the popup');
     const m = await modal(page).evaluate((el) => {
       const wrap = el.querySelector('.tbl-wrap') as HTMLElement;
-      const spans = Array.from(el.querySelectorAll('tbody tr[title] td:nth-child(3) span.mono.fw-700')) as HTMLElement[];
+      const spans = Array.from(
+        el.querySelectorAll('tbody tr[title] td:nth-child(3) span.mono.fw-700'),
+      ) as HTMLElement[];
       return {
         modalScrollW: el.scrollWidth,
         modalClientW: el.clientWidth,
         wrapScrollW: wrap.scrollWidth,
         wrapClientW: wrap.clientWidth,
         vw: window.innerWidth,
-        edges: spans.map((s) => ({ l: Math.round(s.getBoundingClientRect().left), r: Math.round(s.getBoundingClientRect().right) })),
+        edges: spans.map((s) => ({
+          l: Math.round(s.getBoundingClientRect().left),
+          r: Math.round(s.getBoundingClientRect().right),
+        })),
       };
     });
     console.log('popup widths: ' + JSON.stringify({ ...m, edges: m.edges.slice(0, 3) }));
-    expect(m.modalScrollW, 'popup .modal no sideways scroll').toBeLessThanOrEqual(m.modalClientW + 1);
-    expect(m.wrapScrollW, 'popup .tbl-wrap no sideways scroll').toBeLessThanOrEqual(m.wrapClientW + 1);
+    expect(m.modalScrollW, 'popup .modal no sideways scroll').toBeLessThanOrEqual(
+      m.modalClientW + 1,
+    );
+    expect(m.wrapScrollW, 'popup .tbl-wrap no sideways scroll').toBeLessThanOrEqual(
+      m.wrapClientW + 1,
+    );
     expect(m.edges.length).toBeGreaterThan(0);
     for (const e of m.edges) {
       expect(e.l).toBeGreaterThanOrEqual(0);
@@ -708,7 +875,9 @@ test.describe('Global Search v3 — popup under the top bar', () => {
   });
 
   // ── 14. Escape on a guarded form ─────────────────────────────────────────
-  test('14. Escape with the popup open on a guarded create form closes the popup without the exit-guard prompt', async ({ page }) => {
+  test('14. Escape with the popup open on a guarded create form closes the popup without the exit-guard prompt', async ({
+    page,
+  }) => {
     await gotoPage(page, '/sales-orders/new');
     await openPopup(page, 'IN-PR');
     const m = modal(page);
@@ -728,7 +897,9 @@ test.describe('Global Search v3 — popup under the top bar', () => {
     await page.locator('#topbar').getByRole('link', { name: 'Password' }).click();
     const guard = page.locator('[role=alertdialog]');
     if (await guard.count()) {
-      console.log('exit guard asked on leaving /sales-orders/new — accepting (nothing was created)');
+      console.log(
+        'exit guard asked on leaving /sales-orders/new — accepting (nothing was created)',
+      );
       await guard.getByRole('button', { name: 'Exit' }).click();
     }
     await expect(page).toHaveURL(/\/change-password/, { timeout: 20_000 });
@@ -736,9 +907,18 @@ test.describe('Global Search v3 — popup under the top bar', () => {
 
   // ── 15. Restricted user ──────────────────────────────────────────────────
   test('15. restricted user does not see kinds outside their department', async ({ browser }) => {
-    const email = process.env.E2E_VIEWER_EMAIL ?? process.env.E2E_PURCHASE_EMAIL ?? process.env.E2E_RESTRICTED_EMAIL;
-    const password = process.env.E2E_VIEWER_PASSWORD ?? process.env.E2E_PURCHASE_PASSWORD ?? process.env.E2E_RESTRICTED_PASSWORD;
-    test.skip(!email || !password, 'no second (non-admin) login in apps/web/.env.e2e — not covered');
+    const email =
+      process.env.E2E_VIEWER_EMAIL ??
+      process.env.E2E_PURCHASE_EMAIL ??
+      process.env.E2E_RESTRICTED_EMAIL;
+    const password =
+      process.env.E2E_VIEWER_PASSWORD ??
+      process.env.E2E_PURCHASE_PASSWORD ??
+      process.env.E2E_RESTRICTED_PASSWORD;
+    test.skip(
+      !email || !password,
+      'no second (non-admin) login in apps/web/.env.e2e — not covered',
+    );
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
     try {
@@ -750,7 +930,9 @@ test.describe('Global Search v3 — popup under the top bar', () => {
       await openPopup(page, 'IN-SO');
       await expect(modal(page).getByText('Searching…')).toHaveCount(0, { timeout: 15_000 });
       await expect(stripButton(modal(page), 'Sales Order')).toHaveCount(0);
-      await expect(rows(modal(page)).filter({ has: page.locator('td', { hasText: /^Sales Order$/ }) })).toHaveCount(0);
+      await expect(
+        rows(modal(page)).filter({ has: page.locator('td', { hasText: /^Sales Order$/ }) }),
+      ).toHaveCount(0);
     } finally {
       await ctx.close();
     }

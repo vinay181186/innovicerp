@@ -21,6 +21,11 @@ test-results-*/
 playwright-report/
 blob-report/
 .playwright/
+# Playwright login state holds a live session token — never commit it.
+.auth.json
+**/e2e/*/.auth.json
+**/e2e/**/results/
+**/e2e/**/shots/
 .turbo/
 .cache/
 .claude/*

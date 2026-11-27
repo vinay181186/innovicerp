@@ -140,9 +140,7 @@ test.describe('Delivery Challan — Vehicle No field', () => {
       .locator('.form-grid-3')
       .filter({ has: page.locator('#dc-transport') })
       .filter({ has: page.locator('#dc-vehicle-no') });
-    await expect
-      .soft(sharedGrid, 'Transporter and Vehicle No share one field grid')
-      .toHaveCount(1);
+    await expect.soft(sharedGrid, 'Transporter and Vehicle No share one field grid').toHaveCount(1);
 
     // ── ASSERT 4: typing works. If value/onChange were mis-wired (a stale
     //    controlled input) the text would bounce straight back out.
@@ -185,10 +183,9 @@ test.describe('Delivery Challan — Vehicle No field', () => {
     });
     const dcCode = (await dcLink.innerText()).trim();
     await dcLink.click();
-    await expect(page, 'opened a DC detail page').toHaveURL(
-      /\/delivery-challans\/[0-9a-f]{8}-/i,
-      { timeout: 20_000 },
-    );
+    await expect(page, 'opened a DC detail page').toHaveURL(/\/delivery-challans\/[0-9a-f]{8}-/i, {
+      timeout: 20_000,
+    });
     await page.waitForTimeout(3000);
     // eslint-disable-next-line no-console
     console.log(`>> reading DC ${dcCode}`);
@@ -342,7 +339,9 @@ test.describe('Delivery Challan — Vehicle No field', () => {
       // the reason in a red banner just above it.
       const banner = page
         .locator('div')
-        .filter({ hasText: /Cannot outsource|cannot ship|Failed to create DC|Could not save DC|validation/i })
+        .filter({
+          hasText: /Cannot outsource|cannot ship|Failed to create DC|Could not save DC|validation/i,
+        })
         .last();
       const message = (await banner.innerText().catch(() => '')).trim();
       throw new Error(

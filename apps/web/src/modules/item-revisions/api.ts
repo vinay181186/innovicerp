@@ -11,8 +11,6 @@
 
 import type {
   CreateDrawingRevInput,
-  DecideDrawingCorrectionInput,
-  DrawingCorrection,
   ItemRevision,
   ItemRevisionChange,
   ItemRevisionDetail,
@@ -34,6 +32,7 @@ import { ApiError, apiFetch } from '@/lib/api';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
+import { approvalsKeys } from '@/modules/approvals/api';
 import { dashboardKeys } from '@/modules/dashboard/api';
 import { jobWorkOrdersKeys } from '@/modules/job-work-orders/api';
 import { routeCardsKeys } from '@/modules/route-cards/api';
@@ -62,25 +61,21 @@ export const itemRevisionKeys = {
 };
 
 /** ADR-290 — the Drawing Register list (GET /item-revisions/register). Its
- *  own root, declared 'poll' in REFRESH_POLICY: other people's approvals and
- *  releases change it while it is open, and item_revisions is not live. */
+ *  own root, declared 'poll' in REFRESH_POLICY: other people's verifies and
+ *  uploads change it while it is open, and item_revisions is not live. */
 export const drawingRegisterKeys = {
   all: ['drawing-register'] as const,
   lists: () => [...drawingRegisterKeys.all, 'list'] as const,
   list: (q: Partial<ListDrawingRegisterQuery>) => [...drawingRegisterKeys.lists(), q] as const,
 };
 
-/** An Item + Drawing Rev detail as the server now sends it (ADR-290): the
- *  shared detail schema plus the drawing corrections waiting / decided. */
-export type ItemRevisionDetailWithCorrections = ItemRevisionDetail & {
-  corrections?: DrawingCorrection[];
-};
-
-/** Every root that shows a Rev's release status: the register, the drawing
- *  page / SO-JWSO look-ups (item-revisions) and the home dashboard. */
+/** Every root that shows a Rev's Drawing Rev Status (ADR-323): the register,
+ *  the drawing page / SO-JWSO-Route Card look-ups (item-revisions), Approvals
+ *  ("Drawing to verify") and the home dashboard checks. */
 function invalidateReleaseViews(qc: ReturnType<typeof useQueryClient>): void {
   void qc.invalidateQueries({ queryKey: drawingRegisterKeys.all });
   void qc.invalidateQueries({ queryKey: itemRevisionKeys.all });
+  void qc.invalidateQueries({ queryKey: approvalsKeys.all });
   void qc.invalidateQueries({ queryKey: dashboardKeys.all });
 }
 
@@ -93,6 +88,7 @@ export function fetchDrawingRegisterPage(
   const p = new URLSearchParams();
   if (q.search) p.set('search', q.search);
   if (q.status) p.set('status', q.status);
+  if (q.pdf) p.set('pdf', q.pdf);
   if (q.sf) p.set('sf', q.sf);
   p.set('limit', String(q.limit ?? 25));
   p.set('offset', String(q.offset ?? 0));
@@ -114,7 +110,7 @@ export interface RevStatusActionVars {
   input: RevStatusActionInput;
 }
 
-/** POST /item-revisions/:id/{submit|approve|reject|release|obsolete}. A 409
+/** POST /item-revisions/:id/{verify|unverify|obsolete}. A 409
  *  means someone acted first: the error message is shown by the caller and
  *  the lists are re-read so the screen shows what actually happened. */
 export function useRevStatusAction() {
@@ -122,9 +118,12 @@ export function useRevStatusAction() {
   return useMutation<ItemRevision, Error, RevStatusActionVars>({
     mutationFn: ({ id, action, input }) =>
       apiFetch<ItemRevision>(`/item-revisions/${id}/${action}`, { method: 'POST', json: input }),
-    onSuccess: () => {
+    // Returned promise: mutateAsync (the dialog) waits until the drawing page
+    // has re-read, so the header never shows the old status after closing.
+    onSuccess: async () => {
       invalidateReleaseViews(qc);
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      await qc.invalidateQueries({ queryKey: itemRevisionKeys.all });
     },
     onError: (e) => {
       if (e instanceof ApiError && e.status === 409) invalidateReleaseViews(qc);
@@ -133,7 +132,7 @@ export function useRevStatusAction() {
 }
 
 /** POST /item-revisions — a new Item + Drawing Rev added from the Drawing
- *  Register (Drawing Register Entry right). It starts "Not released". 409 when
+ *  Register (Drawing Register Entry right). It starts Unverified. 409 when
  *  that Item + Rev already exists — the caller shows the server's message. */
 export function useCreateDrawingRev(saveKey?: SaveKey) {
   const qc = useQueryClient();
@@ -151,31 +150,6 @@ export function useCreateDrawingRev(saveKey?: SaveKey) {
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
-}
-
-/** POST /item-revisions/corrections/:id/decide — approve / reject a drawing
- *  correction on a released Rev (Drawing Release switch). */
-export function useDecideDrawingCorrection() {
-  const qc = useQueryClient();
-  return useMutation<unknown, Error, { correctionId: string; input: DecideDrawingCorrectionInput }>(
-    {
-      mutationFn: ({ correctionId, input }) =>
-        apiFetch<unknown>(`/item-revisions/corrections/${correctionId}/decide`, {
-          method: 'POST',
-          json: input,
-        }),
-      onSuccess: () => {
-        invalidateReleaseViews(qc);
-        void qc.invalidateQueries({ queryKey: routeCardsKeys.all });
-        void qc.invalidateQueries({ queryKey: salesOrdersKeys.all });
-        void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
-        void qc.invalidateQueries({ queryKey: activityLogKeys.all });
-      },
-      onError: (e) => {
-        if (e instanceof ApiError && e.status === 409) invalidateReleaseViews(qc);
-      },
-    },
-  );
 }
 
 /** The Rev as the server will store it ("b " → "B"), or '' when it is not a
@@ -202,6 +176,9 @@ function useDebounced<T>(value: T, ms: number): T {
 export function useItemRevisionLookup(
   itemId: string | null | undefined,
   rev: string | null | undefined,
+  /** Route Card create (ADR-323): re-read on every return to the window, so a
+   *  Rev added / a PDF uploaded in another tab clears the banner at once. */
+  options?: { freshOnFocus?: boolean },
 ) {
   const cleaned = useDebounced(cleanDrawingRev(rev), 300);
   const id = itemId ?? '';
@@ -212,6 +189,7 @@ export function useItemRevisionLookup(
       return apiFetch<LookupItemRevisionResponse>(`/item-revisions/lookup?${p.toString()}`);
     },
     enabled: Boolean(id && cleaned),
+    ...(options?.freshOnFocus ? { staleTime: 0, refetchOnWindowFocus: 'always' as const } : {}),
   });
 }
 
@@ -238,9 +216,9 @@ export function useItemRevisions(
 /** GET /item-revisions/:id — one record with its drawing history and the
  *  documents that name it. */
 export function useItemRevision(id: string | undefined) {
-  return useQuery<ItemRevisionDetailWithCorrections>({
+  return useQuery<ItemRevisionDetail>({
     queryKey: itemRevisionKeys.detail(id ?? '__missing__'),
-    queryFn: () => apiFetch<ItemRevisionDetailWithCorrections>(`/item-revisions/${id}`),
+    queryFn: () => apiFetch<ItemRevisionDetail>(`/item-revisions/${id}`),
     enabled: Boolean(id),
   });
 }
@@ -274,8 +252,8 @@ export function useReplaceItemRevisionDrawing(id: string) {
     onSuccess: () => {
       // The register itself, and every screen that shows this Item + Rev's
       // drawing: Route Cards and SO / JWSO lines carry the file path too.
-      // ADR-290: a replace can set the Rev back to Not released, or raise a
-      // pending correction — the register and home show both.
+      // ADR-323: a new PDF turns a Verified Rev back to Unverified — the
+      // register, Approvals and home show that.
       invalidateReleaseViews(qc);
       void qc.invalidateQueries({ queryKey: routeCardsKeys.all });
       void qc.invalidateQueries({ queryKey: salesOrdersKeys.all });

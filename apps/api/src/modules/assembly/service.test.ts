@@ -310,9 +310,9 @@ describe('assembly service — unit lifecycle', () => {
   it('markUnitDispatched on already-dispatched unit → ConflictError', async () => {
     const tracker = await service.getAssemblyTracker(soId, admin);
     const u1 = tracker.units.find((u) => u.unitNo === 1)!;
-    await expect(
-      service.markUnitDispatched(u1.id, {}, admin),
-    ).rejects.toBeInstanceOf(ConflictError);
+    await expect(service.markUnitDispatched(u1.id, {}, admin)).rejects.toBeInstanceOf(
+      ConflictError,
+    );
   });
 
   it('undoLastUnit succeeds for the non-dispatched latest unit (#2)', async () => {
@@ -345,9 +345,7 @@ describe('assembly service — unit lifecycle', () => {
     expect(after.rollup.status).toBe('done');
 
     // Now a 6th unit must fail
-    await expect(service.markUnitAssembled(soId, {}, admin)).rejects.toBeInstanceOf(
-      ConflictError,
-    );
+    await expect(service.markUnitAssembled(soId, {}, admin)).rejects.toBeInstanceOf(ConflictError);
   });
 });
 
@@ -368,9 +366,9 @@ describe('assembly service — Equipment-only', () => {
         updatedBy: admin.id,
       })
       .returning();
-    await expect(
-      service.markUnitAssembled(compSo[0]!.id, {}, admin),
-    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(service.markUnitAssembled(compSo[0]!.id, {}, admin)).rejects.toBeInstanceOf(
+      ValidationError,
+    );
   });
 });
 
@@ -402,10 +400,17 @@ describe('assembly service — assembly consumes component stock (ADR-115)', () 
 
     // The lifecycle describe above fills the fixture to 5 of 5, so make room
     // for one more unit and put the order qty back afterwards.
-    await db.update(salesOrderLines).set({ orderQty: 6 }).where(eq(salesOrderLines.salesOrderId, soId));
+    await db
+      .update(salesOrderLines)
+      .set({ orderQty: 6 })
+      .where(eq(salesOrderLines.salesOrderId, soId));
     try {
       // Fixture BOM: CHILD-X at 1/set, CHILD-Y at 2/set → one unit eats 1 + 2.
-      const unit = await service.markUnitAssembled(soId, { serialNo: `${TEST_PREFIX}SN-STK` }, admin);
+      const unit = await service.markUnitAssembled(
+        soId,
+        { serialNo: `${TEST_PREFIX}SN-STK` },
+        admin,
+      );
 
       const afterAssemble = await readLedger(unit.unitNo);
       expect(afterAssemble).toHaveLength(2);
@@ -423,8 +428,13 @@ describe('assembly service — assembly consumes component stock (ADR-115)', () 
       const net = afterUndo.reduce((s, r) => s + (r.txnType === 'in' ? r.qty : -r.qty), 0);
       expect(net).toBe(0);
     } finally {
-      await db.update(salesOrderLines).set({ orderQty: 5 }).where(eq(salesOrderLines.salesOrderId, soId));
-      await db.delete(storeTransactions).where(like(storeTransactions.sourceRef, `%${TEST_PREFIX}%`));
+      await db
+        .update(salesOrderLines)
+        .set({ orderQty: 5 })
+        .where(eq(salesOrderLines.salesOrderId, soId));
+      await db
+        .delete(storeTransactions)
+        .where(like(storeTransactions.sourceRef, `%${TEST_PREFIX}%`));
     }
   });
 });
@@ -508,7 +518,10 @@ describe('assembly service — listAssemblies', () => {
       .from(assemblyUnits)
       .where(and(eq(assemblyUnits.salesOrderId, soId), isNull(assemblyUnits.deletedAt)));
     const liveIds = live.map((r) => r.id);
-    await db.update(assemblyUnits).set({ deletedAt: new Date() }).where(inArray(assemblyUnits.id, liveIds));
+    await db
+      .update(assemblyUnits)
+      .set({ deletedAt: new Date() })
+      .where(inArray(assemblyUnits.id, liveIds));
     try {
       const result = await service.listAssemblies(admin);
       const row = result.items.find((r) => r.soCode === `${TEST_PREFIX}SO-EQ`)!;
@@ -516,7 +529,10 @@ describe('assembly service — listAssemblies', () => {
       expect(row.canAssemble).toBe(5);
       expect(row.status).toBe('ready');
     } finally {
-      await db.update(assemblyUnits).set({ deletedAt: null }).where(inArray(assemblyUnits.id, liveIds));
+      await db
+        .update(assemblyUnits)
+        .set({ deletedAt: null })
+        .where(inArray(assemblyUnits.id, liveIds));
     }
   });
 });
@@ -535,8 +551,26 @@ describe('assembly service — start / stop (WIP, ADR-129)', () => {
     const ins = await db
       .insert(items)
       .values([
-        { companyId: admin.companyId!, code: `${TEST_PREFIX}WIP-CX`, name: 'WIP Child X', revision: 'A', uom: 'NOS', itemType: 'component', createdBy: admin.id, updatedBy: admin.id },
-        { companyId: admin.companyId!, code: `${TEST_PREFIX}WIP-CY`, name: 'WIP Child Y', revision: 'A', uom: 'NOS', itemType: 'component', createdBy: admin.id, updatedBy: admin.id },
+        {
+          companyId: admin.companyId!,
+          code: `${TEST_PREFIX}WIP-CX`,
+          name: 'WIP Child X',
+          revision: 'A',
+          uom: 'NOS',
+          itemType: 'component',
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        },
+        {
+          companyId: admin.companyId!,
+          code: `${TEST_PREFIX}WIP-CY`,
+          name: 'WIP Child Y',
+          revision: 'A',
+          uom: 'NOS',
+          itemType: 'component',
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        },
       ])
       .returning();
     wipChildX = ins[0]!.id;
@@ -547,25 +581,78 @@ describe('assembly service — start / stop (WIP, ADR-129)', () => {
     ]);
     const bom = await db
       .insert(bomMasters)
-      .values({ companyId: admin.companyId!, bomNo: `${TEST_PREFIX}WIP-BOM`, bomName: 'WIP BOM', revision: 1, status: 'active', createdBy: admin.id, updatedBy: admin.id })
+      .values({
+        companyId: admin.companyId!,
+        bomNo: `${TEST_PREFIX}WIP-BOM`,
+        bomName: 'WIP BOM',
+        revision: 1,
+        status: 'active',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
       .returning();
     await db.insert(bomMasterLines).values([
-      { companyId: admin.companyId!, bomMasterId: bom[0]!.id, lineNo: 1, childItemId: wipChildX, qtyPerSet: '1', bomType: 'manufacture', createdBy: admin.id, updatedBy: admin.id },
-      { companyId: admin.companyId!, bomMasterId: bom[0]!.id, lineNo: 2, childItemId: wipChildY, qtyPerSet: '1', bomType: 'manufacture', createdBy: admin.id, updatedBy: admin.id },
+      {
+        companyId: admin.companyId!,
+        bomMasterId: bom[0]!.id,
+        lineNo: 1,
+        childItemId: wipChildX,
+        qtyPerSet: '1',
+        bomType: 'manufacture',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      },
+      {
+        companyId: admin.companyId!,
+        bomMasterId: bom[0]!.id,
+        lineNo: 2,
+        childItemId: wipChildY,
+        qtyPerSet: '1',
+        bomType: 'manufacture',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      },
     ]);
     const so = await db
       .insert(salesOrders)
-      .values({ companyId: admin.companyId!, code: `${TEST_PREFIX}WIP-SO`, soDate: '2026-05-21', customerName: 'WIP Cust', type: 'equipment', status: 'open', gstPercent: '18.00', bomMasterId: bom[0]!.id, createdBy: admin.id, updatedBy: admin.id })
+      .values({
+        companyId: admin.companyId!,
+        code: `${TEST_PREFIX}WIP-SO`,
+        soDate: '2026-05-21',
+        customerName: 'WIP Cust',
+        type: 'equipment',
+        status: 'open',
+        gstPercent: '18.00',
+        bomMasterId: bom[0]!.id,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
       .returning();
     wipSoId = so[0]!.id;
-    await db.insert(salesOrderLines).values({ companyId: admin.companyId!, salesOrderId: wipSoId, lineNo: 1, itemId: wipChildX, partName: 'WIP Equip', uom: 'NOS', orderQty: 5, rate: '1000', status: 'open', createdBy: admin.id, updatedBy: admin.id });
+    await db.insert(salesOrderLines).values({
+      companyId: admin.companyId!,
+      salesOrderId: wipSoId,
+      lineNo: 1,
+      itemId: wipChildX,
+      partName: 'WIP Equip',
+      uom: 'NOS',
+      orderQty: 5,
+      rate: '1000',
+      status: 'open',
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    });
   });
 
   afterAll(async () => {
     // Assembly-consume ledger + stock rows for the WIP children (the top-level
     // teardown deletes the TEST_PREFIX SO/BOM/items but not these).
-    await db.delete(storeTransactions).where(inArray(storeTransactions.itemId, [wipChildX, wipChildY]));
-    await db.delete(itemStockBalances).where(inArray(itemStockBalances.itemId, [wipChildX, wipChildY]));
+    await db
+      .delete(storeTransactions)
+      .where(inArray(storeTransactions.itemId, [wipChildX, wipChildY]));
+    await db
+      .delete(itemStockBalances)
+      .where(inArray(itemStockBalances.itemId, [wipChildX, wipChildY]));
   });
 
   it('start puts the batch in WIP with no stock debit', async () => {
@@ -591,9 +678,9 @@ describe('assembly service — start / stop (WIP, ADR-129)', () => {
   });
 
   it('an in-progress batch cannot be dispatched', async () => {
-    await expect(
-      service.markUnitDispatched(startedUnitId, {}, admin),
-    ).rejects.toBeInstanceOf(ConflictError);
+    await expect(service.markUnitDispatched(startedUnitId, {}, admin)).rejects.toBeInstanceOf(
+      ConflictError,
+    );
   });
 
   it('stop completes the good qty and leaves the rest in assembly', async () => {

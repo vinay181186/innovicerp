@@ -3,6 +3,7 @@
 **Migrations here are hand-authored raw SQL files, applied manually. `drizzle-kit generate` and `drizzle-kit migrate` are NOT the mechanism — do not use them to author or apply migrations.**
 
 ## Why (the history)
+
 `drizzle-kit migrate` was used only for the first few migrations and then abandoned:
 the DB's `drizzle.__drizzle_migrations` tracking table holds ~5 rows while there are
 70+ `.sql` files here. The old `drizzle-kit` metadata (`meta/_journal.json` + per-migration
@@ -15,6 +16,7 @@ The ~50 missing historical snapshots cannot be reconstructed, so the metadata wa
 than left as a trap. The `.sql` files below are the real, authoritative migration history.
 
 ## How to add a migration
+
 1. Create `NNNN_short_description.sql` with the **next free number**: list this folder and take
    the highest number + 1 (do not trust a number written in any doc — parallel branches add files).
    Some historical numbers have two files; ignore that — just continue past the highest number.
@@ -27,6 +29,7 @@ than left as a trap. The `.sql` files below are the real, authoritative migratio
    types match the DB.
 
 ## How to apply a migration
+
 Use the project's own runner, `apps/api/src/db/apply-sql.ts` (its header is the authority). It
 splits on `--> statement-breakpoint`, runs the file in ONE transaction (unless the file carries
 `-- no-transaction`, has its own `BEGIN;`/`COMMIT;`, or adds an enum value), and records the file
@@ -48,6 +51,7 @@ merges. Code deploys and DB migrations are separate actions: a migration the cod
 be on the database **before** that code deploys.
 
 ## What NOT to do
+
 - Do **not** run `pnpm --filter api db:migrate` or `db:generate` expecting them to work — they
   rely on the removed metadata and will mis-number or fail.
 - Do **not** re-add a `meta/` journal unless you are deliberately re-adopting drizzle-kit-driven

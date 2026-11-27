@@ -67,7 +67,8 @@ export function visibleChecks(a: DashAccess): CheckDef[] {
 
 /** Checks whose lines another check already counts (ADR-279): they show their
  *  own count, but adding them to the menu badge would count a line twice. */
-// ADR-317: des_rev_blocking lists order LINES on Revs the two Rev checks already count.
+// ADR-317 / ADR-323: des_rev_blocking lists order LINES with no drawing PDF — a
+// line view of Design work, kept out of the badge (owner contract).
 const NOT_IN_DEPT_TOTAL: ReadonlySet<string> = new Set<DashCheckKey>([
   'plan_pgrn_received',
   'des_rev_blocking',

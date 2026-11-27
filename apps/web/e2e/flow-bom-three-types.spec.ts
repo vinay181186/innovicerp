@@ -96,8 +96,19 @@ async function bannerText(page: Page): Promise<string> {
   for (const loc of [page.locator('.bomx-alert-red'), page.locator('[style*="rgba(239"]')]) {
     const n = Math.min(await loc.count(), 12);
     for (let i = 0; i < n; i++) {
-      if (!(await loc.nth(i).isVisible().catch(() => false))) continue;
-      const t = (await loc.nth(i).innerText().catch(() => '')).trim();
+      if (
+        !(await loc
+          .nth(i)
+          .isVisible()
+          .catch(() => false))
+      )
+        continue;
+      const t = (
+        await loc
+          .nth(i)
+          .innerText()
+          .catch(() => '')
+      ).trim();
       if (t.length > 8 && !/^Cancel$/i.test(t)) return t.replace(/\s+/g, ' ');
     }
   }
@@ -108,12 +119,23 @@ async function bannerText(page: Page): Promise<string> {
 
 test('@bom3 01 — BOM with one child of each type', async ({ page }) => {
   if (state.bomNo) {
-    record({ step: '01', doc: 'BOM', code: state.bomNo, qty: '—', status: 'reused', note: 'E2E_BOM3' });
+    record({
+      step: '01',
+      doc: 'BOM',
+      code: state.bomNo,
+      qty: '—',
+      status: 'reused',
+      note: 'E2E_BOM3',
+    });
     return;
   }
   await page.goto('/bom-masters/new', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  state.bomNo = await page.locator('input[value^="BOM-"]').first().inputValue().catch(() => '');
+  state.bomNo = await page
+    .locator('input[value^="BOM-"]')
+    .first()
+    .inputValue()
+    .catch(() => '');
 
   await page.getByPlaceholder(/Hydraulic Press Assembly/i).fill(`${TAG} three types`);
 
@@ -148,7 +170,9 @@ test('@bom3 01 — BOM with one child of each type', async ({ page }) => {
     await page.waitForTimeout(300);
   }
 
-  await expect(page.getByText(`${CHILDREN.length} of ${CHILDREN.length} lines filled`)).toBeVisible();
+  await expect(
+    page.getByText(`${CHILDREN.length} of ${CHILDREN.length} lines filled`),
+  ).toBeVisible();
 
   await page.getByRole('button', { name: /Save BOM/i }).click();
   await page.waitForTimeout(5000);
@@ -176,7 +200,14 @@ test('@bom3 01 — BOM with one child of each type', async ({ page }) => {
 
 test('@bom3 02 — equipment SO, BOM attaches itself', async ({ page }) => {
   if (state.soCode) {
-    record({ step: '02', doc: 'SO', code: state.soCode, qty: `${SO_QTY}`, status: 'reused', note: 'E2E_SO3' });
+    record({
+      step: '02',
+      doc: 'SO',
+      code: state.soCode,
+      qty: `${SO_QTY}`,
+      status: 'reused',
+      note: 'E2E_SO3',
+    });
     return;
   }
   await page.goto('/sales-orders/new', { waitUntil: 'domcontentloaded' });
@@ -205,7 +236,10 @@ test('@bom3 02 — equipment SO, BOM attaches itself', async ({ page }) => {
 
   const nums = page.locator('input[type="number"]:visible');
   await nums.nth(0).fill(String(SO_QTY));
-  await nums.nth(1).fill(String(RATE)).catch(() => {});
+  await nums
+    .nth(1)
+    .fill(String(RATE))
+    .catch(() => {});
   await page.waitForTimeout(500);
 
   await fillInternalSoNo(page);
@@ -228,7 +262,10 @@ test('@bom3 02 — equipment SO, BOM attaches itself', async ({ page }) => {
 test('@bom3 03 — explode: what does each TYPE spawn?', async ({ page }) => {
   await page.goto('/planning', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await page.getByPlaceholder(/Search/i).first().fill(state.soCode);
+  await page
+    .getByPlaceholder(/Search/i)
+    .first()
+    .fill(state.soCode);
   await page.waitForTimeout(2500);
   await page.getByText(state.soCode).first().click();
   await page.waitForTimeout(2500);
@@ -236,7 +273,14 @@ test('@bom3 03 — explode: what does each TYPE spawn?', async ({ page }) => {
   // BOM Planning is an item in the SO line's ⋯ menu ("BOM Planning (n)").
   const bomRow = await findRowWithMenuItem(page, planningLineRows(page), /^BOM Planning/);
   if (!bomRow) {
-    record({ step: '03', doc: 'BOM explosion', code: '—', qty: '—', status: 'NOT OFFERED', note: 'no BOM Planning button' });
+    record({
+      step: '03',
+      doc: 'BOM explosion',
+      code: '—',
+      qty: '—',
+      status: 'NOT OFFERED',
+      note: 'no BOM Planning button',
+    });
     return;
   }
   await clickRowMenuItem(page, bomRow, /^BOM Planning/);
@@ -247,7 +291,9 @@ test('@bom3 03 — explode: what does each TYPE spawn?', async ({ page }) => {
   for (const c of CHILDREN) {
     const need = c.qtyPerSet * SO_QTY;
     // eslint-disable-next-line no-console
-    console.log(`>> ${c.code} (${c.type}) needs ${c.qtyPerSet}/set × ${SO_QTY} = ${need}; modal shows the code: ${modal.includes(c.code)}`);
+    console.log(
+      `>> ${c.code} (${c.type}) needs ${c.qtyPerSet}/set × ${SO_QTY} = ${need}; modal shows the code: ${modal.includes(c.code)}`,
+    );
     expect(modal, `${c.code} listed in the explosion`).toContain(c.code);
   }
 
@@ -290,7 +336,10 @@ test('@bom3 03 — explode: what does each TYPE spawn?', async ({ page }) => {
     console.log(`>> ${c.code} (${c.type}) → vendor ${vendorText}`);
   }
 
-  await page.getByRole('button', { name: /Create|Plan/i }).last().click();
+  await page
+    .getByRole('button', { name: /Create|Plan/i })
+    .last()
+    .click();
   await page.waitForTimeout(6000);
   const err = await bannerText(page);
   if (err) {
@@ -340,7 +389,14 @@ test('@bom3 04 — how far can the assembly get?', async ({ page }) => {
     }
   }
   if (!picked) {
-    record({ step: '04', doc: 'Dispatch', code: '—', qty: `${SO_QTY}`, status: 'BLOCKED', note: `${state.soCode} not offered` });
+    record({
+      step: '04',
+      doc: 'Dispatch',
+      code: '—',
+      qty: `${SO_QTY}`,
+      status: 'BLOCKED',
+      note: `${state.soCode} not offered`,
+    });
     return;
   }
   await page.waitForTimeout(2500);

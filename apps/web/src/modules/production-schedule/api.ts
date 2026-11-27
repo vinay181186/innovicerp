@@ -22,8 +22,7 @@ function buildQs(q: ProductionScheduleQuery): string {
 export function useProductionSchedule(query: ProductionScheduleQuery) {
   return useQuery<ProductionScheduleResponse>({
     queryKey: productionScheduleKeys.view(query),
-    queryFn: () =>
-      apiFetch<ProductionScheduleResponse>(`/production-schedule?${buildQs(query)}`),
+    queryFn: () => apiFetch<ProductionScheduleResponse>(`/production-schedule?${buildQs(query)}`),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

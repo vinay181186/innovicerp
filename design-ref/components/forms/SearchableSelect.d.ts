@@ -1,5 +1,9 @@
 import * as React from 'react';
-export interface SearchableOption { id: string; code?: string | null; name: string; }
+export interface SearchableOption {
+  id: string;
+  code?: string | null;
+  name: string;
+}
 /**
  * Type-to-search picker for every master/document field (SO, vendor, item, client…). Rows read "CODE — Name".
  * @startingPoint section="Forms" subtitle="Type-to-search master picker" viewport="700x320"

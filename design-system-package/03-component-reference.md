@@ -25,16 +25,38 @@ Load order (`index.css` lines 6–7):
 ### 1.1 Shell containers
 
 ```css
-#app-shell { display: flex; height: 100vh; overflow: hidden; }
-#sidebar {
-  width: var(--sidebar-width); min-width: var(--sidebar-width);   /* 220px */
-  background: var(--bg2); border-right: 1px solid var(--border);
-  display: flex; flex-direction: column; z-index: 10; overflow-y: auto;
+#app-shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
 }
-#main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
-#content { flex: 1; overflow-y: auto; }
-#main > #content { padding: 0 20px 20px; }
-#content > *:first-child { margin-top: 0 !important; }
+#sidebar {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width); /* 220px */
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+  overflow-y: auto;
+}
+#main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+#content {
+  flex: 1;
+  overflow-y: auto;
+}
+#main > #content {
+  padding: 0 20px 20px;
+}
+#content > *:first-child {
+  margin-top: 0 !important;
+}
 ```
 
 - `#content` is the **only** scroll container. `#content > *:first-child { margin-top: 0 !important }`
@@ -56,7 +78,7 @@ colour is what made the header read as three mismatched strips. The chrome close
 #app-header {
   flex-shrink: 0;
   background: var(--bg2);
-  padding-bottom: 6px;   /* the page's top gutter, painted in header colour, never scrolls */
+  padding-bottom: 6px; /* the page's top gutter, painted in header colour, never scrolls */
 }
 ```
 
@@ -87,45 +109,61 @@ One 54px band: logo, Dashboard, twelve module dropdown buttons, then the right c
 
 ```css
 #topnav {
-  min-height: var(--topbar-height);   /* 54px */
-  display: flex; flex-wrap: wrap; align-items: center; gap: 0; padding: 0 12px;
-  border-bottom: 1px solid var(--border); position: relative; z-index: 60;
+  min-height: var(--topbar-height); /* 54px */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  z-index: 60;
 }
 ```
 
-| Class | Purpose | Key declarations |
-| --- | --- | --- |
-| `.tn-logo` / `.tn-logo img` | brand mark | `margin-right: 10px; flex-shrink: 0` · img `height: 24px; width: auto` |
-| `.tn-sec` | module button + its menu | `position: relative; flex-shrink: 0` |
-| `.tn-item` | module button / Dashboard link | `height: 36px; padding: 0 8px; border: 0; background: transparent; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: var(--text2); white-space: nowrap` |
-| `.tn-item:hover` | | `background: var(--bg3); color: var(--text)` |
-| `.tn-item.active` | menu open OR current page in that module | `background: var(--blue3); color: var(--blue); font-weight: 600` |
-| `.tn-caret` | dropdown arrow | `font-size: 9px; opacity: .7` |
-| `.tn-menu` | white card under the button | `position: absolute; top: 42px; left: 0; min-width: 220px; padding: 10px 6px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-drawer, 0 10px 30px rgba(20,28,40,.16)); z-index: 70` |
-| `.tn-menu.flip` | button in right half of screen | `left: auto; right: 0` |
-| `.tn-col` | one group column (Entry / Master / …) | `min-width: 200px; padding: 4px 8px` |
-| `.tn-col + .tn-col` | | `border-left: 1px solid var(--border)` |
-| `.tn-col-label` | group heading | `font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); font-weight: 700; padding: 4px 10px 6px` |
-| `.tn-link` | page link in the menu | `padding: 7px 10px; border-radius: 7px; color: var(--text); font-size: 13px; white-space: nowrap` |
-| `.tn-link:hover` | | `background: var(--bg3)` |
-| `.tn-link.on` | current page | `background: var(--blue3); color: var(--blue); font-weight: 600` |
-| `.tn-link-icon` | | `width: 18px; text-align: center; flex-shrink: 0` |
-| `.tn-right` | right cluster | `margin-left: auto; display: flex; gap: 8px; flex-shrink: 0` |
-| `.tn-sync` | sync indicator wrapper | `display: inline-flex; padding: 0 2px` |
-| `.tn-iconbtn` | icon-only header button | `padding: 0 8px; height: 32px` |
-| `.tn-avatar` | | `width/height: 30px; border-radius: 50%; background: var(--blue3); color: var(--blue); font-weight: 700; font-size: 12px; cursor: default` |
-| `#topnav .innovic-input.gs-input` | header search width | `width: 190px` |
+| Class                             | Purpose                                  | Key declarations                                                                                                                                                                                                                           |
+| --------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `.tn-logo` / `.tn-logo img`       | brand mark                               | `margin-right: 10px; flex-shrink: 0` · img `height: 24px; width: auto`                                                                                                                                                                     |
+| `.tn-sec`                         | module button + its menu                 | `position: relative; flex-shrink: 0`                                                                                                                                                                                                       |
+| `.tn-item`                        | module button / Dashboard link           | `height: 36px; padding: 0 8px; border: 0; background: transparent; border-radius: 8px; font-size: 12.5px; font-weight: 500; color: var(--text2); white-space: nowrap`                                                                      |
+| `.tn-item:hover`                  |                                          | `background: var(--bg3); color: var(--text)`                                                                                                                                                                                               |
+| `.tn-item.active`                 | menu open OR current page in that module | `background: var(--blue3); color: var(--blue); font-weight: 600`                                                                                                                                                                           |
+| `.tn-caret`                       | dropdown arrow                           | `font-size: 9px; opacity: .7`                                                                                                                                                                                                              |
+| `.tn-menu`                        | white card under the button              | `position: absolute; top: 42px; left: 0; min-width: 220px; padding: 10px 6px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-drawer, 0 10px 30px rgba(20,28,40,.16)); z-index: 70` |
+| `.tn-menu.flip`                   | button in right half of screen           | `left: auto; right: 0`                                                                                                                                                                                                                     |
+| `.tn-col`                         | one group column (Entry / Master / …)    | `min-width: 200px; padding: 4px 8px`                                                                                                                                                                                                       |
+| `.tn-col + .tn-col`               |                                          | `border-left: 1px solid var(--border)`                                                                                                                                                                                                     |
+| `.tn-col-label`                   | group heading                            | `font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); font-weight: 700; padding: 4px 10px 6px`                                                                                                           |
+| `.tn-link`                        | page link in the menu                    | `padding: 7px 10px; border-radius: 7px; color: var(--text); font-size: 13px; white-space: nowrap`                                                                                                                                          |
+| `.tn-link:hover`                  |                                          | `background: var(--bg3)`                                                                                                                                                                                                                   |
+| `.tn-link.on`                     | current page                             | `background: var(--blue3); color: var(--blue); font-weight: 600`                                                                                                                                                                           |
+| `.tn-link-icon`                   |                                          | `width: 18px; text-align: center; flex-shrink: 0`                                                                                                                                                                                          |
+| `.tn-right`                       | right cluster                            | `margin-left: auto; display: flex; gap: 8px; flex-shrink: 0`                                                                                                                                                                               |
+| `.tn-sync`                        | sync indicator wrapper                   | `display: inline-flex; padding: 0 2px`                                                                                                                                                                                                     |
+| `.tn-iconbtn`                     | icon-only header button                  | `padding: 0 8px; height: 32px`                                                                                                                                                                                                             |
+| `.tn-avatar`                      |                                          | `width/height: 30px; border-radius: 50%; background: var(--blue3); color: var(--blue); font-weight: 700; font-size: 12px; cursor: default`                                                                                                 |
+| `#topnav .innovic-input.gs-input` | header search width                      | `width: 190px`                                                                                                                                                                                                                             |
 
 ### 1.4 Breadcrumbs + open-page tab strip
 
 ```css
 #breadcrumbs {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
-  font-size: 11px; color: var(--text3); padding: 5px 20px 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text3);
+  padding: 5px 20px 0;
 }
 #pagetabs {
-  display: flex; align-items: stretch; gap: 4px; padding: 3px 20px 0;
-  border-bottom: 1px solid var(--border); overflow: hidden; flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 3px 20px 0;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  flex-shrink: 0;
 }
 ```
 
@@ -133,15 +171,15 @@ Both mirror `#content`'s 20px horizontal padding so every band lines up with the
 The tab strip has **no horizontal scroll**: tabs share the row and shrink (labels ellipsize),
 backed by the store's `MAX_TABS` cap.
 
-| Class | Key declarations |
-| --- | --- |
-| `.pgtab` | `flex: 0 1 auto; min-width: 0; padding: 3px 6px 3px 10px; font-size: 12px; color: var(--text2); background: var(--bg4); border: 1px solid var(--border); border-bottom: none; border-radius: 6px 6px 0 0; white-space: nowrap; max-width: 200px` |
-| `.pgtab:hover` | `background: var(--bg2); color: var(--text)` |
-| `.pgtab.active` | `background: var(--bg2); color: var(--blue); font-weight: 700; border-top: 2px solid var(--blue); padding-top: 2px` |
-| `.pgtab-icon` | `flex-shrink: 0` |
-| `.pgtab-label` | `flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis` |
-| `.pgtab-close` | `width/height: 16px; border: none; background: transparent; color: var(--text3); font-size: 14px; line-height: 1; border-radius: 4px` |
-| `.pgtab-close:hover` | `background: var(--red3); color: var(--red)` |
+| Class                | Key declarations                                                                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `.pgtab`             | `flex: 0 1 auto; min-width: 0; padding: 3px 6px 3px 10px; font-size: 12px; color: var(--text2); background: var(--bg4); border: 1px solid var(--border); border-bottom: none; border-radius: 6px 6px 0 0; white-space: nowrap; max-width: 200px` |
+| `.pgtab:hover`       | `background: var(--bg2); color: var(--text)`                                                                                                                                                                                                     |
+| `.pgtab.active`      | `background: var(--bg2); color: var(--blue); font-weight: 700; border-top: 2px solid var(--blue); padding-top: 2px`                                                                                                                              |
+| `.pgtab-icon`        | `flex-shrink: 0`                                                                                                                                                                                                                                 |
+| `.pgtab-label`       | `flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis`                                                                                                                                                                        |
+| `.pgtab-close`       | `width/height: 16px; border: none; background: transparent; color: var(--text3); font-size: 14px; line-height: 1; border-radius: 4px`                                                                                                            |
+| `.pgtab-close:hover` | `background: var(--red3); color: var(--red)`                                                                                                                                                                                                     |
 
 Real markup — `apps/web/src/components/shared/open-tabs-bar.tsx`:
 
@@ -162,17 +200,17 @@ Breadcrumbs are a `<nav id="breadcrumbs" aria-label="Breadcrumb">` (`components/
 Still in the stylesheet; the shipped shell (`_authenticated.tsx`) renders no `#sidebar`.
 Kept because the mobile drawer rule and the department tint classes are referenced.
 
-| Class | Key declarations |
-| --- | --- |
-| `.sb-logo` | `padding: 16px 16px 8px; border-bottom: 1px solid var(--border); margin-bottom: 8px` |
-| `.sb-company` | `font-family: var(--hfont); font-size: var(--fs-heading); font-weight: 700; letter-spacing: .04em` |
-| `.sb-sub` | `font-size: 11px; color: var(--cyan); letter-spacing: .12em; text-transform: uppercase; font-family: var(--mono)` |
-| `.sb-section` | `font-size: var(--fs-label); letter-spacing: .1em; uppercase; padding: 8px 12px; font-weight: 800; margin: 4px 8px 2px; border-radius: var(--radius-sm); border-left: 3px solid var(--border2); background: var(--bg3); transition: all .15s` |
-| `.sb-mod-*` | ten department tints — `planning, sales, store, production, qc, design, purchase, finance, tasks, system`; each sets `border-left-color` + `color` to `var(--dept-<name>) !important` |
-| `.sb-item` | `padding: 9px 16px; color: var(--text2); font-size: var(--fs-control); border-left: 3px solid transparent` |
-| `.sb-item.active` | `background: var(--blue3); color: var(--blue); border-left-color: var(--blue)` — flat wash, no gradient |
-| `.sb-grp` / `.sb-icon` | `font-size: 11px; uppercase; pointer-events: none` · `width: 20px; text-align: center; font-size: 14px` |
-| `.sb-bottom` / `.sb-user` / `.sb-avatar` / `.sb-uname` / `.sb-urole` | footer user block; avatar `28px`, `background: var(--blue)`, `color: #fff`, `font-family: var(--mono)` |
+| Class                                                                | Key declarations                                                                                                                                                                                                                              |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.sb-logo`                                                           | `padding: 16px 16px 8px; border-bottom: 1px solid var(--border); margin-bottom: 8px`                                                                                                                                                          |
+| `.sb-company`                                                        | `font-family: var(--hfont); font-size: var(--fs-heading); font-weight: 700; letter-spacing: .04em`                                                                                                                                            |
+| `.sb-sub`                                                            | `font-size: 11px; color: var(--cyan); letter-spacing: .12em; text-transform: uppercase; font-family: var(--mono)`                                                                                                                             |
+| `.sb-section`                                                        | `font-size: var(--fs-label); letter-spacing: .1em; uppercase; padding: 8px 12px; font-weight: 800; margin: 4px 8px 2px; border-radius: var(--radius-sm); border-left: 3px solid var(--border2); background: var(--bg3); transition: all .15s` |
+| `.sb-mod-*`                                                          | ten department tints — `planning, sales, store, production, qc, design, purchase, finance, tasks, system`; each sets `border-left-color` + `color` to `var(--dept-<name>) !important`                                                         |
+| `.sb-item`                                                           | `padding: 9px 16px; color: var(--text2); font-size: var(--fs-control); border-left: 3px solid transparent`                                                                                                                                    |
+| `.sb-item.active`                                                    | `background: var(--blue3); color: var(--blue); border-left-color: var(--blue)` — flat wash, no gradient                                                                                                                                       |
+| `.sb-grp` / `.sb-icon`                                               | `font-size: 11px; uppercase; pointer-events: none` · `width: 20px; text-align: center; font-size: 14px`                                                                                                                                       |
+| `.sb-bottom` / `.sb-user` / `.sb-avatar` / `.sb-uname` / `.sb-urole` | footer user block; avatar `28px`, `background: var(--blue)`, `color: #fff`, `font-family: var(--mono)`                                                                                                                                        |
 
 ### 1.6 Topbar (`#topbar`, `.tb-*`) and sync dot
 
@@ -199,25 +237,42 @@ Kept because the mobile drawer rule and the department tint classes are referenc
 
 ```css
 .panel {
-  background: var(--bg2); border: 1px solid var(--border);
-  border-radius: var(--radius2);   /* 8px */
-  overflow: hidden; margin-bottom: 10px;   /* density pass: was 16 */
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2); /* 8px */
+  overflow: hidden;
+  margin-bottom: 10px; /* density pass: was 16 */
 }
 .panel-hdr {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 14px;               /* was 12px 16px — the header holds one line */
-  border-bottom: 1px solid var(--border); background: var(--bg3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px; /* was 12px 16px — the header holds one line */
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3);
 }
 .panel-title {
-  font-family: var(--hfont); font-size: 16px; font-weight: 700;
-  letter-spacing: 0.03em; margin: 0;   /* so the class can be worn by an <h2> */
+  font-family: var(--hfont);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  margin: 0; /* so the class can be worn by an <h2> */
 }
-.panel-body { padding: 12px; }     /* was 16 */
+.panel-body {
+  padding: 12px;
+} /* was 16 */
 .section-hdr {
-  font-family: var(--hfont); font-size: var(--fs-section);   /* 22px */
-  font-weight: 700; margin-bottom: 16px; letter-spacing: 0.01em;
+  font-family: var(--hfont);
+  font-size: var(--fs-section); /* 22px */
+  font-weight: 700;
+  margin-bottom: 16px;
+  letter-spacing: 0.01em;
 }
-.divider { height: 1px; background: var(--border); margin: 16px 0; }
+.divider {
+  height: 1px;
+  background: var(--border);
+  margin: 16px 0;
+}
 ```
 
 `.panel` carries **no shadow**. `margin: 0` on `.panel-title` is deliberate: panel titles
@@ -256,15 +311,38 @@ Put `.dash-link` on the `<a>`/`<Link>` (that is what receives focus) and `.dash-
 on the bordered box inside it.
 
 ```css
-.dash-link { display: block; text-decoration: none; color: inherit; border-radius: var(--radius2); }
-.dash-link:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.dash-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--radius2);
+}
+.dash-link:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
 .dash-link:hover .dash-surface,
-.dash-link:focus-visible .dash-surface { background: var(--bg4); border-color: var(--cyan); }
-.dash-surface { transition: background .15s, border-color .15s; }
-.dash-link.dash-cell { border-radius: 0; transition: background .15s; }
-.dash-link.dash-cell:hover { background: var(--bg4); }
+.dash-link:focus-visible .dash-surface {
+  background: var(--bg4);
+  border-color: var(--cyan);
+}
+.dash-surface {
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.dash-link.dash-cell {
+  border-radius: 0;
+  transition: background 0.15s;
+}
+.dash-link.dash-cell:hover {
+  background: var(--bg4);
+}
 @media (prefers-reduced-motion: reduce) {
-  .dash-surface, .dash-link.dash-cell { transition: none; }
+  .dash-surface,
+  .dash-link.dash-cell {
+    transition: none;
+  }
 }
 ```
 
@@ -280,25 +358,47 @@ fill on itself.
 ### 3.1 Wrapper and base table
 
 ```css
-.tbl-wrap { overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 220px); position: relative; }
-.innovic-table { width: 100%; border-collapse: collapse; }
+.tbl-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: calc(100vh - 220px);
+  position: relative;
+}
+.innovic-table {
+  width: 100%;
+  border-collapse: collapse;
+}
 .innovic-table th {
-  background: var(--bg3); color: var(--text2);
-  font-size: var(--fs-mono);        /* 11px */
-  text-transform: uppercase; letter-spacing: 0.08em;
-  padding: 6px 10px;                /* was 9px 12px */
-  text-align: center; font-family: var(--mono); white-space: nowrap;
-  border-bottom: 1px solid var(--border); cursor: pointer; user-select: none;
-  position: sticky; top: 0; z-index: 5;
+  background: var(--bg3);
+  color: var(--text2);
+  font-size: var(--fs-mono); /* 11px */
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 6px 10px; /* was 9px 12px */
+  text-align: center;
+  font-family: var(--mono);
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  z-index: 5;
   box-shadow: inset 0 -1px 0 var(--border);
 }
-.innovic-table th:hover { color: var(--cyan); }
-.innovic-table td {
-  padding: 6px 10px; border-bottom: 1px solid var(--border);
-  font-size: var(--fs-control);     /* 13px */
-  vertical-align: middle; white-space: nowrap;
+.innovic-table th:hover {
+  color: var(--cyan);
 }
-.innovic-table tbody tr:hover td { background: var(--bg4); }
+.innovic-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-control); /* 13px */
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.innovic-table tbody tr:hover td {
+  background: var(--bg4);
+}
 ```
 
 - **No zebra striping** on the base table — rows are white, hover (`var(--bg4)`) is the only wash.
@@ -339,15 +439,15 @@ neither shared class.
 
 ### 3.3 Cell helpers
 
-| Class | Declarations |
-| --- | --- |
-| `.td-code` | `font-family: var(--mono); font-weight: 600; font-size: 12px` |
-| `.td-right` | `text-align: right` |
-| `.td-ctr` | `text-align: center` |
-| `.mono` | `font-family: var(--mono)` |
-| `.fw-700` | `font-weight: 700` |
-| `.text2` / `.text3` | `color: var(--text2)` / `color: var(--text3)` |
-| `.cyan` | `color: var(--cyan)` |
+| Class                        | Declarations                                                                                                                                   |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.td-code`                   | `font-family: var(--mono); font-weight: 600; font-size: 12px`                                                                                  |
+| `.td-right`                  | `text-align: right`                                                                                                                            |
+| `.td-ctr`                    | `text-align: center`                                                                                                                           |
+| `.mono`                      | `font-family: var(--mono)`                                                                                                                     |
+| `.fw-700`                    | `font-weight: 700`                                                                                                                             |
+| `.text2` / `.text3`          | `color: var(--text2)` / `color: var(--text3)`                                                                                                  |
+| `.cyan`                      | `color: var(--cyan)`                                                                                                                           |
 | `.amber` / `.green` / `.red` | `color: var(--amber2)` / `var(--green2)` / `var(--red2)` — the dark "2" variants, because the solid signal colours fail 4.5:1 as text on white |
 
 ### 3.4 Frozen first column — `.tbl-frozen`
@@ -361,8 +461,13 @@ neither shared class.
   background: var(--bg2);
   box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.08);
 }
-.tbl-frozen thead th:first-child { z-index: 6; background: var(--bg3); }
-.tbl-frozen tbody tr:hover td:first-child { background: var(--bg4); }
+.tbl-frozen thead th:first-child {
+  z-index: 6;
+  background: var(--bg3);
+}
+.tbl-frozen tbody tr:hover td:first-child {
+  background: var(--bg4);
+}
 ```
 
 Composed as `<div class="tbl-wrap tbl-frozen">` on the widest tables (Job Cards, Sales
@@ -378,8 +483,14 @@ Real markup — `apps/web/src/modules/production-orders/routes/list.tsx:397`:
       <SortableHead table={table} />
       <tbody>
         {rows.length === 0 ? (
-          <tr><td colSpan={columns.length} className="empty-state">No production orders yet …</td></tr>
-        ) : rows.map((row) => <tr key={row.id}>…</tr>)}
+          <tr>
+            <td colSpan={columns.length} className="empty-state">
+              No production orders yet …
+            </td>
+          </tr>
+        ) : (
+          rows.map((row) => <tr key={row.id}>…</tr>)
+        )}
       </tbody>
     </table>
   </div>
@@ -398,20 +509,41 @@ still holds where a rule below does not override it.
   border-bottom: 2px solid var(--blue2);
 }
 .innovic-table.tbl-grid th {
-  background: var(--bg4); color: var(--blue2); font-family: var(--hfont);
-  font-weight: 800; font-size: 11px; letter-spacing: 0.06em; padding: 8px 8px;
-  border-right: 1px solid var(--border2); border-bottom: 1px solid var(--blue2);
-  box-shadow: none; text-align: center;
+  background: var(--bg4);
+  color: var(--blue2);
+  font-family: var(--hfont);
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 8px 8px;
+  border-right: 1px solid var(--border2);
+  border-bottom: 1px solid var(--blue2);
+  box-shadow: none;
+  text-align: center;
 }
 .innovic-table.tbl-grid td {
-  font-size: 13px; padding: 8px 8px;
-  border-right: 1px solid var(--border2); border-bottom: 1px solid var(--border2);
-  text-align: center; white-space: normal; overflow-wrap: anywhere;
+  font-size: 13px;
+  padding: 8px 8px;
+  border-right: 1px solid var(--border2);
+  border-bottom: 1px solid var(--border2);
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
-.innovic-table.tbl-grid tbody tr td { background: var(--bg2); }
-.innovic-table.tbl-grid tbody tr:nth-child(odd) td { background: #fffbf2; }
-.innovic-table.tbl-grid tbody tr:hover td { background: var(--bg4); }
-.innovic-table.tbl-grid .td-code { font-size: 13px; font-weight: 700; color: var(--blue); }
+.innovic-table.tbl-grid tbody tr td {
+  background: var(--bg2);
+}
+.innovic-table.tbl-grid tbody tr:nth-child(odd) td {
+  background: #fffbf2;
+}
+.innovic-table.tbl-grid tbody tr:hover td {
+  background: var(--bg4);
+}
+.innovic-table.tbl-grid .td-code {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--blue);
+}
 ```
 
 - `#fffbf2` is the **one** literal hex in the file besides `#fff` on solid buttons — the
@@ -424,20 +556,36 @@ still holds where a rule below does not override it.
 - `.jc-row-acts .btn-sm` (Job Card list) → `inline-flex; gap: 4px; padding: 2px 6px; height: 24px`.
 
 ```jsx
-{/* apps/web/src/modules/bom-master/routes/list.tsx:194 */}
-<table className="innovic-table tbl-grid">…</table>
+{
+  /* apps/web/src/modules/bom-master/routes/list.tsx:194 */
+}
+<table className="innovic-table tbl-grid">…</table>;
 ```
 
 ### 3.6 Modal tables — `.ops-routing`
 
 ```css
-.ops-routing { width: 100%; border-collapse: collapse; }
-.ops-routing th {
-  padding: 8px 12px; text-align: center; font-family: var(--mono);
-  font-size: var(--fs-mono); text-transform: uppercase; letter-spacing: 0.08em;
-  font-weight: 700; color: var(--text2); white-space: nowrap;
+.ops-routing {
+  width: 100%;
+  border-collapse: collapse;
 }
-.ops-routing td { padding: 8px 12px; vertical-align: middle; border-top: 1px solid var(--border); text-align: center; }
+.ops-routing th {
+  padding: 8px 12px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: var(--fs-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.ops-routing td {
+  padding: 8px 12px;
+  vertical-align: middle;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
 ```
 
 Used for the Plan modal's Operations Routing + Required QC Documents tables — raw modal
@@ -458,23 +606,61 @@ slack. `td.gs-ellipsis` → `overflow: hidden; text-overflow: ellipsis`; `td.gs-
 
 ```css
 .btn {
-  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px;
-  border-radius: var(--radius);      /* 6px */
-  border: 1px solid transparent; cursor: pointer; font-family: var(--bfont);
-  font-size: var(--fs-control);      /* 13px */
-  font-weight: 600; transition: all 0.15s; white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: var(--radius); /* 6px */
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: var(--bfont);
+  font-size: var(--fs-control); /* 13px */
+  font-weight: 600;
+  transition: all 0.15s;
+  white-space: nowrap;
 }
-.btn-primary { background: var(--blue); color: #fff; }
-.btn-primary:hover { background: var(--blue2); }
-.btn-success { background: var(--green2); color: #fff; }
-.btn-success:hover { background: var(--green2-hover); }
-.btn-danger { background: var(--red2); color: #fff; }
-.btn-danger:hover { background: var(--red2-hover); }
-.btn-ghost { background: var(--bg2); color: var(--text2); border: 1px solid var(--border); }
-.btn-ghost:hover { background: var(--bg3); color: var(--text); border-color: var(--border2); }
-.btn-sm { padding: 4px 10px; font-size: var(--fs-label); }   /* 11px */
-.btn-icon { padding: 6px 8px; }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary {
+  background: var(--blue);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: var(--blue2);
+}
+.btn-success {
+  background: var(--green2);
+  color: #fff;
+}
+.btn-success:hover {
+  background: var(--green2-hover);
+}
+.btn-danger {
+  background: var(--red2);
+  color: #fff;
+}
+.btn-danger:hover {
+  background: var(--red2-hover);
+}
+.btn-ghost {
+  background: var(--bg2);
+  color: var(--text2);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover {
+  background: var(--bg3);
+  color: var(--text);
+  border-color: var(--border2);
+}
+.btn-sm {
+  padding: 4px 10px;
+  font-size: var(--fs-label);
+} /* 11px */
+.btn-icon {
+  padding: 6px 8px;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 ```
 
 Complete variant list: `.btn-primary`, `.btn-success`, `.btn-danger`, `.btn-ghost`.
@@ -507,27 +693,32 @@ pattern (list/card view switch, status filter pills).
 
 ```css
 .badge {
-  display: inline-flex; align-items: center; padding: 2px 8px;
-  border-radius: var(--radius-sm);   /* 4px — rounded-rect, not a full pill */
-  font-size: var(--fs-mono);         /* 11px */
-  font-weight: 700; letter-spacing: 0.05em; font-family: var(--mono);
-  white-space: nowrap; text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm); /* 4px — rounded-rect, not a full pill */
+  font-size: var(--fs-mono); /* 11px */
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  font-family: var(--mono);
+  white-space: nowrap;
+  text-transform: uppercase;
 }
 ```
 
 Every colour variant is `color` + `background` + `border: 1px solid transparent` (the
 transparent border keeps all badges the same height as the pre-2026-09 outlined ones).
 
-| Class | color | background | Used for |
-| --- | --- | --- | --- |
-| `.b-green` | `var(--green2)` | `var(--green3)` | done / ready / approved |
-| `.b-amber` | `var(--amber2)` | `var(--amber3)` | pending / warning |
-| `.b-blue` | `var(--blue)` | `var(--blue3)` | in progress / planned |
-| `.b-red` | `var(--red2)` | `var(--red3)` | rejected / overdue |
-| `.b-grey` | `var(--text2)` | `var(--bg4)` | neutral / type chips |
-| `.b-cyan` | `var(--cyan)` | `var(--cyan3)` | informational |
-| `.b-orange` | `var(--orange2)` | `var(--orange3)` | hold / rework |
-| `.b-teal` | `var(--teal2)` | `var(--teal3)` | assembly "Done" — distinguished from green "Ready" |
+| Class       | color            | background       | Used for                                                                                   |
+| ----------- | ---------------- | ---------------- | ------------------------------------------------------------------------------------------ |
+| `.b-green`  | `var(--green2)`  | `var(--green3)`  | done / ready / approved                                                                    |
+| `.b-amber`  | `var(--amber2)`  | `var(--amber3)`  | pending / warning                                                                          |
+| `.b-blue`   | `var(--blue)`    | `var(--blue3)`   | in progress / planned                                                                      |
+| `.b-red`    | `var(--red2)`    | `var(--red3)`    | rejected / overdue                                                                         |
+| `.b-grey`   | `var(--text2)`   | `var(--bg4)`     | neutral / type chips                                                                       |
+| `.b-cyan`   | `var(--cyan)`    | `var(--cyan3)`   | informational                                                                              |
+| `.b-orange` | `var(--orange2)` | `var(--orange3)` | hold / rework                                                                              |
+| `.b-teal`   | `var(--teal2)`   | `var(--teal3)`   | assembly "Done" — distinguished from green "Ready"                                         |
 | `.b-purple` | `var(--purple2)` | `var(--purple3)` | OSP / vendor / QC op-type. Dark text because solid `--purple` is only 4.1:1 on `--purple3` |
 
 Nine variants; there is no `.b-black`, `.b-white` or outline modifier.
@@ -551,9 +742,14 @@ a status string to one `b-*` class. Never inline a hex on a badge.
 
 ```css
 .tag {
-  display: inline-block; padding: 1px 6px; border-radius: var(--radius-sm);
-  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; font-family: var(--mono);
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-family: var(--mono);
 }
 ```
 
@@ -566,14 +762,25 @@ UOM cell, Route Card Rev, JC op-type.
 
 ```css
 .task-unread {
-  display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-  background: var(--sig-critical); margin-right: 6px; vertical-align: middle;
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sig-critical);
+  margin-right: 6px;
+  vertical-align: middle;
   box-shadow: 0 0 0 2px var(--sig-critical-bg);
 }
 .task-linked-ref {
-  display: inline-block; font-family: var(--mono); font-size: 11px;
-  padding: 1px 6px; border-radius: var(--radius-sm);
-  background: var(--blue3); color: var(--blue); font-weight: 700; margin-left: 4px;
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--blue3);
+  color: var(--blue);
+  font-weight: 700;
+  margin-left: 4px;
 }
 ```
 
@@ -586,20 +793,54 @@ wrong approximation. Used in `modules/tasks/components/related-ref-link.tsx:22`;
 ## 6. Forms
 
 ```css
-.form-grid   { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-.form-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.form-span-2 { grid-column: span 2; }
-.form-full   { grid-column: 1 / -1; }
-.form-grp    { display: flex; flex-direction: column; gap: 4px; }
-.form-label {
-  font-size: var(--fs-label);      /* 11px */
-  color: var(--text2); font-weight: 600; letter-spacing: 0.04em;
-  text-transform: uppercase; font-family: var(--mono);
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }
-.form-label .req { color: var(--red2); margin-left: 2px; }
-.form-error { font-size: var(--fs-label); color: var(--red2); margin-top: 2px; }
-.form-help  { font-size: var(--fs-label); color: var(--text3); margin-top: 2px; }
+.form-grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+.form-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.form-span-2 {
+  grid-column: span 2;
+}
+.form-full {
+  grid-column: 1 / -1;
+}
+.form-grp {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.form-label {
+  font-size: var(--fs-label); /* 11px */
+  color: var(--text2);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-family: var(--mono);
+}
+.form-label .req {
+  color: var(--red2);
+  margin-left: 2px;
+}
+.form-error {
+  font-size: var(--fs-label);
+  color: var(--red2);
+  margin-top: 2px;
+}
+.form-help {
+  font-size: var(--fs-label);
+  color: var(--text3);
+  margin-top: 2px;
+}
 ```
 
 `.form-grid-4` is the document-header grid — doc no · date · due date · type / client ·
@@ -612,19 +853,27 @@ wide fields.
 .innovic-input,
 .innovic-select,
 .innovic-textarea {
-  background: var(--bg2); color: var(--text); border: 1px solid var(--border);
-  border-radius: var(--radius);     /* 6px */
-  padding: 7px 10px; font-family: var(--bfont);
-  font-size: var(--fs-control);     /* 13px */
-  width: 100%; outline: none; transition: border 0.15s;
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius); /* 6px */
+  padding: 7px 10px;
+  font-family: var(--bfont);
+  font-size: var(--fs-control); /* 13px */
+  width: 100%;
+  outline: none;
+  transition: border 0.15s;
 }
 .innovic-input:focus,
 .innovic-select:focus,
 .innovic-textarea:focus {
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px var(--focus-ring);   /* rgba(21,94,239,.15) */
+  box-shadow: 0 0 0 3px var(--focus-ring); /* rgba(21,94,239,.15) */
 }
-.innovic-input[readonly] { opacity: 0.6; cursor: not-allowed; }
+.innovic-input[readonly] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 ```
 
 The focus ring is `border-color: var(--blue)` + a 3px `--focus-ring` halo. There is **no**
@@ -656,9 +905,24 @@ Real markup — `apps/web/src/modules/clients/components/client-form.tsx:108-127
 ### Global search input — `.gs-*`
 
 ```css
-.gs-wrap { position: relative; flex-shrink: 0; }
-.gs-icon { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--text3); pointer-events: none; }
-.innovic-input.gs-input { width: 260px; height: 32px; padding: 6px 10px 6px 28px; font-size: 12px; }
+.gs-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.gs-icon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text3);
+  pointer-events: none;
+}
+.innovic-input.gs-input {
+  width: 260px;
+  height: 32px;
+  padding: 6px 10px 6px 28px;
+  font-size: 12px;
+}
 ```
 
 Width is narrowed to 190px inside `#topnav`, 150px under 1350px, 120px under 768px.
@@ -669,32 +933,60 @@ Width is narrowed to 190px inside `#topnav`, 150px under 1350px, 120px under 768
 
 ```css
 .overlay {
-  position: fixed; inset: 0;
-  background: var(--overlay-bg);     /* rgba(23,43,77,.45) */
-  z-index: 500; display: flex; align-items: flex-start; justify-content: center;
-  padding: 2vh 2vw; backdrop-filter: blur(2px);
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-bg); /* rgba(23,43,77,.45) */
+  z-index: 500;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2vh 2vw;
+  backdrop-filter: blur(2px);
 }
 .modal {
-  background: var(--bg2); border: 1px solid var(--border);
-  border-radius: var(--radius2); width: 100%;
-  max-width: min(1100px, 96vw); min-height: min(86vh, 640px); max-height: 96vh;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+  width: 100%;
+  max-width: min(1100px, 96vw);
+  min-height: min(86vh, 640px);
+  max-height: 96vh;
   overflow-y: auto;
-  box-shadow: var(--shadow-modal);   /* 0 8px 24px rgba(23,43,77,.12) */
+  box-shadow: var(--shadow-modal); /* 0 8px 24px rgba(23,43,77,.12) */
 }
-.modal-lg { max-width: min(1320px, 96vw); }
+.modal-lg {
+  max-width: min(1320px, 96vw);
+}
 .app-sheet {
-  width: min(1100px, 96vw) !important; max-width: min(1100px, 96vw) !important;
-  min-height: min(86vh, 640px); max-height: 96vh; overflow-y: auto;
+  width: min(1100px, 96vw) !important;
+  max-width: min(1100px, 96vw) !important;
+  min-height: min(86vh, 640px);
+  max-height: 96vh;
+  overflow-y: auto;
 }
 .modal-hdr {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--bg3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3);
 }
-.modal-title { font-family: var(--hfont); font-size: 17px; font-weight: 700; }
-.modal-body { padding: 16px; }
+.modal-title {
+  font-family: var(--hfont);
+  font-size: 17px;
+  font-weight: 700;
+}
+.modal-body {
+  padding: 16px;
+}
 .modal-footer {
-  display: flex; gap: 8px; justify-content: flex-end;
-  padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg3);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg3);
 }
 ```
 
@@ -707,13 +999,25 @@ used in `modules/`.
 Real markup — `apps/web/src/modules/tasks/components/task-overlay.tsx:60-74`:
 
 ```jsx
-<div className="overlay" onMouseDown={(e) => { if (e.target !== e.currentTarget) return; onClose(); }}>
-  <div className={size === 'lg' ? 'modal modal-lg' : 'modal'}
-       style={SIZE_STYLE[size]} role="dialog" aria-modal="true"
-       onMouseDown={(e) => e.stopPropagation()}>
+<div
+  className="overlay"
+  onMouseDown={(e) => {
+    if (e.target !== e.currentTarget) return;
+    onClose();
+  }}
+>
+  <div
+    className={size === 'lg' ? 'modal modal-lg' : 'modal'}
+    style={SIZE_STYLE[size]}
+    role="dialog"
+    aria-modal="true"
+    onMouseDown={(e) => e.stopPropagation()}
+  >
     <div className="modal-hdr">
       <div className="modal-title">{title}</div>
-      <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+      <button className="btn btn-ghost btn-sm" onClick={onClose}>
+        ✕
+      </button>
     </div>
     <div className="modal-body">{children}</div>
     <div className="modal-footer">…</div>
@@ -726,13 +1030,40 @@ Real markup — `apps/web/src/modules/tasks/components/task-overlay.tsx:60-74`:
 Starts **below** the top bar so the search box stays visible, focused and editable above it.
 
 ```css
-.overlay.gs-overlay { top: var(--topbar-height); align-items: stretch; padding: 8px 12px 12px; }
-.gs-overlay .modal { max-width: none; width: 100%; min-height: 0; max-height: 100%;
-                     display: flex; flex-direction: column; overflow: hidden; }
-.gs-overlay .modal-hdr  { flex: 0 0 auto; }
-.gs-overlay .modal-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.gs-overlay .gs-results-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.gs-overlay .tbl-wrap   { flex: 1 1 auto; min-height: 0; max-height: none; }
+.overlay.gs-overlay {
+  top: var(--topbar-height);
+  align-items: stretch;
+  padding: 8px 12px 12px;
+}
+.gs-overlay .modal {
+  max-width: none;
+  width: 100%;
+  min-height: 0;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.gs-overlay .modal-hdr {
+  flex: 0 0 auto;
+}
+.gs-overlay .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.gs-overlay .gs-results-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.gs-overlay .tbl-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
 ```
 
 Flex column top-to-bottom so the results table is the popup's **one** scroller and its
@@ -740,17 +1071,17 @@ sticky header holds, whatever height the summary + count strip take.
 
 ### 7.1 Z-index ladder (every `z-index` in the file)
 
-| Value | Selector | Line |
-| --- | --- | --- |
-| 4 | `.tbl-frozen tbody td:first-child`, `.tbl-frozen thead th:first-child` | 936 |
-| 5 | `.innovic-table th` (sticky header) | 768 |
-| 6 | `.tbl-frozen thead th:first-child` (corner cell — above both) | 941 |
-| 10 | `#sidebar` | 52 |
-| 60 | `#topnav` | 111 |
-| 70 | `.tn-menu` (module dropdown) | 183 |
-| 200 | `#sidebar` inside `@media (max-width: 768px)` — the mobile drawer | 1413 |
-| 500 | `.overlay` | 1234 |
-| 9999 | `#toast` | 1297 |
+| Value | Selector                                                               | Line |
+| ----- | ---------------------------------------------------------------------- | ---- |
+| 4     | `.tbl-frozen tbody td:first-child`, `.tbl-frozen thead th:first-child` | 936  |
+| 5     | `.innovic-table th` (sticky header)                                    | 768  |
+| 6     | `.tbl-frozen thead th:first-child` (corner cell — above both)          | 941  |
+| 10    | `#sidebar`                                                             | 52   |
+| 60    | `#topnav`                                                              | 111  |
+| 70    | `.tn-menu` (module dropdown)                                           | 183  |
+| 200   | `#sidebar` inside `@media (max-width: 768px)` — the mobile drawer      | 1413 |
+| 500   | `.overlay`                                                             | 1234 |
+| 9999  | `#toast`                                                               | 1297 |
 
 Nine `z-index` declarations, no others anywhere in `apps/web/src/**/*.css`.
 
@@ -764,21 +1095,49 @@ Nine `z-index` declarations, no others anywhere in `apps/web/src/**/*.css`.
 `padding: 0`; every other value is an inline style on the component, **not** a CSS class.
 
 ```jsx
-<div className="panel" style={{ display: 'flex', flexWrap: 'wrap', padding: 0, overflow: 'hidden' }}>
+<div
+  className="panel"
+  style={{ display: 'flex', flexWrap: 'wrap', padding: 0, overflow: 'hidden' }}
+>
   {/* one cell per stat */}
-  <button type="button" aria-pressed={s.active ?? false} style={{
-    flex: '1 1 140px', minWidth: 120, textAlign: 'left', padding: '8px 16px',
-    background: 'transparent', border: 'none',
-    borderLeft: i === 0 ? 'none' : '1px solid var(--border)',
-    borderBottom: `2px solid ${s.active ? (s.color ?? 'var(--cyan)') : 'transparent'}`,
-    cursor: 'pointer', font: 'inherit',
-  }}>
-    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
-                  color: s.active ? (s.color ?? 'var(--cyan)') : 'var(--text3)' }}>{s.label}</div>
-    <div className="mono fw-700" style={{ fontSize: 22, lineHeight: 1.15, color: s.color ?? 'var(--text)' }}>
+  <button
+    type="button"
+    aria-pressed={s.active ?? false}
+    style={{
+      flex: '1 1 140px',
+      minWidth: 120,
+      textAlign: 'left',
+      padding: '8px 16px',
+      background: 'transparent',
+      border: 'none',
+      borderLeft: i === 0 ? 'none' : '1px solid var(--border)',
+      borderBottom: `2px solid ${s.active ? (s.color ?? 'var(--cyan)') : 'transparent'}`,
+      cursor: 'pointer',
+      font: 'inherit',
+    }}
+  >
+    <div
+      style={{
+        fontSize: 10,
+        fontWeight: 700,
+        textTransform: 'uppercase',
+        letterSpacing: '0.06em',
+        color: s.active ? (s.color ?? 'var(--cyan)') : 'var(--text3)',
+      }}
+    >
+      {s.label}
+    </div>
+    <div
+      className="mono fw-700"
+      style={{ fontSize: 22, lineHeight: 1.15, color: s.color ?? 'var(--text)' }}
+    >
       {s.count}
     </div>
-    {s.sub ? <div className="text3" style={{ fontSize: 11 }}>{s.sub}</div> : null}
+    {s.sub ? (
+      <div className="text3" style={{ fontSize: 11 }}>
+        {s.sub}
+      </div>
+    ) : null}
   </button>
 </div>
 ```
@@ -793,17 +1152,59 @@ Nine `z-index` declarations, no others anywhere in `apps/web/src/**/*.css`.
 ### 8.2 `.stat-grid` / `.stat-card` (dashboard tiles)
 
 ```css
-.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
-.stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius2); padding: 12px 14px; position: relative; overflow: hidden; }
-.stat-card::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
-.stat-card.cyan::after  { background: var(--cyan); }
-.stat-card.amber::after { background: var(--amber); }
-.stat-card.green::after { background: var(--green); }
-.stat-card.red::after   { background: var(--red); }
-.stat-label { font-size: var(--fs-mono); color: var(--text3); text-transform: uppercase;
-              letter-spacing: 0.1em; font-family: var(--mono); margin-bottom: 6px; }
-.stat-val   { font-family: var(--hfont); font-size: var(--fs-stat); font-weight: 800; line-height: 1; }
-.stat-sub   { font-size: var(--fs-label); color: var(--text3); margin-top: 4px; }
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.stat-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+  padding: 12px 14px;
+  position: relative;
+  overflow: hidden;
+}
+.stat-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+}
+.stat-card.cyan::after {
+  background: var(--cyan);
+}
+.stat-card.amber::after {
+  background: var(--amber);
+}
+.stat-card.green::after {
+  background: var(--green);
+}
+.stat-card.red::after {
+  background: var(--red);
+}
+.stat-label {
+  font-size: var(--fs-mono);
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-family: var(--mono);
+  margin-bottom: 6px;
+}
+.stat-val {
+  font-family: var(--hfont);
+  font-size: var(--fs-stat);
+  font-weight: 800;
+  line-height: 1;
+}
+.stat-sub {
+  font-size: var(--fs-label);
+  color: var(--text3);
+  margin-top: 4px;
+}
 ```
 
 Exactly **four** accent variants — `cyan`, `amber`, `green`, `red`. There is deliberately
@@ -817,8 +1218,17 @@ use `<StatStrip>` instead (styling skill, Rule 3).
 ### 8.3 Progress bar
 
 ```css
-.prog-wrap { background: var(--bg5); border-radius: var(--radius-sm); height: 6px; overflow: hidden; }
-.prog-bar  { height: 100%; border-radius: var(--radius-sm); transition: width 0.4s ease; }
+.prog-wrap {
+  background: var(--bg5);
+  border-radius: var(--radius-sm);
+  height: 6px;
+  overflow: hidden;
+}
+.prog-bar {
+  height: 100%;
+  border-radius: var(--radius-sm);
+  transition: width 0.4s ease;
+}
 ```
 
 `.prog-bar` declares no colour or width — the caller sets both inline
@@ -829,8 +1239,15 @@ use `<StatStrip>` instead (styling skill, Rule 3).
 ## 9. Empty / loading states
 
 ```css
-.empty-state { text-align: center; padding: 40px; color: var(--text3); }
-.empty-icon  { font-size: 36px; margin-bottom: 8px; }
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: var(--text3);
+}
+.empty-icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
 ```
 
 There is no separate loading class — loading, error and empty all reuse `.empty-state`,
@@ -864,19 +1281,52 @@ Outside a table it is composed onto a panel: `<div className="panel empty-state"
 
 ```css
 #toast {
-  position: fixed; bottom: 24px; right: 24px; z-index: 9999;
-  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
 }
 .toast-item {
-  padding: 10px 16px; border-radius: var(--radius); font-size: var(--fs-control);
-  font-weight: 600; display: flex; align-items: center; gap: 8px;
-  animation: toastSlideIn 0.2s ease; max-width: 320px;
-  box-shadow: var(--shadow-toast);   /* 0 4px 12px rgba(23,43,77,.15) */
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  font-size: var(--fs-control);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: toastSlideIn 0.2s ease;
+  max-width: 320px;
+  box-shadow: var(--shadow-toast); /* 0 4px 12px rgba(23,43,77,.15) */
 }
-.toast-ok   { background: var(--green2); color: #fff; border: 1px solid var(--green); }
-.toast-err  { background: var(--red2);   color: #fff; border: 1px solid var(--red); }
-.toast-info { background: var(--blue);   color: #fff; border: 1px solid var(--blue2); }
-@keyframes toastSlideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+.toast-ok {
+  background: var(--green2);
+  color: #fff;
+  border: 1px solid var(--green);
+}
+.toast-err {
+  background: var(--red2);
+  color: #fff;
+  border: 1px solid var(--red);
+}
+.toast-info {
+  background: var(--blue);
+  color: #fff;
+  border: 1px solid var(--blue2);
+}
+@keyframes toastSlideIn {
+  from {
+    transform: translateX(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
 ```
 
 Note: these classes are a legacy port and are currently **unreferenced** in
@@ -885,9 +1335,17 @@ Note: these classes are a legacy port and are currently **unreferenced** in
 ### 10.2 Scrollbars
 
 ```css
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: var(--bg2); }
-::-webkit-scrollbar-thumb { background: var(--bg5); border-radius: var(--radius-sm); }
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg2);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg5);
+  border-radius: var(--radius-sm);
+}
 ```
 
 Global, 5px, no arrows.
@@ -897,8 +1355,14 @@ Global, 5px, no arrows.
 The file declares exactly **one** `:focus-visible` rule:
 
 ```css
-.dash-link:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-.dash-link:focus-visible .dash-surface { background: var(--bg4); border-color: var(--cyan); }
+.dash-link:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+.dash-link:focus-visible .dash-surface {
+  background: var(--bg4);
+  border-color: var(--cyan);
+}
 ```
 
 Form controls get their ring from `:focus` instead (`border-color: var(--blue)` +
@@ -908,10 +1372,18 @@ Form controls get their ring from `:focus` instead (`border-color: var(--blue)` 
 
 ```css
 @keyframes qcBlink {
-  0%, 100% { background: rgba(240, 68, 56, 0.15); }
-  50%      { background: rgba(240, 68, 56, 0.35); }
+  0%,
+  100% {
+    background: rgba(240, 68, 56, 0.15);
+  }
+  50% {
+    background: rgba(240, 68, 56, 0.35);
+  }
 }
-.qc-alert-blink { animation: qcBlink 1s ease-in-out infinite; border-left: 3px solid var(--red) !important; }
+.qc-alert-blink {
+  animation: qcBlink 1s ease-in-out infinite;
+  border-left: 3px solid var(--red) !important;
+}
 ```
 
 Applied to overdue pending QC rows in `modules/qc-call-register/routes/index.tsx:540` and
@@ -931,8 +1403,14 @@ screen stylesheet — every printed document is generated into its own window by
 **`@media (max-width: 1350px)`** — header cluster wrap:
 
 ```css
-#topnav .innovic-input.gs-input { width: 150px; }
-.tn-right { flex-basis: 100%; justify-content: flex-end; padding-bottom: 6px; }
+#topnav .innovic-input.gs-input {
+  width: 150px;
+}
+.tn-right {
+  flex-basis: 100%;
+  justify-content: flex-end;
+  padding-bottom: 6px;
+}
 ```
 
 Narrower than the ~1350px the twelve modules plus the search box need, the right cluster
@@ -942,7 +1420,9 @@ no scrollbar to recover it). The search box gives up width first.
 **`@media (max-width: 1100px)`** — form fold:
 
 ```css
-.form-grid-4 { grid-template-columns: 1fr 1fr; }
+.form-grid-4 {
+  grid-template-columns: 1fr 1fr;
+}
 ```
 
 A 4-up row squeezes inputs below usable width between phone and desktop, so it folds to
@@ -950,22 +1430,22 @@ A 4-up row squeezes inputs below usable width between phone and desktop, so it f
 
 **`@media (max-width: 768px)`** — mobile/tablet fallback. Changes, in file order:
 
-| Selector | Change |
-| --- | --- |
-| `#sidebar` | becomes an off-canvas drawer: `position: fixed; left: -260px; top/bottom: 0; width: 250px; z-index: 200; transition: left .25s ease; box-shadow: var(--shadow-drawer)` |
-| `#sidebar.sb-open` | `left: 0` |
-| `#breadcrumbs` | `padding: 5px 20px 0` (20px, matching what actually ships) |
-| `#pagetabs` | `padding: 3px 20px 0` |
-| `#app-header` | `padding-bottom: 6px` |
-| `#topnav` | `padding: 0 8px` — module buttons wrap onto as many lines as needed; no `overflow` on the band, or dropdowns would be clipped at its edge |
-| `#topnav .innovic-input.gs-input` | `width: 120px` |
-| `#main > #content` | `padding: 0 20px 20px` |
-| `#topbar` | `padding: 0 20px; gap: 8px; min-height: 48px; height: 48px` |
-| `.form-grid`, `.form-grid-3`, `.form-grid-4` | `grid-template-columns: 1fr !important` |
-| `.form-span-2` | `grid-column: span 1` |
-| `.modal` | `max-width/width: 100vw !important; max-height/height: 100vh !important; border-radius: 0 !important; margin: 0 !important` |
-| `.overlay` | `padding: 0 !important; align-items: stretch !important` |
-| `.stat-grid` | `grid-template-columns: repeat(2, 1fr)` |
+| Selector                                     | Change                                                                                                                                                                 |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `#sidebar`                                   | becomes an off-canvas drawer: `position: fixed; left: -260px; top/bottom: 0; width: 250px; z-index: 200; transition: left .25s ease; box-shadow: var(--shadow-drawer)` |
+| `#sidebar.sb-open`                           | `left: 0`                                                                                                                                                              |
+| `#breadcrumbs`                               | `padding: 5px 20px 0` (20px, matching what actually ships)                                                                                                             |
+| `#pagetabs`                                  | `padding: 3px 20px 0`                                                                                                                                                  |
+| `#app-header`                                | `padding-bottom: 6px`                                                                                                                                                  |
+| `#topnav`                                    | `padding: 0 8px` — module buttons wrap onto as many lines as needed; no `overflow` on the band, or dropdowns would be clipped at its edge                              |
+| `#topnav .innovic-input.gs-input`            | `width: 120px`                                                                                                                                                         |
+| `#main > #content`                           | `padding: 0 20px 20px`                                                                                                                                                 |
+| `#topbar`                                    | `padding: 0 20px; gap: 8px; min-height: 48px; height: 48px`                                                                                                            |
+| `.form-grid`, `.form-grid-3`, `.form-grid-4` | `grid-template-columns: 1fr !important`                                                                                                                                |
+| `.form-span-2`                               | `grid-column: span 1`                                                                                                                                                  |
+| `.modal`                                     | `max-width/width: 100vw !important; max-height/height: 100vh !important; border-radius: 0 !important; margin: 0 !important`                                            |
+| `.overlay`                                   | `padding: 0 !important; align-items: stretch !important`                                                                                                               |
+| `.stat-grid`                                 | `grid-template-columns: repeat(2, 1fr)`                                                                                                                                |
 
 A second `@media (max-width: 768px)` block at the end of the file handles search:
 `.innovic-input.gs-input { width: 150px }`; `.overlay.gs-overlay { top: 48px }` (the topbar
@@ -992,20 +1472,20 @@ Stated by the file's own comments and by `tokens.css`:
    in the whole component sheet are `#fff` (solid button / avatar / toast text) and
    `#fffbf2`, the cream row of the `.tbl-grid` reference sheet. Four `rgba()` literals
    remain, all of them shadows or the blink keyframe: `rgba(0,0,0,.08)` on `.tbl-frozen`,
-   `rgba(20,28,40,.16)` as the `.tn-menu` shadow *fallback*, and
+   `rgba(20,28,40,.16)` as the `.tn-menu` shadow _fallback_, and
    `rgba(240,68,56,.15/.35)` in `@keyframes qcBlink`.
 2. **Panels carry no shadow.** "Restrained by design: panels carry no shadow at all." The
    only shadows that exist are `--shadow-modal`, `--shadow-toast`, `--shadow-drawer`, the
    3px `--focus-ring` halo, and the 2px pin shadow on `.tbl-frozen`.
 3. **11px is the text floor.** `--fs-label` and `--fs-mono` are both `11px`; the density
    comment says "11px is the floor for any text." Body 14px, controls 13px.
-4. **One interactive accent.** `--cyan` and `--blue` are the *same* Innovic blue
+4. **One interactive accent.** `--cyan` and `--blue` are the _same_ Innovic blue
    (`#155eef`) on purpose — "The old teal 'cyan' left the app with two competing emphasis
    colours." Blue = buttons, page tabs, links; cyan = sidebar active, focus outline,
    `th:hover`, StatStrip underline.
 5. **Solid colours are fills, text uses the "2" variant.** The 3-tier convention is
    solid / dark(`2`) / pale-wash(`3`): solid for dots, bars, borders and stat-card accents;
-   any *text* in that hue takes the `2` value, which clears 4.5:1 on white or on the pale
+   any _text_ in that hue takes the `2` value, which clears 4.5:1 on white or on the pale
    wash. Hover on a solid success/danger button darkens to `-hover`, never lightens.
 6. **Tables get no-wrap + side scroll.** `.innovic-table td { white-space: nowrap }` plus
    `.tbl-wrap { overflow-x: auto }`. Short values (doc no., date, code, qty) stay on one
@@ -1028,7 +1508,7 @@ Stated by the file's own comments and by `tokens.css`:
 13. **New rules go in a separate "Innovic extensions" file** — every selector in
     `innovic-theme.css` is a literal port from the legacy stylesheet, restyled in place.
 14. **Never define a token name shadcn also uses** (`--background`, `--primary`, `--muted`,
-    `--input`, `--ring`, …). Tailwind hoists `index.css`'s `@layer base :root` *after*
+    `--input`, `--ring`, …). Tailwind hoists `index.css`'s `@layer base :root` _after_
     `tokens.css`, so the shadcn copy would win and every `var(--x)` would resolve to an HSL
     triplet — an invalid colour. This is why `.tbl-grid` gridlines use `--border2`, not `--border`.
 15. **Respect reduced motion.** `@media (prefers-reduced-motion: reduce)` disables the

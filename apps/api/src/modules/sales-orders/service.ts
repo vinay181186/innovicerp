@@ -1832,8 +1832,7 @@ function createSalesOrderOnce(
           // holding the Rev printed on the drawing, not at some number the
           // server made up.
           revision: normalizeRevision(l.revision),
-          drawingFilePath:
-            lr.drawingFilePath !== undefined ? lr.drawingFilePath : (l.drawingFilePath ?? null),
+          drawingFilePath: lr.drawingFilePath ?? null,
           itemRevisionId: lr.itemRevisionId,
           ...(l.drawingNo ? {} : lr.registerDrawingNo ? { drawingNo: lr.registerDrawingNo } : {}),
           uom: l.uom,
@@ -2733,8 +2732,9 @@ async function mergeLines(
         lineUpdate['drawingNo'] = lr.registerDrawingNo;
       }
     }
-    const finalFile =
-      lr.drawingFilePath !== undefined ? lr.drawingFilePath : u.data.drawingFilePath;
+    // ADR-323 — the SO line takes no drawing file: its copy follows the
+    // Drawing Register only (a sent drawingFilePath is ignored).
+    const finalFile = lr.drawingFilePath;
     if (finalFile !== undefined) {
       lineUpdate['drawingFilePath'] = finalFile ?? null;
       // A history row is written only when the file genuinely differs from
@@ -2827,8 +2827,7 @@ async function mergeLines(
         // Same as the create path: the Rev is whatever the user typed on the
         // new line (upper-cased, ADR-177), never a number the server chose.
         revision: normalizeRevision(l.revision),
-        drawingFilePath:
-          lr.drawingFilePath !== undefined ? lr.drawingFilePath : (l.drawingFilePath ?? null),
+        drawingFilePath: lr.drawingFilePath ?? null,
         itemRevisionId: lr.itemRevisionId,
         ...(l.drawingNo ? {} : lr.registerDrawingNo ? { drawingNo: lr.registerDrawingNo } : {}),
         uom: l.uom,

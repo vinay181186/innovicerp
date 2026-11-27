@@ -313,7 +313,7 @@ export async function getWaitingApprovals(user: AuthContext): Promise<WaitingApp
     });
   }
 
-  // ADR-311 — Drawing Rev approve / release and drawing corrections.
+  // ADR-323 — Drawing Revs to verify.
   rows.push(...drawings.rows);
 
   const byType = new Map<string, number>([

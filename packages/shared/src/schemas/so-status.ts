@@ -38,9 +38,7 @@ export const soStatusOpSchema = z.object({
   machineId: z.string().uuid().nullable(),
   machineCodeText: z.string().nullable(),
   qcRequired: z.boolean(),
-  outsourceStatus: z
-    .enum(['pending', 'pr_raised', 'po_created', 'sent', 'received'])
-    .nullable(),
+  outsourceStatus: z.enum(['pending', 'pr_raised', 'po_created', 'sent', 'received']).nullable(),
   outsourcePrId: z.string().uuid().nullable(),
   completed: z.number().int().nonnegative(),
   qcAccepted: z.number().int().nonnegative(),
@@ -54,12 +52,7 @@ export const soStatusOpSchema = z.object({
 export type SoStatusOp = z.infer<typeof soStatusOpSchema>;
 
 // JC rollup status (from calc-engine JcStatus union)
-export const soStatusJcStatusEnum = z.enum([
-  'complete',
-  'qc_pending',
-  'in_progress',
-  'no_ops',
-]);
+export const soStatusJcStatusEnum = z.enum(['complete', 'qc_pending', 'in_progress', 'no_ops']);
 export type SoStatusJcStatus = z.infer<typeof soStatusJcStatusEnum>;
 
 export const soStatusJcSchema = z.object({
@@ -95,12 +88,7 @@ export const soStatusJcSchema = z.object({
 export type SoStatusJc = z.infer<typeof soStatusJcSchema>;
 
 // Per-line status badge (from calc-engine SoLineRollup.lineStatus)
-export const soStatusLineStatusEnum = z.enum([
-  'no_jc',
-  'complete',
-  'qc_pending',
-  'in_progress',
-]);
+export const soStatusLineStatusEnum = z.enum(['no_jc', 'complete', 'qc_pending', 'in_progress']);
 export type SoStatusLineStatus = z.infer<typeof soStatusLineStatusEnum>;
 
 export const soStatusChipSchema = z.object({

@@ -2,7 +2,9 @@ import type { ReactNode } from 'react';
 import { Breadcrumbs } from '@innovic/web';
 
 const hashLink = ({ to, children, ...rest }: { to: string; children: ReactNode }) => (
-  <a href={`#${to}`} {...rest}>{children}</a>
+  <a href={`#${to}`} {...rest}>
+    {children}
+  </a>
 );
 
 export const SoDetail = () => (
@@ -24,6 +26,11 @@ export const TwoLevels = () => (
 export const SectionWithoutLink = () => (
   <Breadcrumbs
     renderLink={hashLink}
-    crumbs={[{ label: 'Home', to: '/' }, { label: 'Store' }, { label: 'GRN', to: '/grn' }, { label: 'Create GRN' }]}
+    crumbs={[
+      { label: 'Home', to: '/' },
+      { label: 'Store' },
+      { label: 'GRN', to: '/grn' },
+      { label: 'Create GRN' },
+    ]}
   />
 );

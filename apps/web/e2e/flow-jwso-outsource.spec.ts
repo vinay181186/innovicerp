@@ -1,5 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
-import { clickRowMenuItem, clickFirstRowMenuItem, planningLineRows, executePlanFromMenu } from './row-menu';
+import {
+  clickRowMenuItem,
+  clickFirstRowMenuItem,
+  planningLineRows,
+  executePlanFromMenu,
+} from './row-menu';
 
 // JWSO + FULL OUTSOURCE, end to end.
 //
@@ -106,8 +111,19 @@ async function bannerText(page: Page): Promise<string> {
   for (const loc of [page.locator('[style*="rgba(239"]'), page.locator('.form-error')]) {
     const n = Math.min(await loc.count(), 12);
     for (let i = 0; i < n; i++) {
-      if (!(await loc.nth(i).isVisible().catch(() => false))) continue;
-      const t = (await loc.nth(i).innerText().catch(() => '')).trim();
+      if (
+        !(await loc
+          .nth(i)
+          .isVisible()
+          .catch(() => false))
+      )
+        continue;
+      const t = (
+        await loc
+          .nth(i)
+          .innerText()
+          .catch(() => '')
+      ).trim();
       if (t.length > 8 && !/^Cancel$/i.test(t)) return t.replace(/\s+/g, ' ');
     }
   }
@@ -118,7 +134,14 @@ async function bannerText(page: Page): Promise<string> {
 
 test('@jwout 01 — create the JWSO', async ({ page }) => {
   if (state.jwCode) {
-    record({ step: '01', doc: 'JWSO', code: state.jwCode, qty: `${QTY}`, status: 'reused', note: 'E2E_JW' });
+    record({
+      step: '01',
+      doc: 'JWSO',
+      code: state.jwCode,
+      qty: `${QTY}`,
+      status: 'reused',
+      note: 'E2E_JW',
+    });
     return;
   }
   await page.goto('/job-work-orders/new', { waitUntil: 'domcontentloaded' });
@@ -128,7 +151,10 @@ test('@jwout 01 — create the JWSO', async ({ page }) => {
 
   const lineCodeBoxes = page.locator('input[id^="jwln-ic-"]');
   if ((await lineCodeBoxes.count()) === 0) {
-    await page.getByRole('button', { name: /Add Line/i }).first().click();
+    await page
+      .getByRole('button', { name: /Add Line/i })
+      .first()
+      .click();
     await page.waitForTimeout(800);
   }
   // Line Item Code is a type-to-search picker (#jwln-ic-0): type, then pick the option.
@@ -158,16 +184,29 @@ test('@jwout 01 — create the JWSO', async ({ page }) => {
 
 test('@jwout 02 — party material + GRN (customer supplies the material)', async ({ page }) => {
   if (state.grnCode) {
-    record({ step: '02', doc: 'Party Material + GRN', code: `${state.pmCode} / ${state.grnCode}`,
-      qty: `${QTY} received`, status: 'reused', note: 'E2E_GRN' });
+    record({
+      step: '02',
+      doc: 'Party Material + GRN',
+      code: `${state.pmCode} / ${state.grnCode}`,
+      qty: `${QTY} received`,
+      status: 'reused',
+      note: 'E2E_GRN',
+    });
     return;
   }
   if (!state.pmCode) {
     await page.goto('/party-material', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2500);
-    await page.getByRole('button', { name: /Add Material/i }).first().click();
+    await page
+      .getByRole('button', { name: /Add Material/i })
+      .first()
+      .click();
     await page.waitForTimeout(1500);
-    state.pmCode = await page.locator('input[value^="PM-"]').first().inputValue().catch(() => '');
+    state.pmCode = await page
+      .locator('input[value^="PM-"]')
+      .first()
+      .inputValue()
+      .catch(() => '');
     await pick(page, /Type customer code or name/i, CLIENT_CODE, new RegExp(CLIENT_NAME, 'i'));
     await pick(page, /Type SO \/ JWSO no/i, state.jwCode, new RegExp(state.jwCode));
     await pick(page, /Pick an item from this order/i, ITEM_CODE, new RegExp(ITEM_CODE));
@@ -208,14 +247,22 @@ test('@jwout 02 — party material + GRN (customer supplies the material)', asyn
 
 test('@jwout 03 — plan the JWSO line as FULL OUTSOURCE and execute', async ({ page }) => {
   if (state.planCode) {
-    record({ step: '03', doc: 'Plan (full outsource)', code: state.planCode,
-      qty: `${QTY}`, status: 'reused',
-      note: `JC ${state.jcCode || '?'} + PR ${state.prCode || '?'} (E2E_PLN)` });
+    record({
+      step: '03',
+      doc: 'Plan (full outsource)',
+      code: state.planCode,
+      qty: `${QTY}`,
+      status: 'reused',
+      note: `JC ${state.jcCode || '?'} + PR ${state.prCode || '?'} (E2E_PLN)`,
+    });
     return;
   }
   await page.goto('/planning', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await page.getByPlaceholder(/Search/i).first().fill(state.jwCode);
+  await page
+    .getByPlaceholder(/Search/i)
+    .first()
+    .fill(state.jwCode);
   await page.waitForTimeout(2500);
   await page.getByText(state.jwCode).first().click();
   await page.waitForTimeout(2500);
@@ -224,7 +271,10 @@ test('@jwout 03 — plan the JWSO line as FULL OUTSOURCE and execute', async ({ 
   // on the create modal and found nothing there.)
   await clickFirstRowMenuItem(page, planningLineRows(page), /^Plan \d/);
   await page.waitForTimeout(2000);
-  await page.getByRole('button', { name: /^Save Plan$/ }).first().click();
+  await page
+    .getByRole('button', { name: /^Save Plan$/ })
+    .first()
+    .click();
   await page.waitForTimeout(4000);
   state.planCode = await codeOnPage(page, /PLN-\d+/);
   // eslint-disable-next-line no-console
@@ -237,9 +287,9 @@ test('@jwout 03 — plan the JWSO line as FULL OUTSOURCE and execute', async ({ 
   // no longer reaches an option inside a closed select.
   const planTypeSel = page.locator('#edit-plan-type');
   await expect(planTypeSel, 'plan type select rendered').toBeVisible({ timeout: 15_000 });
-  const offered = await planTypeSel.locator('option:not([disabled])').evaluateAll((os) =>
-    os.map((o) => (o as HTMLOptionElement).value),
-  );
+  const offered = await planTypeSel
+    .locator('option:not([disabled])')
+    .evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
   // eslint-disable-next-line no-console
   console.log(`>> plan types offered in the editor: ${offered.join(', ')}`);
   expect(offered, 'Direct Purchase is hidden for JWSO lines').not.toContain('direct_purchase');
@@ -248,12 +298,18 @@ test('@jwout 03 — plan the JWSO line as FULL OUTSOURCE and execute', async ({ 
   await page.waitForTimeout(1500);
 
   // Vendor + process are both required before execute.
-  await page.getByPlaceholder(/Search vendor/i).first().fill(VENDOR);
+  await page
+    .getByPlaceholder(/Search vendor/i)
+    .first()
+    .fill(VENDOR);
   await page.waitForTimeout(1500);
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await page.waitForTimeout(800);
-  await page.getByPlaceholder(/Complete machining as per drawing|Heat Treatment/i).first().fill(TAG);
+  await page
+    .getByPlaceholder(/Complete machining as per drawing|Heat Treatment/i)
+    .first()
+    .fill(TAG);
   await page.waitForTimeout(600);
 
   await page.getByRole('button', { name: /Save Plan/i }).click();
@@ -309,13 +365,23 @@ test('@jwout 05 — PR → PO', async ({ page }) => {
     await page.waitForTimeout(3000);
     const mm = page.url().match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
     state.poId = mm ? mm[0] : '';
-    record({ step: '05', doc: 'Purchase Order', code: state.poCode, qty: `${QTY}`,
-      status: 'reused', note: `id ${state.poId || '(unresolved)'}` });
+    record({
+      step: '05',
+      doc: 'Purchase Order',
+      code: state.poCode,
+      qty: `${QTY}`,
+      status: 'reused',
+      note: `id ${state.poId || '(unresolved)'}`,
+    });
     return;
   }
   await page.goto(`/purchase-requests?search=${state.prCode}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3500);
-  await clickRowMenuItem(page, page.locator('table tbody tr', { hasText: state.prCode }).first(), /^Create PO/);
+  await clickRowMenuItem(
+    page,
+    page.locator('table tbody tr', { hasText: state.prCode }).first(),
+    /^Create PO/,
+  );
   await page.waitForTimeout(3500);
   await page.getByRole('button', { name: /Save PO/i }).click();
   await page.waitForTimeout(5000);
@@ -349,8 +415,14 @@ test('@jwout 05 — PR → PO', async ({ page }) => {
 
 test('@jwout 05b — issue the client material to the job card', async ({ page }) => {
   if (process.env['E2E_PMI']) {
-    record({ step: '05b', doc: 'Party Material Issue', code: process.env['E2E_PMI']!,
-      qty: `${QTY} issued`, status: 'reused', note: `${state.pmCode} → ${state.jcCode}` });
+    record({
+      step: '05b',
+      doc: 'Party Material Issue',
+      code: process.env['E2E_PMI']!,
+      qty: `${QTY} issued`,
+      status: 'reused',
+      note: `${state.pmCode} → ${state.jcCode}`,
+    });
     return;
   }
   // ADR-103: the outward DC is gated on material ISSUED to this job card, not
@@ -358,7 +430,10 @@ test('@jwout 05b — issue the client material to the job card', async ({ page }
   // previous run proved.
   await page.goto('/party-material-issues', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
-  await page.getByRole('button', { name: /New|Issue/i }).first().click();
+  await page
+    .getByRole('button', { name: /New|Issue/i })
+    .first()
+    .click();
   await page.waitForTimeout(1500);
 
   await pick(page, /Select JWSO/i, state.jwCode, new RegExp(state.jwCode));
@@ -369,7 +444,10 @@ test('@jwout 05b — issue the client material to the job card', async ({ page }
   await page.waitForTimeout(1000);
   await page.locator('input[type="number"]').first().fill(String(QTY));
   await page.waitForTimeout(400);
-  await page.getByRole('button', { name: /Save|Create|Issue/i }).last().click();
+  await page
+    .getByRole('button', { name: /Save|Create|Issue/i })
+    .last()
+    .click();
   await page.waitForTimeout(4500);
   const err = await bannerText(page);
   if (err) {
@@ -393,8 +471,14 @@ test('@jwout 05b — issue the client material to the job card', async ({ page }
 
 test('@jwout 06 — outward DC: send the customer material to the vendor', async ({ page }) => {
   if (state.dcCode && state.dcId) {
-    record({ step: '06', doc: 'Outward DC', code: state.dcCode, qty: `${QTY} sent`,
-      status: 'reused', note: 'issued after the material issue unlocked it' });
+    record({
+      step: '06',
+      doc: 'Outward DC',
+      code: state.dcCode,
+      qty: `${QTY} sent`,
+      status: 'reused',
+      note: 'issued after the material issue unlocked it',
+    });
     return;
   }
   test.skip(!state.poId, 'no PO id');
@@ -468,7 +552,10 @@ test('@jwout 08 — incoming QC accepts the vendor return', async ({ page }) => 
   await page.goto('/incoming-qc', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4500);
   // The pending row is the one with the ⋯ row menu (Inspect lives in it).
-  const row = page.locator('tr', { hasText: state.poCode }).filter({ has: page.getByRole('button', { name: 'Actions' }) }).first();
+  const row = page
+    .locator('tr', { hasText: state.poCode })
+    .filter({ has: page.getByRole('button', { name: 'Actions' }) })
+    .first();
   const found = (await row.count()) > 0;
   // eslint-disable-next-line no-console
   console.log(`>> incoming QC row for ${state.poCode}: ${found}`);
@@ -486,9 +573,16 @@ test('@jwout 08 — incoming QC accepts the vendor return', async ({ page }) => 
   state.vendorGrn = ((await row.innerText()).match(/IN-GRN-\d+/) ?? [''])[0];
   await clickRowMenuItem(page, row, /^Inspect/);
   await page.waitForTimeout(3500);
-  await page.getByPlaceholder(/QC ?By|Inspector|Inspected/i).first().fill('E2E QC').catch(() => {});
+  await page
+    .getByPlaceholder(/QC ?By|Inspector|Inspected/i)
+    .first()
+    .fill('E2E QC')
+    .catch(() => {});
   await page.getByRole('spinbutton').first().fill(String(QTY));
-  await page.getByRole('button', { name: /Submit QC|Accept|Submit/i }).first().click();
+  await page
+    .getByRole('button', { name: /Submit QC|Accept|Submit/i })
+    .first()
+    .click();
   await page.waitForTimeout(5000);
   record({
     step: '08',
@@ -541,7 +635,10 @@ test('@jwout 10 — invoice the processing charge', async ({ page }) => {
   await lineSel.selectOption({ index: 1 });
   const nums = page.locator('input[type="number"]');
   await nums.nth(0).fill(String(QTY));
-  await nums.nth(1).fill(String(RATE)).catch(() => {});
+  await nums
+    .nth(1)
+    .fill(String(RATE))
+    .catch(() => {});
   await page.getByRole('button', { name: 'Save Invoice' }).click();
   await page.waitForTimeout(5000);
   const err = await bannerText(page);

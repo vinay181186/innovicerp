@@ -9,8 +9,10 @@ import { createSO, ITEM_CODE, makeGuard, makeLog, planExecuteInhouse, snap } fro
 
 const docs: Record<string, string> = {};
 const guards: Record<string, string> = {};
-const log = makeLog(docs); const guard = makeGuard(guards);
-const RESULT = 'C:/Users/Asus/AppData/Local/Temp/claude/C--Innovic-projects-innovic-erp/e90daca8-13d8-4c6a-9ffb-775ec274682c/scratchpad/case2-result.json';
+const log = makeLog(docs);
+const guard = makeGuard(guards);
+const RESULT =
+  'C:/Users/Asus/AppData/Local/Temp/claude/C--Innovic-projects-innovic-erp/e90daca8-13d8-4c6a-9ffb-775ec274682c/scratchpad/case2-result.json';
 const QTY = 10;
 
 test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
@@ -28,7 +30,11 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   await page.goto('/jc-ops', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
   const jsel = page.locator('select').first();
-  { const opts = await jsel.locator('option').allInnerTexts(); const idx = opts.findIndex((t) => t.includes(jc)); if (idx >= 0) await jsel.selectOption({ index: idx }); }
+  {
+    const opts = await jsel.locator('option').allInnerTexts();
+    const idx = opts.findIndex((t) => t.includes(jc));
+    if (idx >= 0) await jsel.selectOption({ index: idx });
+  }
   await page.waitForTimeout(1800);
   await snap(page, 'c2', '01-jcops');
   // Outsource Available now sits in each row's ⋯ menu: open menus until one offers it enabled.
@@ -38,7 +44,10 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
     for (let i = 0; i < n; i += 1) {
       await kebabs.nth(i).click();
       const item = page.getByRole('menuitem', { name: /Outsource Available/ });
-      if ((await item.count()) && !(await item.first().getAttribute('aria-disabled'))) { await item.first().click(); break; }
+      if ((await item.count()) && !(await item.first().getAttribute('aria-disabled'))) {
+        await item.first().click();
+        break;
+      }
       await page.keyboard.press('Escape');
     }
   }
@@ -46,8 +55,15 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   const bqty = page.locator('input[type="number"]').first();
   const bmax = await bqty.getAttribute('max').catch(() => null);
   const bval = await bqty.inputValue().catch(() => '');
-  guard('outsource-balance qty default/cap', `default=${bval} max=${bmax ?? 'n/a'} (≤ available ${QTY})`);
-  const vcode = await page.locator('#outsource-balance-vendors option').first().getAttribute('value').catch(() => '');
+  guard(
+    'outsource-balance qty default/cap',
+    `default=${bval} max=${bmax ?? 'n/a'} (≤ available ${QTY})`,
+  );
+  const vcode = await page
+    .locator('#outsource-balance-vendors option')
+    .first()
+    .getAttribute('value')
+    .catch(() => '');
   await page.getByPlaceholder('Vendor code').fill(vcode || '');
   await snap(page, 'c2', '02-balance-modal');
   await page.getByRole('button', { name: 'Outsource Available', exact: true }).click();
@@ -65,14 +81,25 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   await prRow.getByRole('checkbox').first().check();
   await page.waitForTimeout(800);
   await snap(page, 'c2', '04-pr-selected');
-  await page.getByRole('button', { name: /Create PO from Selected/i }).first().click();
+  await page
+    .getByRole('button', { name: /Create PO from Selected/i })
+    .first()
+    .click();
   await page.waitForTimeout(1800);
   await snap(page, 'c2', '05-createpo-form');
-  await page.locator('input[type="number"]').last().fill('5').catch(() => {}); // rate on the PO line
+  await page
+    .locator('input[type="number"]')
+    .last()
+    .fill('5')
+    .catch(() => {}); // rate on the PO line
   // PO NO. is a REQUIRED typed field with a static placeholder — use a unique
   // code so re-runs don't collide on IN-JWPO-00001.
   const po = 'IN-JWPO-9' + String(Date.now()).slice(-4);
-  await page.getByPlaceholder(/IN-JWPO-/i).first().fill(po).catch(() => {});
+  await page
+    .getByPlaceholder(/IN-JWPO-/i)
+    .first()
+    .fill(po)
+    .catch(() => {});
   await page.waitForTimeout(300);
   await page.getByRole('button', { name: /Save PO/i }).click();
   await page.waitForTimeout(3500);
@@ -82,13 +109,21 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   // 3 — Outward DC: from the PO's "📦 Create DC" action → ship qty → Save DC
   await page.goto('/purchase-orders', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2800);
-  await page.getByPlaceholder(/Search/i).first().fill(po).catch(() => {});
+  await page
+    .getByPlaceholder(/Search/i)
+    .first()
+    .fill(po)
+    .catch(() => {});
   await page.waitForTimeout(1500);
   const poRow = page.locator('table tbody tr', { hasText: po }).first();
   await clickRowMenuItem(page, poRow, /^Create DC/);
   await page.waitForTimeout(2200);
   await snap(page, 'c2', '07-dc-form');
-  const dcNo = await page.locator('input[value^="IN-DC-"]').first().inputValue().catch(() => '');
+  const dcNo = await page
+    .locator('input[value^="IN-DC-"]')
+    .first()
+    .inputValue()
+    .catch(() => '');
   await page.locator('input[type="number"]').first().fill(String(QTY)); // ship qty
   await page.getByRole('button', { name: /Save DC/i }).click();
   await page.waitForTimeout(3500);
@@ -98,7 +133,11 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   // 4 — Receive back (DC row "+ Receive" → received qty → Record receipt → auto-GRN)
   await page.goto('/delivery-challans', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2500);
-  await page.getByPlaceholder(/Search/i).first().fill(dcNo).catch(() => {});
+  await page
+    .getByPlaceholder(/Search/i)
+    .first()
+    .fill(dcNo)
+    .catch(() => {});
   await page.waitForTimeout(1500);
   const dcRow = page.locator('table tbody tr', { hasText: dcNo }).first();
   await clickRowMenuItem(page, dcRow, /^Receive/);
@@ -114,7 +153,11 @@ test('CASE 2 — OSP via JC dual-lane', async ({ page }) => {
   await page.goto('/incoming-qc', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2800);
   // Only pending rows carry the ⋯ row menu; Inspect is its item.
-  const qcRow = page.locator('table tbody tr').filter({ hasText: ITEM_CODE }).filter({ has: page.getByRole('button', { name: 'Actions' }) }).first();
+  const qcRow = page
+    .locator('table tbody tr')
+    .filter({ hasText: ITEM_CODE })
+    .filter({ has: page.getByRole('button', { name: 'Actions' }) })
+    .first();
   await clickRowMenuItem(page, qcRow, /^Inspect/);
   await page.waitForTimeout(2000);
   await snap(page, 'c2', '11-qc-form');

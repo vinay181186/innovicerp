@@ -9,7 +9,11 @@ export const ItemMaster = () => (
       <ReadField label="HSN Code" size="sm" mono value="73269099" />
       <ReadField label="Drawing Rev" size="sm" mono value="A" />
       <ReadField label="Item Group" size="lg" value="Fabricated Parts" />
-      <ReadField label="Item Remarks" size="full" value="Zinc plated after machining. Customer drawing governs the hole pattern." />
+      <ReadField
+        label="Item Remarks"
+        size="full"
+        value="Zinc plated after machining. Customer drawing governs the hole pattern."
+      />
     </ReadGrid>
   </Panel>
 );

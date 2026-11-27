@@ -15,7 +15,13 @@ function Harness({ initial }: { initial: string }): React.JSX.Element {
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}
     >
-      <DocNumberInput type="sales_order" value={v} onChange={setV} onValidityChange={setValid} required />
+      <DocNumberInput
+        type="sales_order"
+        value={v}
+        onChange={setV}
+        onValidityChange={setValid}
+        required
+      />
       <div data-testid="valid">{String(valid)}</div>
     </QueryClientProvider>
   );

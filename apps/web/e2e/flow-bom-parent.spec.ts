@@ -61,9 +61,7 @@ test('@bomparent part list is locked until a parent is picked, and the parent ca
   await expect(addItem).toBeEnabled();
   await expect(importExcel).toBeEnabled();
   // eslint-disable-next-line no-console
-  console.log(
-    `>> parent ${PARENT} → "${(await parentName.inputValue()).trim()}", list unlocked`,
-  );
+  console.log(`>> parent ${PARENT} → "${(await parentName.inputValue()).trim()}", list unlocked`);
 
   // --- 3. the parent cannot be its own child -------------------------------
   await page

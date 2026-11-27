@@ -1376,7 +1376,9 @@ export const jcOps = pgTable(
       'jc_ops_hold_kind_check',
       sql`${t.holdKind} IS NULL OR ${t.holdKind} IN ('ecr', 'rev_not_released', 'manual')`,
     ),
-    index('jc_ops_hold_ecr_idx').on(t.holdEcrId).where(sql`${t.holdEcrId} is not null`),
+    index('jc_ops_hold_ecr_idx')
+      .on(t.holdEcrId)
+      .where(sql`${t.holdEcrId} is not null`),
     index('jc_ops_held_idx')
       .on(t.companyId)
       .where(sql`${t.holdKind} is not null AND ${t.deletedAt} is null`),
@@ -9047,8 +9049,11 @@ export const itemRevisions = pgTable(
     /** ITEM_REVISION_SOURCES (CHECK). */
     sourceType: text('source_type').notNull(),
     sourceRef: text('source_ref'),
-    /** ADR-290 (0248) — REV_RELEASE_STATUSES (CHECK). Old rows 'unverified';
-     *  rows made from a document 'draft'. Written only by item-revisions/release.ts. */
+    /** ADR-323 (0263) — REV_RELEASE_STATUSES unverified / verified / obsolete
+     *  (CHECK still accepts the ADR-290 words until 0264; read through
+     *  normalizeRevStatus). Writers: lib/item-revision.ts (new rows
+     *  'unverified'), lib/item-revision-drawing.ts (replaced file → unverified),
+     *  item-revisions/release.ts (verify / unverify / obsolete). */
     releaseStatus: text('release_status').notNull().default('unverified'),
     changeNote: text('change_note'),
     submittedAt: timestamp('submitted_at', { withTimezone: true }),
@@ -9063,7 +9068,7 @@ export const itemRevisions = pgTable(
     obsoletedAt: timestamp('obsoleted_at', { withTimezone: true }),
     obsoletedBy: uuid('obsoleted_by').references((): AnyPgColumn => users.id),
     supersededAt: timestamp('superseded_at', { withTimezone: true }),
-    /** SHA-256 of the drawing file, stored at release. */
+    /** SHA-256 of the drawing file, stored at Verify (ADR-323). */
     fileHash: text('file_hash'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -9090,7 +9095,7 @@ export const itemRevisions = pgTable(
     index('item_revisions_item_idx').on(t.itemId),
     check(
       'item_revisions_release_status_check',
-      sql`${t.releaseStatus} IN ('unverified', 'draft', 'under_review', 'approved', 'released', 'superseded', 'obsolete', 'rejected')`,
+      sql`${t.releaseStatus} IN ('unverified', 'verified', 'obsolete', 'draft', 'under_review', 'approved', 'released', 'superseded', 'rejected')`,
     ),
     index('item_revisions_company_status_idx')
       .on(t.companyId, t.releaseStatus)

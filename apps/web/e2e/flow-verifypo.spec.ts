@@ -14,7 +14,11 @@ test('T20/22 create PO from PR blank → IN-PO', async ({ page }: { page: Page }
   test.setTimeout(150_000);
   await page.goto('/purchase-requests?search=IN-PR-00001', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3000);
-  await clickRowMenuItem(page, page.locator('table tbody tr', { hasText: 'IN-PR-00001' }).first(), /^Create PO/);
+  await clickRowMenuItem(
+    page,
+    page.locator('table tbody tr', { hasText: 'IN-PR-00001' }).first(),
+    /^Create PO/,
+  );
   await page.waitForTimeout(3000);
   // Clear the auto-filled PO number → exercise the blank→auto path (T20/22).
   const poNo = page.locator('input[value^="IN-PO-"], input[value^="IN-JWPO-"]').first();
@@ -27,5 +31,9 @@ test('T20/22 create PO from PR blank → IN-PO', async ({ page }: { page: Page }
   const body = await page.locator('body').innerText();
   const po = body.match(/IN-(?:JW)?PO-\d+/);
   const err = /validation failed/i.test(body);
-  log(Boolean(po) && !err, 'T20/22 PO auto-generated on blank (no validation error)', po ? po[0] : `err=${err} url=${page.url()} :: ${body.slice(0, 160).replace(/\n/g, ' ')}`);
+  log(
+    Boolean(po) && !err,
+    'T20/22 PO auto-generated on blank (no validation error)',
+    po ? po[0] : `err=${err} url=${page.url()} :: ${body.slice(0, 160).replace(/\n/g, ' ')}`,
+  );
 });

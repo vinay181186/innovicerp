@@ -157,19 +157,6 @@ export function accessListColumns(firstRowNo: number): DataTableColumn<UserAcces
               🖨 Drawing print
             </div>
           ) : null}
-          {u.fullAccess || u.drawingRelease ? (
-            <div
-              className="badge b-cyan"
-              style={{
-                fontSize: 'var(--fs-xs)',
-                marginTop: 'var(--sp-0)',
-                display: 'inline-block',
-              }}
-              title="May release a Drawing Rev and approve a drawing correction on a released Rev"
-            >
-              ✅ Drawing release
-            </div>
-          ) : null}
         </>
       ),
     },
