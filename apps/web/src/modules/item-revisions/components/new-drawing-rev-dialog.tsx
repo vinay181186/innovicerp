@@ -108,8 +108,8 @@ export function NewDrawingRevDialog({
         message={
           <div style={{ display: 'grid', gap: 'var(--sp-2)', marginTop: 'var(--sp-2)' }}>
             <span>
-              The new Drawing Rev is added as Unverified. The drawing PDF is optional here; once it
-              is on file, Design opens it and clicks Verify.
+              The new Drawing Rev is added as Unverified. The drawing PDF is optional here (a new
+              Route Card needs it); once it is on file, Design opens it and clicks Verify.
             </span>
             <FormField label="Item Code" required htmlFor="ndr-item">
               <SearchableSelect

@@ -118,9 +118,12 @@ export function useRevStatusAction() {
   return useMutation<ItemRevision, Error, RevStatusActionVars>({
     mutationFn: ({ id, action, input }) =>
       apiFetch<ItemRevision>(`/item-revisions/${id}/${action}`, { method: 'POST', json: input }),
-    onSuccess: () => {
+    // Returned promise: mutateAsync (the dialog) waits until the drawing page
+    // has re-read, so the header never shows the old status after closing.
+    onSuccess: async () => {
       invalidateReleaseViews(qc);
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      await qc.invalidateQueries({ queryKey: itemRevisionKeys.all });
     },
     onError: (e) => {
       if (e instanceof ApiError && e.status === 409) invalidateReleaseViews(qc);

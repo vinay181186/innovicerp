@@ -152,6 +152,8 @@ export function RevActionDialog({
       tone={action === 'obsolete' ? 'danger' : 'primary'}
       confirmLabel={t.confirm}
       pendingLabel={t.pending}
+      // Verify stays grey until the drawing is loaded, has a PDF and is ticked.
+      confirmDisabled={action === 'verify' && (detail.isLoading || !path || !ticked)}
       message={
         <div style={{ display: 'grid', gap: 'var(--sp-2)', marginTop: 'var(--sp-2)' }}>
           {action === 'verify' ? (
