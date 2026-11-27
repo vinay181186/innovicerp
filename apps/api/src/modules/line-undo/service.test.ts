@@ -177,8 +177,8 @@ describe('ADR-324 — a plan steps back when its PR / Job Card is cancelled', ()
     const c = admin.companyId!;
     const pr = (
       (await db.execute(sql`
-        INSERT INTO public.purchase_requests (company_id, code, pr_date, qty, created_by, updated_by)
-        VALUES (${c}::uuid, ${`${P}PR`}, '2026-11-26', 5, ${admin.id}::uuid, ${admin.id}::uuid)
+        INSERT INTO public.purchase_requests (company_id, code, pr_date, qty, item_id, vendor_code_text, created_by, updated_by)
+        VALUES (${c}::uuid, ${`${P}PR`}, '2026-11-26', 5, ${itemId}::uuid, ${`${P}VENDOR`}, ${admin.id}::uuid, ${admin.id}::uuid)
         RETURNING id
       `)) as unknown as Array<{ id: string }>
     )[0]!;
