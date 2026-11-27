@@ -26,7 +26,8 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { hasFormAccess } from '../../lib/access';
 import { jobCardCancelBlockers } from '../job-cards/cancel';
 import { partyGrnSteps, pmiStep } from './pgrn-steps';
-import { type BuiltStep, cancelStep, ids, manualStep, opRef, q } from './step-kit';
+import { type ListedCodes, manualSteps, planSteps, type ProRow, proSteps } from './plan-steps';
+import { type BuiltStep, cancelStep, ids, opRef, q } from './step-kit';
 
 export type { BuiltStep, StepRun } from './step-kit';
 
@@ -72,9 +73,10 @@ async function jobCardSteps(
   tx: DbTransaction,
   companyId: string,
   jcs: readonly Jc[],
-  skip: { jcCodes: Set<string>; proCodes: Set<string>; jwReturnCodes: Set<string> },
+  skip: ListedCodes,
   pmiByJc: Map<string, BuiltStep[]>,
-  proById: Map<string, { id: string; code: string }>,
+  proById: Map<string, ProRow>,
+  seen: Set<string>,
 ): Promise<BuiltStep[]> {
   if (jcs.length === 0) return [];
   const jcIds = jcs.map((j) => j.id);
@@ -119,6 +121,7 @@ async function jobCardSteps(
   );
 
   const out: BuiltStep[] = [];
+  const proOrder: ProRow[] = [];
   for (const jc of jcs) {
     const jcHref = `/job-cards/${jc.id}`;
     for (const r of running.filter((x) => x.jobCardId === jc.id)) {
@@ -169,36 +172,36 @@ async function jobCardSteps(
     out.push(...(pmiByJc.get(jc.id) ?? []));
 
     // Everything else that refuses the card's cancel today, named by the
-    // card's own rule; what the list already covers is left out.
-    const blockers = await jobCardCancelBlockers(tx, companyId, jc.id, {
-      viaProductionOrder: jc.productionOrderId != null,
-    });
-    blockers
-      .filter(
-        (b) =>
-          b.docLabel !== 'Op Entry' &&
-          b.docLabel !== 'Customer Material Issue' &&
-          !(b.docLabel === 'Job Card' && skip.jcCodes.has(b.docNo)) &&
-          !(b.docLabel === 'Production Order' && skip.proCodes.has(b.docNo)) &&
-          !(b.docLabel === 'JW Return' && skip.jwReturnCodes.has(b.docNo)),
-      )
-      .forEach((b, i) => out.push(manualStep(`manual:${jc.id}:${i}`, jc.id, b)));
-
+    // card's own rule; what the list already covers is left out. A
+    // short-closed / stopped order stays (manual — short-close the line).
     const pro = jc.productionOrderId ? proById.get(jc.productionOrderId) : undefined;
-    if (pro) {
-      out.push(
-        cancelStep(
-          'production_order',
-          pro.id,
-          pro.code,
-          `/production-orders/${pro.id}`,
-          `Cancel the Production Order — ${jc.code} is cancelled with it`,
+    const mainCard = pro?.jobCardId === jc.id;
+    const blockers = await jobCardCancelBlockers(tx, companyId, jc.id, {
+      viaProductionOrder: mainCard,
+    });
+    out.push(
+      ...manualSteps(
+        `jc:${jc.id}`,
+        jc.id,
+        blockers.filter(
+          (b) =>
+            b.docLabel !== 'Op Entry' &&
+            b.docLabel !== 'Customer Material Issue' &&
+            !(b.docLabel === 'Job Card' && skip.jcCodes.has(b.docNo)) &&
+            !(
+              b.docLabel === 'Production Order' && b.reason.startsWith('built by Production Order')
+            ) &&
+            !(b.docLabel === 'JW Return' && skip.jwReturnCodes.has(b.docNo)),
         ),
-      );
-    } else {
-      out.push(cancelStep('job_card', jc.id, jc.code, jcHref, 'Cancel the Job Card'));
-    }
+        seen,
+      ),
+    );
+    // The order's own card is cancelled with the order (below, once).
+    if (!mainCard) out.push(cancelStep('job_card', jc.id, jc.code, jcHref, 'Cancel the Job Card'));
+    if (pro && !proOrder.includes(pro)) proOrder.push(pro);
   }
+  // Each Production Order ONCE, after every card of it (rework child + parent).
+  for (const pro of proOrder) out.push(...(await proSteps(tx, companyId, pro, skip, seen)));
   return out;
 }
 
@@ -253,18 +256,25 @@ export async function buildJwLineUndoSteps(
     );
   }
 
-  const plans = await q<{ id: string; code: string; jcId: string | null }>(
+  const plans = await q<{
+    id: string;
+    code: string;
+    jcId: string | null;
+    dpPrId: string | null;
+    foPrId: string | null;
+  }>(
     tx,
-    sql`SELECT id, code, jc_id AS "jcId" FROM public.plans
+    sql`SELECT id, code, jc_id AS "jcId", dp_pr_id AS "dpPrId", fo_pr_id AS "foPrId"
+          FROM public.plans
          WHERE jw_line_id = ${L} AND company_id = ${C}
            AND deleted_at IS NULL AND plan_status <> 'cancelled'
          ORDER BY created_at DESC`,
   );
   const pros =
     plans.length > 0
-      ? await q<{ id: string; code: string; planId: string; jobCardId: string | null }>(
+      ? await q<ProRow>(
           tx,
-          sql`SELECT id, code, plan_id AS "planId", job_card_id AS "jobCardId"
+          sql`SELECT id, code, plan_id AS "planId", job_card_id AS "jobCardId", status
                 FROM public.production_orders
                WHERE plan_id IN (${ids(plans.map((p) => p.id))}) AND company_id = ${C}
                  AND deleted_at IS NULL
@@ -279,7 +289,8 @@ export async function buildJwLineUndoSteps(
     tx,
     sql`SELECT jc.id, jc.code, jc.production_order_id AS "productionOrderId",
                COALESCE(po.plan_id, (SELECT p.id FROM public.plans p WHERE p.jc_id = jc.id
-                                       AND p.deleted_at IS NULL LIMIT 1)) AS "planId"
+                                       AND p.deleted_at IS NULL
+                                       AND p.plan_status <> 'cancelled' LIMIT 1)) AS "planId"
           FROM public.job_cards jc
           LEFT JOIN public.production_orders po ON po.id = jc.production_order_id
          WHERE jc.company_id = ${C} AND jc.deleted_at IS NULL
@@ -315,42 +326,31 @@ export async function buildJwLineUndoSteps(
     jwReturnCodes: new Set(returns.map((r) => r.code)),
   };
   const proById = new Map(pros.map((p) => [p.id, p]));
-  // Cards with no plan first (newest first), then each plan's cards + the plan.
-  out.push(
-    ...(await jobCardSteps(
+  const seen = new Set<string>();
+  // Every card appears: one whose plan is not a live plan of this line goes
+  // with the no-plan cards (newest first), then each plan's cards + the plan.
+  const livePlanIds = new Set(plans.map((p) => p.id));
+  const planOf = (j: { planId: string | null }) =>
+    j.planId && livePlanIds.has(j.planId) ? j.planId : null;
+  const group = (planId: string | null) =>
+    jobCardSteps(
       tx,
       companyId,
-      jcs.filter((j) => !j.planId),
+      jcs.filter((j) => planOf(j) === planId),
       skip,
       pmiByJc,
       proById,
-    )),
-  );
-  for (const p of plans) {
-    out.push(
-      ...(await jobCardSteps(
-        tx,
-        companyId,
-        jcs.filter((j) => j.planId === p.id),
-        skip,
-        pmiByJc,
-        proById,
-      )),
+      seen,
     );
-    // A Production Order on the plan with no card yet is cancelled before the plan.
+  out.push(...(await group(null)));
+  for (const p of plans) {
+    out.push(...(await group(p.id)));
+    // A Production Order on the plan with no card yet comes before the plan.
     const carded = new Set(jcs.flatMap((j) => (j.productionOrderId ? [j.productionOrderId] : [])));
     for (const o of pros.filter((x) => x.planId === p.id && !carded.has(x.id))) {
-      out.push(
-        cancelStep(
-          'production_order',
-          o.id,
-          o.code,
-          `/production-orders/${o.id}`,
-          'Cancel the Production Order',
-        ),
-      );
+      out.push(...(await proSteps(tx, companyId, o, skip, seen)));
     }
-    out.push(cancelStep('plan', p.id, p.code, `/plans/${p.id}`, 'Cancel the plan'));
+    out.push(...(await planSteps(tx, companyId, p, skip, seen)));
   }
   out.push(...loosePmis);
   out.push(...(await partyGrnSteps(tx, companyId, jwLineId)));

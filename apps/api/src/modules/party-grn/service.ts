@@ -907,6 +907,30 @@ export async function partyGrnCancelBlockers(
   const out: CancelBlocker[] = [];
   const lines = await partyGrnCancelLines(tx, companyId, id, lineIds);
 
+  // ADR-324 — the whole-GRN cancel waits for a Reverse QC / Remove line
+  // request pending on one of its lines (decide that first).
+  if (!lineIds && lines.length > 0) {
+    const pendingLine = (await tx.execute(sql`
+      SELECT doc_code AS "docCode" FROM public.cancel_requests
+       WHERE company_id = ${companyId}::uuid
+         AND doc_type IN ('party_grn_line', 'party_grn_line_qc')
+         AND doc_id IN (${sql.join(
+           lines.map((l) => sql`${l.id}::uuid`),
+           sql`, `,
+         )})
+         AND status = 'pending' AND deleted_at IS NULL
+       ORDER BY doc_code
+    `)) as unknown as Array<{ docCode: string }>;
+    for (const r of pendingLine) {
+      out.push({
+        docLabel: 'Party GRN line',
+        docNo: r.docCode,
+        href: `/party-grn/${id}`,
+        reason: 'has a cancel request pending — decide it first',
+      });
+    }
+  }
+
   // 1) Deviated pieces already handed back cannot be un-received.
   const sentBack = lines.filter((l) => l.rejectedReturnedQty > 0);
   if (sentBack.length > 0) {

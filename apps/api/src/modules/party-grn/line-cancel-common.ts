@@ -132,6 +132,23 @@ export async function commonBlockers(
        AND entity_id = ${l.partyGrnId}::uuid AND status = 'pending' AND deleted_at IS NULL
      LIMIT 1
   `)) as unknown as unknown[];
+  // ADR-324 — not while a cancel of the whole Party GRN waits.
+  const whole = (await tx.execute(sql`
+    SELECT doc_code AS "docCode" FROM public.cancel_requests
+     WHERE company_id = ${companyId}::uuid AND doc_type = 'party_grn'
+       AND doc_id = ${l.partyGrnId}::uuid AND status = 'pending' AND deleted_at IS NULL
+     LIMIT 1
+  `)) as unknown as Array<{ docCode: string }>;
+  if (whole[0]) {
+    return [
+      {
+        docLabel: 'Party GRN',
+        docNo: whole[0].docCode,
+        href,
+        reason: 'has a cancel request pending — decide it first',
+      },
+    ];
+  }
   if (staged.length > 0) {
     return [
       {

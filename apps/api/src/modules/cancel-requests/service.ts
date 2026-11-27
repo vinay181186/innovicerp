@@ -76,6 +76,21 @@ const ACTIVITY_ENTITY: Record<CancelDocType, string> = {
   nc_disposition: 'NonConformance',
 };
 
+/** ADR-324 — the id the ActivityLog row sits on. A Party GRN LINE request
+ *  logs on its Party GRN (entity PartyGrn), so the history shows on the GRN;
+ *  refId stays the request's "PGRN-x Ln n". Every other type: the doc id. */
+async function activityEntityId(
+  tx: DbTransaction,
+  docType: CancelDocType,
+  docId: string,
+): Promise<string> {
+  if (docType !== 'party_grn_line' && docType !== 'party_grn_line_qc') return docId;
+  const rows = (await tx.execute(sql`
+    SELECT party_grn_id AS "grnId" FROM public.party_grn_lines WHERE id = ${docId}::uuid
+  `)) as unknown as Array<{ grnId: string }>;
+  return rows[0]?.grnId ?? docId;
+}
+
 type RequestDbRow = typeof cancelRequests.$inferSelect;
 
 function isUniqueViolation(e: unknown): boolean {
@@ -295,7 +310,7 @@ export async function requestCancel(
       {
         action: ActivityAction.Request,
         entity: ACTIVITY_ENTITY[docType],
-        entityId: docId,
+        entityId: await activityEntityId(tx, docType, docId),
         refId: docCode,
         reason: input.reason,
         detail: `${docCode} — cancel requested`,
@@ -348,7 +363,7 @@ export async function decideCancelRequest(
       {
         action: ActivityAction.Reject,
         entity: ACTIVITY_ENTITY[docType],
-        entityId: req.docId,
+        entityId: await activityEntityId(tx, docType, req.docId),
         refId: req.docCode,
         reason: note,
         detail: `${req.docCode} — cancel request rejected`,
@@ -385,7 +400,7 @@ export async function withdrawCancelRequest(
       {
         action: ActivityAction.Withdraw,
         entity: ACTIVITY_ENTITY[docType],
-        entityId: req.docId,
+        entityId: await activityEntityId(tx, docType, req.docId),
         refId: req.docCode,
         detail: `${req.docCode} — cancel request withdrawn`,
       },

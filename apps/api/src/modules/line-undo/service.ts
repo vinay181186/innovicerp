@@ -129,6 +129,8 @@ export async function runJwLineUndoStep(
   user: AuthContext,
 ): Promise<RunLineUndoStepResult> {
   const companyId = requireCompany(user);
+  // The same page gate as the list.
+  await requireFormAccess(user, 'jw_create', 'view');
   await primeAccess(user);
   if (!canUndoChain(await getMyAccess(user))) {
     throw new AuthorizationError('You do not hold the Undo chain right.');
