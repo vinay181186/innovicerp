@@ -9,7 +9,7 @@
 // the whole file, which that real-database suite cannot share.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EffectiveAccess } from '@innovic/shared';
+import { canUndoChain, type EffectiveAccess } from '@innovic/shared';
 import type { AuthContext } from '../../db/with-user-context';
 import { fakeDb as h, resetFakeDb } from '../../../test/unit/fake-db';
 
@@ -19,6 +19,7 @@ vi.mock('../../db/client', async () =>
 
 const { getMyAccess } = await import('./my-access');
 const { openRequestScope } = await import('../../db/with-user-context');
+const { personEffectiveAccess } = await import('./users-with-right');
 
 const COMPANY = '00000000-0000-0000-0000-0000000000c1';
 const ctx = (id = 'u1'): AuthContext => ({
@@ -36,6 +37,7 @@ const row = (fullAccess: boolean) => ({
   drawingDownload: false,
   drawingPrint: false,
   drawingRelease: false,
+  undoChain: false,
   departments: {},
   forms: { po: { view: true } },
 });
@@ -120,6 +122,7 @@ describe('getMyAccess — once per request (ADR-229)', () => {
       drawingDownload: false,
       drawingPrint: false,
       drawingRelease: false,
+      undoChain: false,
       departments: {},
       forms: {},
     });
@@ -146,5 +149,41 @@ describe('getMyAccess — once per request (ADR-229)', () => {
     const user = openRequestScope({ ...ctx(), companyId: null });
     await expect(getMyAccess(user)).rejects.toThrow();
     expect(h.reads).toBe(0);
+  });
+});
+
+// 0266 — /access-control/me carries the stored "Undo chain" Special Right.
+describe('getMyAccess — undoChain (0266)', () => {
+  it('a row with undo_chain true reads undoChain true', async () => {
+    h.next.push({ ...row(false), undoChain: true });
+    const my = await getMyAccess(requestCtx());
+    expect(my.undoChain).toBe(true);
+    expect(canUndoChain(my)).toBe(true);
+  });
+
+  it('a row with undo_chain false reads false; L6 still holds it through canUndoChain', async () => {
+    h.next.push(row(false), row(true));
+    const plain = await getMyAccess(requestCtx());
+    expect(plain.undoChain).toBe(false);
+    expect(canUndoChain(plain)).toBe(false);
+    const l6 = await getMyAccess(requestCtx());
+    expect(l6.undoChain).toBe(false);
+    expect(canUndoChain(l6)).toBe(true);
+  });
+
+  it('a row without the column (null) reads false — fail closed', async () => {
+    h.next.push({ ...row(false), undoChain: null });
+    expect((await getMyAccess(requestCtx())).undoChain).toBe(false);
+  });
+
+  it('personEffectiveAccess carries undoChain from a bulk-read row', () => {
+    const base = { role: 'manager', acAuditor: false, acDepartments: {}, acForms: {} };
+    expect(
+      canUndoChain(personEffectiveAccess({ ...base, acFullAccess: false, acUndoChain: true })),
+    ).toBe(true);
+    expect(canUndoChain(personEffectiveAccess({ ...base, acFullAccess: false }))).toBe(false);
+    expect(
+      canUndoChain(personEffectiveAccess({ ...base, acFullAccess: true, acUndoChain: null })),
+    ).toBe(true);
   });
 });

@@ -17,6 +17,7 @@ export const dash = (eff: Partial<EffectiveAccess>, isAdmin = false): Dash => ({
     drawingDownload: false,
     drawingPrint: false,
     drawingRelease: false,
+    undoChain: false,
     departments: {},
     forms: {},
     ...eff,

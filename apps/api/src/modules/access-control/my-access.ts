@@ -44,6 +44,10 @@ export function toEffectiveAccess(row: {
   drawingPrint: boolean | null;
   /** ADR-290 — "Can release drawings". */
   drawingRelease: boolean | null;
+  /** 0266 — "Undo chain" Special Right. See canUndoChain. Optional (unlike the
+   *  rest) so the pickers that ask only about form rights need not state it;
+   *  a missing value reads "no", which is the fail-closed answer. */
+  undoChain?: boolean | null;
   departments: unknown;
   forms: unknown;
 }): EffectiveAccess {
@@ -53,6 +57,7 @@ export function toEffectiveAccess(row: {
     drawingDownload: row.drawingDownload ?? false,
     drawingPrint: row.drawingPrint ?? false,
     drawingRelease: row.drawingRelease ?? false,
+    undoChain: row.undoChain ?? false,
     departments: normalizeDeptsMap(asJsonMap<AccessDeptsMap>(row.departments)),
     forms: cascadeFormsMap(asJsonMap<AccessFormsMap>(row.forms)),
   };
@@ -112,6 +117,7 @@ async function readMyAccess(user: AuthContext): Promise<FrozenAccess> {
           drawingDownload: null,
           drawingPrint: null,
           drawingRelease: null,
+          undoChain: null,
           departments: null,
           forms: null,
         });

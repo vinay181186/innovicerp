@@ -129,6 +129,9 @@ export const userAccessSchema = z.object({
   drawingPrint: z.boolean().default(false),
   /** "Can release drawings" (Drawing Register, ADR-290). See canReleaseDrawings. */
   drawingRelease: z.boolean().default(false),
+  /** "Undo chain" Special Right (migration 0266): may undo everything holding an
+   *  SO / JWSO line from one list. Only an L6 Super Admin may change it. See canUndoChain. */
+  undoChain: z.boolean().default(false),
   // Which department this person belongs to. Seeds that department's tier and
   // is what the screens show in place of the old role dropdown. Null for L6 /
   // L7 accounts, which are not departmental, and for anyone not set up yet.
@@ -153,6 +156,9 @@ export const saveUserAccessInputSchema = z.object({
   drawingPrint: z.boolean().default(false),
   /** "Can release drawings" (Drawing Register, ADR-290). See canReleaseDrawings. */
   drawingRelease: z.boolean().default(false),
+  /** "Undo chain" Special Right (migration 0266): may undo everything holding an
+   *  SO / JWSO line from one list. Only an L6 Super Admin may change it. See canUndoChain. */
+  undoChain: z.boolean().default(false),
   mainDept: z.string().nullable().default(null),
   // Explicit intent to drop someone out of admin. The derived role makes it
   // possible to demote an admin by saving an empty box, which is a one-click
@@ -179,6 +185,9 @@ export const userAccessListItemSchema = z.object({
   drawingPrint: z.boolean().default(false),
   /** "Can release drawings" (Drawing Register, ADR-290). See canReleaseDrawings. */
   drawingRelease: z.boolean().default(false),
+  /** "Undo chain" Special Right (migration 0266): may undo everything holding an
+   *  SO / JWSO line from one list. Only an L6 Super Admin may change it. See canUndoChain. */
+  undoChain: z.boolean().default(false),
   mainDept: z.string().nullable().default(null),
   // What the access below WOULD derive to. `role` above is what is stored and
   // enforced right now; they differ for anyone whose access has never been
@@ -226,6 +235,9 @@ export const effectiveAccessSchema = z.object({
   drawingPrint: z.boolean().default(false),
   /** "Can release drawings" (Drawing Register, ADR-290). See canReleaseDrawings. */
   drawingRelease: z.boolean().default(false),
+  /** "Undo chain" Special Right (migration 0266): may undo everything holding an
+   *  SO / JWSO line from one list. Only an L6 Super Admin may change it. See canUndoChain. */
+  undoChain: z.boolean().default(false),
   departments: accessDeptsMapSchema,
   forms: accessFormsMapSchema,
 });
@@ -578,4 +590,15 @@ export function canReleaseDrawings(
   if (!eff) return false;
   if (eff.fullAccess) return true;
   return eff.drawingRelease === true;
+}
+
+/** Migration 0266 — the "Undo chain" Special Right: undo everything holding an
+ *  SO / JWSO line from one list. L6 Full Access always; everyone else only when
+ *  the per-person tick is set. Unlike the drawing helpers there is NO bypass for
+ *  the `admin` role, and L7 Auditor is not implied — it is given on purpose. */
+export function canUndoChain(
+  eff: Pick<EffectiveAccess, 'fullAccess' | 'undoChain'> | null | undefined,
+): boolean {
+  if (!eff) return false;
+  return eff.fullAccess === true || eff.undoChain === true;
 }

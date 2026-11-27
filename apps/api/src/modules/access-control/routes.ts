@@ -59,6 +59,10 @@ export async function accessControlRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { userId } = userIdParamSchema.parse(req.params);
     const body = saveUserAccessInputSchema.parse(req.body);
-    return service.saveUserAccess(userId, body, req.user);
+    // 0266 — the schema defaults a missing `undoChain` to false; an old tab
+    // that never sends it must keep the stored value, not untick it.
+    const undoChainSent =
+      typeof (req.body as { undoChain?: unknown } | null | undefined)?.undoChain === 'boolean';
+    return service.saveUserAccess(userId, body, req.user, { undoChainSent });
   });
 }

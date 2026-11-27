@@ -20,6 +20,7 @@ export function asAccess(
     drawingDownload: false,
     drawingPrint: false,
     drawingRelease: false,
+    undoChain: false,
     departments: {},
     forms: {},
     ...access,

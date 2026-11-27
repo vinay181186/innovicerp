@@ -10,6 +10,7 @@ import { db } from '../../db/client';
 import { activityLog, userAccess, users } from '../../db/schema';
 import { type AuthContext, openRequestScope } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { asAccess } from '../../lib/test-access';
 import * as service from './service';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -43,6 +44,7 @@ let viewerOriginalAccess: {
   drawingDownload: boolean;
   drawingPrint: boolean;
   drawingRelease: boolean;
+  undoChain: boolean;
   mainDept: string | null;
   departments: Record<string, boolean | AccessTierKey>;
   forms: Record<string, AccessFormPerms>;
@@ -81,6 +83,7 @@ beforeAll(async () => {
       drawingDownload: ac.drawingDownload,
       drawingPrint: ac.drawingPrint,
       drawingRelease: ac.drawingRelease,
+      undoChain: ac.undoChain,
       mainDept: ac.mainDept,
       departments: (ac.departments as Record<string, boolean | AccessTierKey>) ?? {},
       forms: (ac.forms as Record<string, AccessFormPerms>) ?? {},
@@ -100,6 +103,7 @@ afterAll(async () => {
         drawingDownload: viewerOriginalAccess.drawingDownload,
         drawingPrint: viewerOriginalAccess.drawingPrint,
         drawingRelease: viewerOriginalAccess.drawingRelease,
+        undoChain: viewerOriginalAccess.undoChain,
         mainDept: viewerOriginalAccess.mainDept,
         departments: viewerOriginalAccess.departments,
         forms: viewerOriginalAccess.forms,
@@ -157,6 +161,7 @@ describe('access-control service', () => {
         drawingDownload: false,
         drawingPrint: false,
         drawingRelease: false,
+        undoChain: false,
         mainDept: null,
         confirmAdminChange: false,
         departments: { sales: 'L3', qc: 'L2' },
@@ -192,6 +197,7 @@ describe('access-control service', () => {
         drawingDownload: false,
         drawingPrint: false,
         drawingRelease: false,
+        undoChain: false,
         mainDept: null,
         confirmAdminChange: false,
         departments: { sales: 'L1' },
@@ -211,6 +217,7 @@ describe('access-control service', () => {
         drawingDownload: false,
         drawingPrint: false,
         drawingRelease: false,
+        undoChain: false,
         mainDept: null,
         confirmAdminChange: false,
         departments: { sales: true },
@@ -235,6 +242,7 @@ describe('access-control service', () => {
         drawingDownload: false,
         drawingPrint: false,
         drawingRelease: false,
+        undoChain: false,
         mainDept: 'design',
         confirmAdminChange: false,
         departments: { design: 'L3', sales: 'L1' },
@@ -259,6 +267,7 @@ describe('access-control service', () => {
         drawingDownload: false,
         drawingPrint: false,
         drawingRelease: false,
+        undoChain: false,
         mainDept: 'design',
         confirmAdminChange: false,
         departments: { sales: 'L1' },
@@ -279,6 +288,7 @@ describe('access-control service', () => {
           drawingDownload: false,
           drawingPrint: false,
           drawingRelease: false,
+          undoChain: false,
           mainDept: null,
           confirmAdminChange: false,
           departments,
@@ -311,6 +321,7 @@ describe('access-control service', () => {
         drawingDownload: false,
         drawingPrint: false,
         drawingRelease: false,
+        undoChain: false,
         mainDept: null,
         confirmAdminChange: false,
         departments: {},
@@ -328,6 +339,7 @@ describe('access-control service', () => {
         drawingDownload: false,
         drawingPrint: false,
         drawingRelease: false,
+        undoChain: false,
         mainDept: null,
         confirmAdminChange: false,
         departments: {},
@@ -347,6 +359,7 @@ describe('access-control service', () => {
         drawingDownload: false,
         drawingPrint: false,
         drawingRelease: false,
+        undoChain: false,
         mainDept: null,
         confirmAdminChange: false,
         departments: { sales: 'L3', fictional_dept: 'L3' },
@@ -372,6 +385,7 @@ describe('access-control service', () => {
         drawingDownload: false,
         drawingPrint: false,
         drawingRelease: false,
+        undoChain: false,
         mainDept: null,
         confirmAdminChange: false,
         departments: {},
@@ -395,6 +409,7 @@ describe('access-control service', () => {
         drawingDownload: false,
         drawingPrint: false,
         drawingRelease: false,
+        undoChain: false,
         mainDept: null,
         confirmAdminChange: false,
         departments: {},
@@ -416,6 +431,7 @@ describe('access-control service', () => {
           drawingDownload: false,
           drawingPrint: false,
           drawingRelease: false,
+          undoChain: false,
           mainDept: null,
           confirmAdminChange: false,
           departments: {},
@@ -435,6 +451,7 @@ describe('access-control service', () => {
         drawingDownload: false,
         drawingPrint: false,
         drawingRelease: false,
+        undoChain: false,
         mainDept: null,
         confirmAdminChange: false,
         departments: { sales: 'L3' },
@@ -461,6 +478,7 @@ describe('access-control service', () => {
         drawingDownload: false,
         drawingPrint: false,
         drawingRelease: false,
+        undoChain: false,
         mainDept: null,
         confirmAdminChange: false,
         departments: { sales: 'L3' },
@@ -488,6 +506,7 @@ describe('access-control service', () => {
           drawingDownload: false,
           drawingPrint: false,
           drawingRelease: false,
+          undoChain: false,
           mainDept: null,
           confirmAdminChange: false,
           departments,
@@ -526,5 +545,161 @@ describe('access-control service', () => {
     expect(my.auditor).toBe(false);
     expect(my.departments).toEqual({});
     expect(my.forms).toEqual({});
+    expect(my.undoChain).toBe(false);
+  });
+});
+
+// 0266 — "Undo chain" Special Right: only an L6 Super Admin may change it.
+describe('access-control service — Undo chain', () => {
+  // An admin by role whose own matrix is NOT Full Access, and an L6 one.
+  // asAccess pre-fills the caller's per-request access (ADR-229/232).
+  const nonL6Admin = () => asAccess(admin, { fullAccess: false }, 'admin');
+  const l6Admin = () => asAccess(admin, { fullAccess: true }, 'admin');
+  const input = (undoChain: boolean) => ({
+    fullAccess: false,
+    auditor: false,
+    drawingDownload: false,
+    drawingPrint: false,
+    drawingRelease: false,
+    undoChain,
+    mainDept: null,
+    confirmAdminChange: false,
+    departments: { sales: 'L3' as const },
+    forms: {},
+  });
+  const storedUndoChain = async (): Promise<boolean | undefined> =>
+    (
+      await db
+        .select({ undoChain: userAccess.undoChain })
+        .from(userAccess)
+        .where(eq(userAccess.userId, viewer.id))
+        .limit(1)
+    )[0]?.undoChain;
+  const undoChainLogRows = () =>
+    db
+      .select({ detail: activityLog.detail })
+      .from(activityLog)
+      .where(and(eq(activityLog.entity, 'Access Control'), eq(activityLog.refId, viewer.id)));
+
+  it('start state: the viewer does not hold Undo chain', async () => {
+    await service.saveUserAccess(viewer.id, input(false), l6Admin());
+    expect(await storedUndoChain()).toBe(false);
+  });
+
+  it('refuses a non-L6 admin who changes Undo chain, before any write', async () => {
+    const before = (
+      await db
+        .select({ updatedAt: userAccess.updatedAt })
+        .from(userAccess)
+        .where(eq(userAccess.userId, viewer.id))
+        .limit(1)
+    )[0]!.updatedAt;
+    await expect(service.saveUserAccess(viewer.id, input(true), nonL6Admin())).rejects.toThrow(
+      'Only a Super Admin can change Undo chain.',
+    );
+    await expect(
+      service.saveUserAccess(viewer.id, input(true), nonL6Admin()),
+    ).rejects.toBeInstanceOf(AuthorizationError);
+    const after = (
+      await db
+        .select({ updatedAt: userAccess.updatedAt, undoChain: userAccess.undoChain })
+        .from(userAccess)
+        .where(eq(userAccess.userId, viewer.id))
+        .limit(1)
+    )[0]!;
+    expect(after.undoChain).toBe(false);
+    expect(after.updatedAt.getTime()).toBe(before.getTime());
+  });
+
+  it('lets a non-L6 admin save when Undo chain is unchanged', async () => {
+    const saved = await service.saveUserAccess(viewer.id, input(false), nonL6Admin());
+    expect(saved.undoChain).toBe(false);
+    expect(saved.departments.sales).toBe('L3');
+  });
+
+  it('lets an L6 Super Admin give and take Undo chain, one extra log row each', async () => {
+    const given = await service.saveUserAccess(viewer.id, input(true), l6Admin());
+    expect(given.undoChain).toBe(true);
+    expect(await storedUndoChain()).toBe(true);
+    let rows = await undoChainLogRows();
+    expect(rows.filter((r) => (r.detail ?? '').startsWith('Undo chain GIVEN to ')).length).toBe(1);
+    expect(rows.some((r) => (r.detail ?? '').includes('; undo chain YES'))).toBe(true);
+
+    const taken = await service.saveUserAccess(viewer.id, input(false), l6Admin());
+    expect(taken.undoChain).toBe(false);
+    rows = await undoChainLogRows();
+    expect(rows.filter((r) => (r.detail ?? '').startsWith('Undo chain TAKEN from ')).length).toBe(
+      1,
+    );
+  });
+
+  it('an unchanged save writes no extra Undo chain log row', async () => {
+    const count = async () =>
+      (await undoChainLogRows()).filter((r) => (r.detail ?? '').startsWith('Undo chain ')).length;
+    const n = await count();
+    await service.saveUserAccess(viewer.id, input(false), l6Admin());
+    expect(await count()).toBe(n);
+  });
+
+  it('a body without undoChain (old tab) keeps the stored value', async () => {
+    await service.saveUserAccess(viewer.id, input(true), l6Admin());
+    // The schema defaulted the missing field to false; the route says it was
+    // not sent, so even a non-L6 admin's save goes through and keeps the tick.
+    const saved = await service.saveUserAccess(viewer.id, input(false), nonL6Admin(), {
+      undoChainSent: false,
+    });
+    expect(saved.undoChain).toBe(true);
+    expect(await storedUndoChain()).toBe(true);
+    // Put it back.
+    await service.saveUserAccess(viewer.id, input(false), l6Admin());
+    expect(await storedUndoChain()).toBe(false);
+  });
+
+  it('L6 Super Admin includes Undo chain: a non-L6 admin cannot give or remove L6', async () => {
+    const asL6 = { ...input(false), fullAccess: true, confirmAdminChange: true };
+    await expect(service.saveUserAccess(viewer.id, asL6, nonL6Admin())).rejects.toThrow(
+      'Only a Super Admin can give or remove L6 Super Admin, because it includes Undo chain.',
+    );
+    expect(await storedUndoChain()).toBe(false);
+
+    // An L6 admin can, and the right change is logged on its own line.
+    await service.saveUserAccess(viewer.id, asL6, l6Admin());
+    let rows = await undoChainLogRows();
+    expect(
+      rows.some(
+        (r) =>
+          (r.detail ?? '').endsWith('(through L6 Super Admin)') &&
+          (r.detail ?? '').startsWith('Undo chain GIVEN to '),
+      ),
+    ).toBe(true);
+
+    // Taking L6 away again is refused for the non-L6 admin too.
+    await expect(
+      service.saveUserAccess(
+        viewer.id,
+        { ...input(false), confirmAdminChange: true },
+        nonL6Admin(),
+      ),
+    ).rejects.toThrow('Only a Super Admin can give or remove L6 Super Admin');
+    await service.saveUserAccess(
+      viewer.id,
+      { ...input(false), confirmAdminChange: true },
+      l6Admin(),
+    );
+    rows = await undoChainLogRows();
+    expect(
+      rows.some(
+        (r) =>
+          (r.detail ?? '').startsWith('Undo chain TAKEN from ') &&
+          (r.detail ?? '').endsWith('(through L6 Super Admin)'),
+      ),
+    ).toBe(true);
+  });
+
+  it('listUserAccess and getUserAccess carry the stored undoChain', async () => {
+    const list = await service.listUserAccess(l6Admin());
+    expect(list.items.find((u) => u.userId === viewer.id)?.undoChain).toBe(false);
+    const one = await service.getUserAccess(viewer.id, l6Admin());
+    expect(one.undoChain).toBe(false);
   });
 });
