@@ -15,16 +15,10 @@
 // rules for 'manual'); the list adds only the order. Reads are batched by id
 // list — one query per kind, plus jobCardCancelBlockers once per Job Card.
 
-import {
-  CANCEL_DOC_FORM_KEY,
-  type AccessFormKey,
-  type CancelDocType,
-  ONE_STEP_CANCEL_DOC_TYPES,
-} from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
-import { hasFormAccess } from '../../lib/access';
 import { jobCardCancelBlockers } from '../job-cards/cancel';
+import { markPendingAndApproval, readJwLineDocs } from './jw-reads';
 import { partyGrnSteps, pmiStep } from './pgrn-steps';
 import { type ListedCodes, manualSteps, planSteps, type ProRow, proSteps } from './plan-steps';
 import { type BuiltStep, cancelStep, ids, opRef, q } from './step-kit';
@@ -77,10 +71,13 @@ async function jobCardSteps(
   pmiByJc: Map<string, BuiltStep[]>,
   proById: Map<string, ProRow>,
   seen: Set<string>,
+  firstOnly: boolean,
 ): Promise<BuiltStep[]> {
   if (jcs.length === 0) return [];
   const jcIds = jcs.map((j) => j.id);
-  const running = await q<{
+  // Independent reads are sent together (postgres-js pipelines them on the
+  // transaction's connection) — one round trip instead of two.
+  const runningP = q<{
     id: string;
     jobCardId: string;
     opSeq: number;
@@ -100,7 +97,7 @@ async function jobCardSteps(
        ORDER BY ro.created_at DESC
     `,
   );
-  const logs = await q<OpLogRow>(
+  const logsP = q<OpLogRow>(
     tx,
     sql`
       SELECT l.id, l.log_no AS "logNo", l.log_type::text AS "logType",
@@ -119,10 +116,12 @@ async function jobCardSteps(
        ORDER BY l.created_at DESC, l.log_no DESC
     `,
   );
+  const [running, logs] = await Promise.all([runningP, logsP]);
 
   const out: BuiltStep[] = [];
   const proOrder: ProRow[] = [];
   for (const jc of jcs) {
+    if (firstOnly && out.length > 0) return out;
     const jcHref = `/job-cards/${jc.id}`;
     for (const r of running.filter((x) => x.jobCardId === jc.id)) {
       out.push({
@@ -170,32 +169,38 @@ async function jobCardSteps(
       });
     }
     out.push(...(pmiByJc.get(jc.id) ?? []));
+    if (firstOnly && out.length > 0) return out;
 
     // Everything else that refuses the card's cancel today, named by the
     // card's own rule; what the list already covers is left out. A
     // short-closed / stopped order stays (manual — short-close the line).
     const pro = jc.productionOrderId ? proById.get(jc.productionOrderId) : undefined;
     const mainCard = pro?.jobCardId === jc.id;
-    const blockers = await jobCardCancelBlockers(tx, companyId, jc.id, {
-      viaProductionOrder: mainCard,
-    });
-    out.push(
-      ...manualSteps(
-        `jc:${jc.id}`,
-        jc.id,
-        blockers.filter(
-          (b) =>
-            b.docLabel !== 'Op Entry' &&
-            b.docLabel !== 'Customer Material Issue' &&
-            !(b.docLabel === 'Job Card' && skip.jcCodes.has(b.docNo)) &&
-            !(
-              b.docLabel === 'Production Order' && b.reason.startsWith('built by Production Order')
-            ) &&
-            !(b.docLabel === 'JW Return' && skip.jwReturnCodes.has(b.docNo)),
+    // The order's own card: its blockers come with the order's own rule
+    // (productionOrderCancelBlockers reads them) — not read twice.
+    if (!mainCard) {
+      const blockers = await jobCardCancelBlockers(tx, companyId, jc.id, {
+        viaProductionOrder: false,
+      });
+      out.push(
+        ...manualSteps(
+          `jc:${jc.id}`,
+          jc.id,
+          blockers.filter(
+            (b) =>
+              b.docLabel !== 'Op Entry' &&
+              b.docLabel !== 'Customer Material Issue' &&
+              !(b.docLabel === 'Job Card' && skip.jcCodes.has(b.docNo)) &&
+              !(
+                b.docLabel === 'Production Order' &&
+                b.reason.startsWith('built by Production Order')
+              ) &&
+              !(b.docLabel === 'JW Return' && skip.jwReturnCodes.has(b.docNo)),
+          ),
+          seen,
         ),
-        seen,
-      ),
-    );
+      );
+    }
     // The order's own card is cancelled with the order (below, once).
     if (!mainCard) out.push(cancelStep('job_card', jc.id, jc.code, jcHref, 'Cancel the Job Card'));
     if (pro && !proOrder.includes(pro)) proOrder.push(pro);
@@ -211,39 +216,27 @@ export async function buildJwLineUndoSteps(
   companyId: string,
   jwLineId: string,
   user: AuthContext,
+  opts: { firstOnly?: boolean } = {},
 ): Promise<BuiltStep[]> {
+  // firstOnly (the run endpoint): stop at the first step — only it is checked.
+  const firstOnly = opts.firstOnly === true;
+  const finish = async (): Promise<BuiltStep[]> => {
+    const steps = firstOnly ? out.slice(0, 1) : out;
+    await markPendingAndApproval(tx, companyId, steps, user);
+    return steps;
+  };
   const L = sql`${jwLineId}::uuid`;
   const C = sql`${companyId}::uuid`;
   const out: BuiltStep[] = [];
 
-  const invoices = await q<{ id: string; code: string }>(
-    tx,
-    sql`SELECT id, code FROM public.jw_invoices
-         WHERE job_work_order_line_id = ${L} AND company_id = ${C}
-           AND deleted_at IS NULL AND status::text <> 'cancelled'
-         ORDER BY created_at DESC`,
-  );
+  // One round trip for the four line-level reads.
+  const [invoices, returns, cmrs, plans] = await readJwLineDocs(tx, companyId, jwLineId);
   for (const r of invoices)
     out.push(cancelStep('jw_invoice', r.id, r.code, null, 'Cancel the JW Invoice'));
 
-  const returns = await q<{ id: string; code: string }>(
-    tx,
-    sql`SELECT id, code FROM public.jw_return_challans
-         WHERE job_work_order_line_id = ${L} AND company_id = ${C}
-           AND deleted_at IS NULL AND status <> 'cancelled'
-         ORDER BY created_at DESC`,
-  );
   for (const r of returns)
     out.push(cancelStep('jw_return', r.id, r.code, null, 'Cancel the JW Return'));
 
-  const cmrs = await q<{ id: string; code: string }>(
-    tx,
-    sql`SELECT c.id, c.code FROM public.customer_material_returns c
-         WHERE c.company_id = ${C} AND c.deleted_at IS NULL AND c.status <> 'cancelled'
-           AND EXISTS (SELECT 1 FROM public.customer_material_return_lines cl
-                        WHERE cl.return_id = c.id AND cl.jw_line_id = ${L} AND cl.deleted_at IS NULL)
-         ORDER BY c.created_at DESC`,
-  );
   for (const r of cmrs) {
     out.push(
       cancelStep(
@@ -256,20 +249,7 @@ export async function buildJwLineUndoSteps(
     );
   }
 
-  const plans = await q<{
-    id: string;
-    code: string;
-    jcId: string | null;
-    dpPrId: string | null;
-    foPrId: string | null;
-  }>(
-    tx,
-    sql`SELECT id, code, jc_id AS "jcId", dp_pr_id AS "dpPrId", fo_pr_id AS "foPrId"
-          FROM public.plans
-         WHERE jw_line_id = ${L} AND company_id = ${C}
-           AND deleted_at IS NULL AND plan_status <> 'cancelled'
-         ORDER BY created_at DESC`,
-  );
+  if (firstOnly && out.length > 0) return finish();
   const pros =
     plans.length > 0
       ? await q<ProRow>(
@@ -341,10 +321,13 @@ export async function buildJwLineUndoSteps(
       pmiByJc,
       proById,
       seen,
+      firstOnly,
     );
   out.push(...(await group(null)));
   for (const p of plans) {
+    if (firstOnly && out.length > 0) return finish();
     out.push(...(await group(p.id)));
+    if (firstOnly && out.length > 0) return finish();
     // A Production Order on the plan with no card yet comes before the plan.
     const carded = new Set(jcs.flatMap((j) => (j.productionOrderId ? [j.productionOrderId] : [])));
     for (const o of pros.filter((x) => x.planId === p.id && !carded.has(x.id))) {
@@ -352,42 +335,9 @@ export async function buildJwLineUndoSteps(
     }
     out.push(...(await planSteps(tx, companyId, p, skip, seen)));
   }
+  if (firstOnly && out.length > 0) return finish();
   out.push(...loosePmis);
+  if (firstOnly && out.length > 0) return finish();
   out.push(...(await partyGrnSteps(tx, companyId, jwLineId)));
-
-  await markPendingAndApproval(tx, companyId, out, user);
-  return out;
-}
-
-/** A pending cancel request → 'waiting_approval'; needsApproval from the
- *  caller's Approve tick on the type's page (one-step types never wait). */
-async function markPendingAndApproval(
-  tx: DbTransaction,
-  companyId: string,
-  steps: BuiltStep[],
-  user: AuthContext,
-): Promise<void> {
-  const cancels = steps.filter(
-    (s): s is BuiltStep & { run: { kind: 'cancel'; docType: CancelDocType; docId: string } } =>
-      s.run.kind === 'cancel',
-  );
-  if (cancels.length === 0) return;
-  const pending = await q<{ docType: string; docId: string }>(
-    tx,
-    sql`SELECT doc_type AS "docType", doc_id AS "docId" FROM public.cancel_requests
-         WHERE company_id = ${companyId}::uuid AND status = 'pending' AND deleted_at IS NULL
-           AND doc_id IN (${ids(cancels.map((s) => s.run.docId))})`,
-  );
-  const pendingKeys = new Set(pending.map((p) => `${p.docType}:${p.docId}`));
-  const approveByForm = new Map<string, boolean>();
-  for (const s of cancels) {
-    const { docType, docId } = s.run;
-    if (pendingKeys.has(`${docType}:${docId}`)) s.step.state = 'waiting_approval';
-    if (ONE_STEP_CANCEL_DOC_TYPES.includes(docType)) continue;
-    const form = CANCEL_DOC_FORM_KEY[docType] as AccessFormKey;
-    if (!approveByForm.has(form)) {
-      approveByForm.set(form, await hasFormAccess(user, form, 'approve'));
-    }
-    s.step.needsApproval = !approveByForm.get(form);
-  }
+  return finish();
 }

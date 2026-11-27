@@ -13,7 +13,7 @@ import type { AuthContext } from '../../db/with-user-context';
 import { AppError, ValidationError } from '../../lib/errors';
 import { closeDayLogDateTask } from '../tasks/day-log-task';
 import { assertCanWrite, resolveAccess, viewerOf } from './access';
-import type { DayLine } from './day';
+import { type DayLine, halfLeaveOf } from './day';
 import {
   type Row,
   insertSql,
@@ -29,7 +29,7 @@ import {
 import { dayTx, openDayLocked } from './lock';
 import { type DayLogClock, dmy, istClock } from './rules';
 import { readSnapshot } from './snapshot';
-import { guardOwnerWrite, ownerDetailAfter, requireCompany } from './writes';
+import { guardNotLeave, guardOwnerWrite, ownerDetailAfter, requireCompany } from './writes';
 
 /** A validated batch row as a line, so the rows after it are judged against it. */
 const asLine = (r: Row, i: number, reportId: string): DayLine => ({
@@ -79,12 +79,14 @@ export async function addEntries(
       tx,
     );
     guardOwnerWrite(h.date, clock.today);
+    guardNotLeave(h);
     const lines = snap.lines;
+    const leave = halfLeaveOf(h);
     const rows: Row[] = [];
     for (const [i, row] of input.rows.entries()) {
       const before = [...lines, ...rows.map((r, j) => asLine(r, j, h.id))];
       try {
-        rows.push(prepare(h.date, before, row, null, clock, snap));
+        rows.push(prepare(h.date, before, row, null, clock, snap, leave));
       } catch (e) {
         rowError(i + 1, e);
       }

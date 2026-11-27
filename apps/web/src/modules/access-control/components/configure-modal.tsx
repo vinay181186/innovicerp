@@ -152,6 +152,7 @@ const OFF_SWITCH_DEPTS: readonly string[] = [
   'planning',
   'design',
   'finance',
+  'reports', // ADR-325: SO / JWSO Status is the first Reports page row; its Hide page works.
 ];
 
 // One-word tier captions for the compact TIER legend in the worksheet header.

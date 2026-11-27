@@ -4,7 +4,7 @@
 
 import { ACCESS_DEPTS, type DashCheckDeptBlock } from '@innovic/shared';
 import { SECTIONS } from '@/components/shared/nav-sections';
-import { DAY_LOG_HREF, type HomeView, isDeptView } from '../home-views';
+import { DAY_LOG_HREF, type HomeView, isDeptView, SO_JWSO_STATUS_HREF } from '../home-views';
 
 export interface MenuItem {
   view: HomeView;
@@ -32,6 +32,7 @@ function viewIcon(view: HomeView): string | undefined {
   if (view === 'daylog')
     return NAV_ITEMS.find((i) => `${i.to}?view=${i.search?.view ?? ''}` === DAY_LOG_HREF)?.icon;
   if (view === 'approvals') return NAV_ITEMS.find((i) => i.to === '/approvals')?.icon;
+  if (view === 'so-jwso-status') return NAV_ITEMS.find((i) => i.to === SO_JWSO_STATUS_HREF)?.icon;
   return undefined;
 }
 

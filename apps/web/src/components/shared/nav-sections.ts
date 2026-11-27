@@ -349,6 +349,7 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/sc-dashboard', label: 'Supply Chain Dashboard', icon: '🔗' },
           { to: '/stuck-dashboard', label: 'Stuck Dashboard', icon: '⚠' },
           { to: '/so-cycle-time', label: 'SO Cycle Time', icon: '⏱' },
+          { to: '/so-jwso-status', label: 'SO / JWSO Status', icon: '📅' },
         ],
       },
     ],

@@ -29,7 +29,8 @@ export const ACCESS_DEPTS = [
   // drill-downs, the activity log and 19 cross-department reports. They are
   // ordinary departments now: invisible until granted, like everything else.
   //
-  // Reports carries no ACCESS_FORMS keys, so the tier alone decides it. Tasks
+  // Reports carries one ACCESS_FORMS key (SO / JWSO Status, ADR-325); every
+  // other report is decided by the tier alone. Tasks
   // has one View page row per menu link (owner 2026-10-30) so "Hide page" can
   // take one of them away. Grant both at L1 — a higher tier here would raise
   // the account's derived role globally (see `roleForAccess`), which is not
@@ -145,6 +146,9 @@ export const ACCESS_FORMS = [
   { key: 'daylog_view', dept: 'tasks', label: 'Day Log' },
   { key: 'alerts_view', dept: 'tasks', label: 'Alerts' },
   { key: 'activitylog_view', dept: 'tasks', label: 'Activity Log' },
+  // Reports (ADR-325, owner 2026-11-27): the first Reports page row. Every
+  // Reports tier gives View; "Hide page" takes it away from one person.
+  { key: 'sojwstatus_view', dept: 'reports', label: 'SO / JWSO Status' },
 ] as const satisfies readonly { key: string; dept: AccessDeptKey; label: string }[];
 
 export type AccessForm = (typeof ACCESS_FORMS)[number];

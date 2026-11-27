@@ -48,6 +48,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     rowClassName,
     renderExpanded,
     maxHeight,
+    pageStickyTop,
     sortBy,
     sortDir,
     onSort,
@@ -191,7 +192,14 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
   const spare = fill > 0 && !rowActions;
   const nCols = visible.length + (rowActions ? 1 : 0) + (selectable ? 1 : 0) + (spare ? 1 : 0);
   const hasRows = !loading && rows.length > 0;
-  const wrapStyle: CSSProperties | undefined = maxHeight !== undefined ? { maxHeight } : undefined;
+  // `pageStickyTop` (ADR-325): headings stick under the page's own sticky
+  // header; data-table-fit.css `.dt-page-head` lets the box grow with its rows.
+  const pageHead = pageStickyTop !== undefined;
+  const wrapStyle: CSSProperties | undefined = pageHead
+    ? ({ '--dt-head-top': `${pageStickyTop}px` } as CSSProperties)
+    : maxHeight !== undefined
+      ? { maxHeight }
+      : undefined;
   const sort = { sortBy, sortDir, onSort };
   const pickerCols = ids.map((id, i) => ({
     id,
@@ -236,7 +244,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
       />
       <div
         ref={measure.wrapRef}
-        className={cx('tbl-wrap', 'dt-fit-wrap', wrapClassName)}
+        className={cx('tbl-wrap', 'dt-fit-wrap', pageHead && 'dt-page-head', wrapClassName)}
         style={wrapStyle}
       >
         <table

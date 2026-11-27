@@ -4,7 +4,7 @@
 // every "nothing to print" answer comes from the server's reply.
 
 import type { Company, DayLogHistory, DayLogHistoryQuery } from '@innovic/shared';
-import { dayLogHistoryRangeError, fmtDuration } from '@innovic/shared';
+import { dayLogHistoryRangeError, fmtDuration, leaveText } from '@innovic/shared';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiFetch } from '@/lib/api';
@@ -58,6 +58,7 @@ function nothingReason(h: DayLogHistory): string {
     const name = day.holidayName ? ` (${day.holidayName})` : '';
     return `${date} is a holiday${name}. Nothing logged.`;
   }
+  if (day?.state === 'leave') return `${date} is Personal Leave. Nothing logged.`;
   return `Nothing logged on ${date}.`;
 }
 
@@ -99,6 +100,9 @@ function CountLine({ history }: { history: DayLogHistory }): React.JSX.Element {
           <Fact label="Working Hours" value={fmtDuration(t.workMin)} />
         </>
       )}
+      {day.leaveKind === 'half' ? (
+        <span className="badge b-grey">{leaveText(day.leaveKind, day.leaveFrom, day.leaveTo)}</span>
+      ) : null}
     </div>
   );
 }

@@ -16,6 +16,7 @@
 import { z } from 'zod';
 import {
   DAY_LOG_ENTRY_KINDS,
+  DAY_LOG_LEAVE_KINDS,
   dayLogEntrySchema,
   dayLogOrderSchema,
   dayLogOwnReplySchema,
@@ -272,6 +273,12 @@ export const dayLogHistoryDaySchema = z.object({
   replies: z.number().int(),
   /** Entries first saved on a later date than this one. */
   savedLater: z.number().int(),
+  /** Personal Leave on this date (header status 'leave', 0268), else null. A
+   *  Half Day keeps its own state (filled / not_entered); only a Full Day with
+   *  no entry is state 'leave'. */
+  leaveKind: z.enum(DAY_LOG_LEAVE_KINDS).nullable(),
+  leaveFrom: z.string().nullable(),
+  leaveTo: z.string().nullable(),
   entries: z.array(dayLogHistoryEntrySchema),
   /** Replies on the blank date, oldest first. */
   dayReplies: z.array(dayLogAdminReplySchema),
@@ -296,8 +303,8 @@ export const dayLogHistorySchema = z.object({
     notEntered: z.number().int(),
     /** Sunday / holiday dates with no entry. */
     offDays: z.number().int(),
-    /** Old Leave dates with no entry. */
-    leaveDays: z.number().int(),
+    /** Personal Leave days: a Full Day with no entry 1, a Half Day 0.5 (so 2.5). */
+    leaveDays: z.number().multipleOf(0.5),
     entries: z.number().int(),
     workMin: z.number().int(),
     /** workMin / the dates with work, to the minute; 0 with none. */

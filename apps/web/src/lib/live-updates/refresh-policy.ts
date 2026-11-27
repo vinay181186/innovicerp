@@ -139,6 +139,8 @@ export const REFRESH_POLICY: Readonly<Record<string, RefreshRule>> = {
   session: onOpen('login session'),
   'so-costing': onOpen(REPORT),
   'so-cycle-time': onOpen(REPORT),
+  // ADR-325: figures change through the day; the page's Refresh button re-reads.
+  'so-jwso-status': onOpen(REPORT),
   'so-drawing-history': onOpen(LOOKUP),
   'so-qc-status': onOpen(REPORT),
   'so-timeline': onOpen(REPORT),

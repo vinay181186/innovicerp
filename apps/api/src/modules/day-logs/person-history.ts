@@ -10,6 +10,7 @@ import {
   type DayLogHistoryDay,
   type DayLogHistoryDayState,
   type DayLogHistoryQuery,
+  type DayLogLeaveKind,
   type DayLogStatus,
   dayLogHistoryRangeError,
   isWorkingDay,
@@ -103,7 +104,9 @@ export async function getPersonHistory(
       ${dayPersonJson(companyId, query.userId)} AS person,
       ${linesJson(companyId, period)} AS lines,
       (SELECT COALESCE(json_agg(json_build_object('id', dr.id::text,
-                'date', to_char(dr.report_date, 'YYYY-MM-DD'), 'status', dr.day_status)), '[]'::json)
+                'date', to_char(dr.report_date, 'YYYY-MM-DD'), 'status', dr.day_status,
+                'leave_kind', dr.leave_kind, 'leave_from', to_char(dr.leave_from, 'HH24:MI'),
+                'leave_to', to_char(dr.leave_to, 'HH24:MI'))), '[]'::json)
        FROM public.daily_reports dr WHERE ${period}) AS headers,
       ${holidaysJson(companyId, from, to)} AS holidays,
       ${lineRevisionsJson(companyId, lineIds)} AS revs,
@@ -119,9 +122,16 @@ export async function getPersonHistory(
   const holidays = toHolidays(r?.['holidays']);
   const holidayDates = [...holidays.keys()];
   const headers = new Map(
-    ((r?.['headers'] ?? []) as Array<{ id: string; date: string; status: DayLogStatus }>).map(
-      (h) => [h.date, h],
-    ),
+    (
+      (r?.['headers'] ?? []) as Array<{
+        id: string;
+        date: string;
+        status: DayLogStatus;
+        leave_kind: DayLogLeaveKind | null;
+        leave_from: string | null;
+        leave_to: string | null;
+      }>
+    ).map((h) => [h.date, h]),
   );
   const linesBy = linesByReport(toLines(r?.['lines'])); // each day in time order
   const facts = lineFactsOf(r?.['revs'], r?.['replies'], user.id);
@@ -149,16 +159,23 @@ export async function getPersonHistory(
         savedLaterOn: laterSave(l.loggedAt, date),
       }));
     const dayReplies = dayRepliesBy.get(date) ?? [];
+    // Personal Leave on this date (0268): Full Day or Half Day with its time.
+    const leaveKind: DayLogLeaveKind | null =
+      h?.status === 'leave' ? (h.leave_kind === 'half' ? 'half' : 'full') : null;
     return {
       date,
       state: stateOf(date, {
         today: date === clock.today,
         entered: lines.length > 0,
-        leave: h?.status === 'leave',
+        // Only a FULL Day leave is state 'leave'; a Half Day with no entry is owed.
+        leave: leaveKind === 'full',
         notEntered: isNotEntered(person, date, false, holidayDates, clock),
         holiday: holidays.has(date),
       }),
       holidayName: holidays.get(date) ?? null,
+      leaveKind,
+      leaveFrom: leaveKind === 'half' ? (h?.leave_from ?? null) : null,
+      leaveTo: leaveKind === 'half' ? (h?.leave_to ?? null) : null,
       firstStart: s.firstStart,
       lastStop: s.lastStop,
       workMin: s.workMin,
@@ -191,7 +208,18 @@ export async function getPersonHistory(
       filledDays,
       notEntered,
       offDays: days.filter((d) => d.state === 'sunday' || d.state === 'holiday').length,
-      leaveDays: days.filter((d) => d.state === 'leave').length,
+      // A Full Day leave (state 'leave') counts 1, a Half Day leave 0.5.
+      leaveDays:
+        days.filter((d) => d.state === 'leave' && d.leaveKind === 'full').length +
+        // Only on a counted working date, like a Full Day (a holiday added later drops it).
+        days.filter(
+          (d) =>
+            d.leaveKind === 'half' &&
+            d.state !== 'sunday' &&
+            d.state !== 'holiday' &&
+            d.state !== 'not_counted',
+        ).length *
+          0.5,
       entries: sum(days, (d) => d.entryCount),
       workMin,
       avgDailyWorkMin: workedDays > 0 ? Math.round(workMin / workedDays) : 0,
@@ -202,6 +230,6 @@ export async function getPersonHistory(
       replies: sum(days, (d) => d.replies),
       savedLater: sum(days, (d) => d.savedLater),
     },
-    hasContent: workingDays > 0 || days.some((d) => d.state === 'leave' || d.replies > 0),
+    hasContent: workingDays > 0 || days.some((d) => d.leaveKind !== null || d.replies > 0),
   };
 }

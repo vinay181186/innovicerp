@@ -45,7 +45,16 @@ export type DayLogStatus = (typeof DAY_LOG_STATUSES)[number];
 export const DAY_LOG_STATUS_LABELS: Record<DayLogStatus, string> = {
   open: 'Open',
   submitted: 'Submitted',
-  leave: 'Leave',
+  leave: 'Personal Leave',
+};
+
+/** Personal Leave Type (0268): Full Day, or Half Day with its own time. */
+export const DAY_LOG_LEAVE_KINDS = ['full', 'half'] as const;
+export type DayLogLeaveKind = (typeof DAY_LOG_LEAVE_KINDS)[number];
+/** Leave Type box. */
+export const DAY_LOG_LEAVE_KIND_LABELS: Record<DayLogLeaveKind, string> = {
+  full: 'Full Day',
+  half: 'Half Day',
 };
 
 export const DAY_LOG_ENTRY_KINDS = ['work', 'break', 'leave'] as const;
@@ -88,7 +97,7 @@ export const DAY_LOG_CURRENT_STATUS_LABELS: Record<DayLogCurrentStatus, string> 
   idle: 'Idle',
   not_started: 'Not started',
   submitted: 'Submitted',
-  leave: 'Others',
+  leave: 'Personal Leave',
 };
 
 // ── Time helpers ────────────────────────────────────────────────────────────
@@ -193,6 +202,9 @@ export function summarizeDay(
   spans: readonly DayLogSpan[],
   nowMin?: number,
   workingDay = true,
+  /** A Half Day leave time: counts as covered for unloggedMin only — never in
+   *  any total, first start, last stop or next start. */
+  covered?: { fromTime: string; toTime: string } | null,
 ): DayLogSummary {
   const w1 = hhmmToMin(DAY_LOG_RULES.workFrom);
   const w2 = hhmmToMin(DAY_LOG_RULES.workTo);
@@ -213,13 +225,15 @@ export function summarizeDay(
     else leaveMin += i.b - i.a;
   }
   const end = Math.min(w2, nowMin ?? w2);
-  let covered = w1;
+  const cover = covered ? [{ a: hhmmToMin(covered.fromTime), b: hhmmToMin(covered.toTime) }] : [];
+  const covering = [...ivals, ...cover].sort((x, y) => x.a - y.a);
+  let upTo = w1;
   let unloggedMin = 0;
-  for (const i of ivals) {
-    if (i.a > covered && covered < end) unloggedMin += Math.min(i.a, end) - covered;
-    covered = Math.max(covered, i.b);
+  for (const i of covering) {
+    if (i.a > upTo && upTo < end) unloggedMin += Math.min(i.a, end) - upTo;
+    upTo = Math.max(upTo, i.b);
   }
-  if (covered < end) unloggedMin += end - covered;
+  if (upTo < end) unloggedMin += end - upTo;
   return {
     workMin,
     breakMin,
@@ -470,6 +484,11 @@ export const dayLogDetailSchema = z.object({
   submittedAt: z.string().nullable(),
   submittedByName: z.string().nullable(),
   leaveReason: z.string().nullable(),
+  /** Set when status is 'leave' (0268), else null. */
+  leaveKind: z.enum(DAY_LOG_LEAVE_KINDS).nullable(),
+  /** Half Day leave time "HH:MM"; null otherwise. */
+  leaveFrom: z.string().nullable(),
+  leaveTo: z.string().nullable(),
   reopenedAt: z.string().nullable(),
   reopenedByName: z.string().nullable(),
   reopenReason: z.string().nullable(),
@@ -515,6 +534,10 @@ export const teamDayLogRowSchema = z.object({
   lateInMin: z.number().int(),
   /** A blank working day before today, from companies.day_log_pending_from. Super Admin only (false otherwise). */
   notEntered: z.boolean(),
+  /** Personal Leave on this date (status 'leave'), else null; Half Day time "HH:MM". */
+  leaveKind: z.enum(DAY_LOG_LEAVE_KINDS).nullable(),
+  leaveFrom: z.string().nullable(),
+  leaveTo: z.string().nullable(),
   /** Replies on this blank day. Super Admin only (0 otherwise). */
   dayReplyCount: z.number().int(),
 });
@@ -537,6 +560,122 @@ export const holidaySchema = z.object({
 });
 export type Holiday = z.infer<typeof holidaySchema>;
 
+// ── Personal Leave (owner 2026-11-27) ───────────────────────────────────────
+// A person marks their OWN working days as Personal Leave — one date or a
+// From–To range, past or future. Stored as the day header's day_status 'leave'
+// + leave_reason (0222 columns, no new table). A leave day is never pending (red
+// banner, Pending Entries, Not entered) and takes no entries. Sundays and company
+// holidays inside a range are skipped; a date that already has entries refuses
+// the whole save. No approval. Rules enforced in apps/api day-logs/leave.ts.
+// Part 2 (owner 2026-11-27, 0268): Full Day or Half Day. A Half Day is ONE date
+// with the person's own From–To leave time (leave_kind 'half', leave_from /
+// leave_to); entries may be logged outside that time, never inside it. A Half
+// Day with no entry stays pending (the worked half is owed — option A); once it
+// has an entry it is done. History counts a Full Day 1, a Half Day 0.5.
+// Super Admin may set their own leave too; an Auditor may not.
+export const DAY_LOG_LEAVE_RULES = {
+  /** Furthest future date: today + this many days. */
+  maxDaysAhead: 90,
+  /** Longest From–To range in one save (calendar days). */
+  maxRangeDays: 60,
+} as const;
+
+/** The ONE wording of a leave day: "Personal Leave" (Full Day) or
+ *  "Half Day Leave 01:00 PM – 06:00 PM". */
+export function leaveText(
+  kind: DayLogLeaveKind | null | undefined,
+  fromTime: string | null | undefined,
+  toTime: string | null | undefined,
+): string {
+  return kind === 'half' && fromTime && toTime
+    ? `Half Day Leave ${fmt12(fromTime)} – ${fmt12(toTime)}`
+    : 'Personal Leave';
+}
+
+/** A Half Day may not cover the whole working day (09:00 AM – 06:00 PM): the
+ *  day would take no entry and stay pending for good — that is a Full Day. */
+export function halfCoversWholeDay(t: {
+  fromTime?: string | null | undefined;
+  toTime?: string | null | undefined;
+}): boolean {
+  return (
+    !!t.fromTime &&
+    !!t.toTime &&
+    hhmmToMin(t.fromTime) <= hhmmToMin(DAY_LOG_RULES.workFrom) &&
+    hhmmToMin(t.toTime) >= hhmmToMin(DAY_LOG_RULES.workTo)
+  );
+}
+export const HALF_DAY_WHOLE_DAY_MSG = `A Half Day cannot cover the whole working day (${fmt12(DAY_LOG_RULES.workFrom)} – ${fmt12(DAY_LOG_RULES.workTo)}) — choose Full Day`;
+
+export const dayLogLeaveInputSchema = z
+  .object({
+    from: dateStr,
+    /** Same as `from` for one date (always, for a Half Day). */
+    to: dateStr,
+    /** Leave Type. Missing = Full Day (part-1 callers). */
+    kind: z.enum(DAY_LOG_LEAVE_KINDS).default('full'),
+    /** Half Day only: the leave time, "HH:MM". Null / missing for a Full Day. */
+    fromTime: hhmmSchema.nullish(),
+    toTime: hhmmSchema.nullish(),
+    reason: z.string().trim().min(1, 'Reason is required').max(200),
+  })
+  .refine((v) => v.to >= v.from, {
+    message: 'To Date must be on or after From Date',
+    path: ['to'],
+  })
+  .refine((v) => v.kind !== 'half' || v.to === v.from, {
+    message: 'Half Day is for one date — To Date must be the From Date',
+    path: ['to'],
+  })
+  .refine((v) => v.kind !== 'half' || (!!v.fromTime && !!v.toTime), {
+    message: 'Enter the From Time and To Time of the Half Day',
+    path: ['fromTime'],
+  })
+  .refine(
+    (v) =>
+      v.kind !== 'half' || !v.fromTime || !v.toTime || hhmmToMin(v.toTime) > hhmmToMin(v.fromTime),
+    { message: 'To Time must be after From Time', path: ['toTime'] },
+  )
+  .refine((v) => v.kind !== 'half' || !v.fromTime || !v.toTime || !halfCoversWholeDay(v), {
+    message: HALF_DAY_WHOLE_DAY_MSG,
+    path: ['toTime'],
+  })
+  .refine((v) => v.kind !== 'full' || (!v.fromTime && !v.toTime), {
+    message: 'A Full Day leave has no time',
+    path: ['fromTime'],
+  });
+export type DayLogLeaveInput = z.infer<typeof dayLogLeaveInputSchema>;
+
+export const dayLogLeaveDaySchema = z.object({
+  date: z.string(),
+  reason: z.string(),
+  kind: z.enum(DAY_LOG_LEAVE_KINDS),
+  /** Half Day leave time "HH:MM"; null for a Full Day. */
+  fromTime: z.string().nullable(),
+  toTime: z.string().nullable(),
+});
+export type DayLogLeaveDay = z.infer<typeof dayLogLeaveDaySchema>;
+
+/** GET /day-logs/leave/mine — the caller's own leave days, newest first. */
+export const dayLogLeaveListSchema = z.object({
+  /** IST today. */
+  today: z.string(),
+  /** Earliest date leave may be set (the person's Day Log start). */
+  earliest: z.string(),
+  /** Latest date leave may be set (today + maxDaysAhead). */
+  latest: z.string(),
+  days: z.array(dayLogLeaveDaySchema),
+});
+export type DayLogLeaveList = z.infer<typeof dayLogLeaveListSchema>;
+
+/** POST /day-logs/leave — the dates marked, and the dates skipped (Sunday /
+ *  company holiday / already Personal Leave). */
+export const dayLogLeaveSetResultSchema = z.object({
+  set: z.array(z.string()),
+  skipped: z.array(z.string()),
+});
+export type DayLogLeaveSetResult = z.infer<typeof dayLogLeaveSetResultSchema>;
+
 /** Who may open the Team Day Logs tab (drives the tab itself, §20.5). */
 export const dayLogAccessSchema = z.object({
   canSeeTeam: z.boolean(),
@@ -549,6 +688,8 @@ export const dayLogAccessSchema = z.object({
   canSeePending: z.boolean(),
   /** May open a person's History (Super Admin only, ADR-278). */
   canSeeHistory: z.boolean(),
+  /** May set their own Personal Leave (anyone but an Auditor; Super Admin too). */
+  canSetLeave: z.boolean(),
 });
 export type DayLogAccess = z.infer<typeof dayLogAccessSchema>;
 

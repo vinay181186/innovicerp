@@ -71,7 +71,7 @@ export function rangeHeaderRow(h: DayLogHistory, ctx: HistoryPrintContext): stri
     field('To Date', fmtDate(h.to), true),
     field('Working Days', t.workingDays),
     field('Sunday / Holiday', t.offDays),
-    ...(t.leaveDays > 0 ? [field('Leave', t.leaveDays)] : []),
+    ...(t.leaveDays > 0 ? [field('Personal Leave', t.leaveDays)] : []),
   ]);
   const work = column('Work', '33mm', [
     field('Total Entry Days', t.filledDays, true),

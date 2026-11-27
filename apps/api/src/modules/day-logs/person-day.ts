@@ -54,6 +54,7 @@ export async function getPersonDay(
       ${dayPersonJson(companyId, query.userId)} AS target,
       ${linesJson(companyId, day)} AS lines,
       (SELECT dr.day_status FROM public.daily_reports dr WHERE ${day}) AS day_status,
+      (SELECT dr.leave_kind FROM public.daily_reports dr WHERE ${day}) AS leave_kind,
       ${holidaysJson(companyId, date, date)} AS holidays,
       ${dayRepliesAdminJson(companyId, day)} AS day_replies
   `)) as unknown as Array<Record<string, unknown>>;
@@ -72,6 +73,9 @@ export async function getPersonDay(
   const admin = v.isSuper;
   const canReply = admin && target.id !== v.userId;
   const status = (r?.['day_status'] as DayLogStatus | null) ?? 'open';
+  const leaveKind = r?.['leave_kind'] === 'half' ? ('half' as const) : ('full' as const);
+  // Done: a line, or a FULL Day leave (a Half Day with no entry stays owed — option A).
+  const fullLeave = status === 'leave' && leaveKind === 'full';
   const holidays = [...toHolidays(r?.['holidays']).keys()];
   const blank = allLines.length === 0;
   let facts = lineFactsOf(null, null, user.id);
@@ -107,8 +111,8 @@ export async function getPersonDay(
       canReply &&
       v.writer &&
       blank &&
-      dayReplyBlock(person, date, status, holidays, clock) === null,
+      dayReplyBlock(person, date, status, leaveKind, holidays, clock) === null,
     replyGoesToInbox,
-    notEntered: admin && isNotEntered(person!, date, !blank || status === 'leave', holidays, clock),
+    notEntered: admin && isNotEntered(person!, date, !blank || fullLeave, holidays, clock),
   };
 }

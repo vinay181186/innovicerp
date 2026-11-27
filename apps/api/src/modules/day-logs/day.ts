@@ -6,6 +6,7 @@
 import {
   DAY_LOG_RULES,
   type DayLogEntryKind,
+  type DayLogLeaveKind,
   type DayLogOrder,
   type DayLogOwnReply,
   type DayLogSpan,
@@ -26,8 +27,24 @@ export interface DayHeader {
   reopenedByName: string | null;
   reopenReason: string | null;
   leaveReason: string | null;
+  /** Personal Leave Type (0268) — 'full' on every day not on leave too. */
+  leaveKind: DayLogLeaveKind;
+  /** Half Day leave time "HH:MM"; null for a Full Day. */
+  leaveFrom: string | null;
+  leaveTo: string | null;
   updatedAt: string;
   updatedByName: string | null;
+}
+
+/** A Half Day leave's time on this day header, else null (a Full Day leave
+ *  takes no entries at all — writes.ts guardNotLeave). The ONE reading of
+ *  "which minutes are leave" for the entry check and the day summary. */
+export function halfLeaveOf(
+  h: Pick<DayHeader, 'status' | 'leaveKind' | 'leaveFrom' | 'leaveTo'> | null | undefined,
+): { fromTime: string; toTime: string } | null {
+  return h && h.status === 'leave' && h.leaveKind === 'half' && h.leaveFrom && h.leaveTo
+    ? { fromTime: h.leaveFrom, toTime: h.leaveTo }
+    : null;
 }
 
 /** An edit waiting for approval (0225). */
@@ -73,7 +90,8 @@ export const iso = (v: unknown): string | null =>
 export const HEADER_COLS = sql`
   dr.id::text AS id, dr.user_id::text AS user_id, to_char(dr.report_date, 'YYYY-MM-DD') AS date,
   dr.day_status AS status, dr.submitted_at, dr.reopened_at, dr.reopen_reason, dr.leave_reason,
-  dr.updated_at,
+  dr.leave_kind, to_char(dr.leave_from, 'HH24:MI') AS leave_from,
+  to_char(dr.leave_to, 'HH24:MI') AS leave_to, dr.updated_at,
   (SELECT COALESCE(u.full_name, u.email) FROM public.users u WHERE u.id = dr.submitted_by) AS submitted_by_name,
   (SELECT COALESCE(u.full_name, u.email) FROM public.users u WHERE u.id = dr.reopened_by) AS reopened_by_name,
   (SELECT COALESCE(u.full_name, u.email) FROM public.users u WHERE u.id = dr.updated_by) AS updated_by_name`;
@@ -90,6 +108,9 @@ export function toHeader(r: Record<string, unknown>): DayHeader {
     reopenedByName: (r['reopened_by_name'] as string | null) ?? null,
     reopenReason: (r['reopen_reason'] as string | null) ?? null,
     leaveReason: (r['leave_reason'] as string | null) ?? null,
+    leaveKind: r['leave_kind'] === 'half' ? 'half' : 'full',
+    leaveFrom: hm(r['leave_from'] as string | null),
+    leaveTo: hm(r['leave_to'] as string | null),
     updatedAt: iso(r['updated_at'])!,
     updatedByName: (r['updated_by_name'] as string | null) ?? null,
   };

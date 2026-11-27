@@ -182,6 +182,7 @@ export * from './schemas/data-integrity';
 export * from './schemas/service-po';
 export * from './schemas/sc-dashboard';
 export * from './schemas/so-cycle-time';
+export * from './schemas/so-jwso-status';
 export * from './schemas/stuck-dashboard';
 export * from './schemas/customer-dispatch';
 export * from './schemas/invoice';

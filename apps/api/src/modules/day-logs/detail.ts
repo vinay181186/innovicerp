@@ -10,7 +10,7 @@ import {
   summarizeDay,
 } from '@innovic/shared';
 import { type DayUser, type Viewer, canApproveUser, deptLabelOf } from './access';
-import { type DayLine, spansOf } from './day';
+import { type DayLine, halfLeaveOf, spansOf } from './day';
 import { entryMinutes } from './rules';
 import type { DaySnapshot } from './snapshot';
 
@@ -41,13 +41,15 @@ export function summaryOf(
   lines: readonly DayLine[],
   nowMin: number | undefined,
   workingDay: boolean,
+  /** A Half Day leave time (day.ts halfLeaveOf): covered for unloggedMin only. */
+  covered: { fromTime: string; toTime: string } | null = null,
 ): DayLogSummaryOut {
-  const s = summarizeDay(spansOf(lines), nowMin, workingDay);
+  const s = summarizeDay(spansOf(lines), nowMin, workingDay, covered);
   return {
     ...s,
     breakMin: 0,
     leaveMin: 0,
-    unloggedMin: summarizeDay(spansOf(lines), undefined, workingDay).unloggedMin,
+    unloggedMin: summarizeDay(spansOf(lines), undefined, workingDay, covered).unloggedMin,
     nextStart: null,
     lateCount: lines.filter((l) => l.late).length,
     lateInMin: 0,
@@ -69,6 +71,7 @@ export function detailOf(
   const nowMin = date === clock.today ? clock.nowMin : undefined;
   const isOwner = target.id === v.userId;
   const withReplies = isOwner || v.isSuper;
+  const leaveHeader = header?.status === 'leave' ? header : null;
 
   return {
     id: header?.id ?? null,
@@ -82,13 +85,16 @@ export function detailOf(
     workingDay,
     holidayName,
     entries: lines.filter((l) => l.fromTime).map((l) => toEntry(l, nowMin, withReplies)),
-    summary: summaryOf(lines, nowMin, workingDay),
+    summary: summaryOf(lines, nowMin, workingDay, halfLeaveOf(header)),
     submittedAt: header?.submittedAt ?? null,
     submittedByName: header?.submittedByName ?? null,
     reopenedAt: header?.reopenedAt ?? null,
     reopenedByName: header?.reopenedByName ?? null,
     reopenReason: header?.reopenReason ?? null,
     leaveReason: header?.leaveReason ?? null,
+    leaveKind: leaveHeader?.leaveKind ?? null,
+    leaveFrom: leaveHeader?.leaveFrom ?? null,
+    leaveTo: leaveHeader?.leaveTo ?? null,
     strayOpen: null,
     isOwner,
     canWrite: isOwner && v.writer && date <= clock.today,

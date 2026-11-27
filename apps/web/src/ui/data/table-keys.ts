@@ -87,6 +87,10 @@ export const TABLE_KEYS = {
   pendingSoValue: 'pending-so-value',
   soCosting: 'so-costing',
   soCycleTime: 'so-cycle-time',
+  /** SO / JWSO status by day (ADR-325): the days list, and one day's SO / JWSO tables. */
+  soJwsoDays: 'so-jwso-days',
+  soJwsoDaySo: 'so-jwso-day-so',
+  soJwsoDayJwso: 'so-jwso-day-jwso',
   stockValuation: 'stock-valuation',
   /** Level 2 of SO/JWSO Planning: the lines of ONE order. */
   planningLines: 'planning-lines',
@@ -153,6 +157,7 @@ export const TABLE_KEYS = {
   /** Day Log: Task Board › Approvals · Day Log; the Holidays modal's list. */
   dayLogApprovals: 'day-log-approvals',
   dayLogHolidays: 'day-log-holidays',
+  dayLogLeave: 'day-log-leave',
   /** Day Log: Task Board › Teams Config — the chosen user's team mates. */
   dayLogTeamMates: 'day-log-team-mates',
   alertsDashboard: 'alerts-dashboard',

@@ -7264,6 +7264,10 @@ export const dailyReports = pgTable(
     reopenedBy: uuid('reopened_by').references((): AnyPgColumn => users.id),
     reopenReason: text('reopen_reason'),
     leaveReason: text('leave_reason'),
+    // Personal Leave Full Day / Half Day + the Half Day's time (0268).
+    leaveKind: text('leave_kind').notNull().default('full'),
+    leaveFrom: time('leave_from'),
+    leaveTo: time('leave_to'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -9774,6 +9778,64 @@ export const pushSubscriptions = pgTable(
       to: 'authenticated',
       using: sql`company_id = current_company_id() AND user_id = current_user_id()`,
       withCheck: sql`company_id = current_company_id() AND user_id = current_user_id() AND updated_by = current_user_id() AND (deleted_by IS NULL OR deleted_by = current_user_id())`,
+    }),
+  ],
+).enableRLS();
+
+// so_status_snapshots (0269, ADR-325): the saved copy of the 11 SO / JWSO status
+// figures, one row per order per IST day. ONE writer: the API timer
+// (modules/so-jwso-status/snapshot-job.ts), today's snap_date only. order_id has
+// no FK — it points at sales_orders ('SO') or job_work_orders ('JWSO').
+// created_by / updated_by are nullable: the writer is a system timer with no
+// signed-in user (same precedent as alert_deliveries, 0016).
+export const soStatusSnapshots = pgTable(
+  'so_status_snapshots',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    snapDate: date('snap_date').notNull(),
+    orderKind: text('order_kind').notNull(),
+    orderId: uuid('order_id').notNull(),
+    orderCode: text('order_code').notNull(),
+    totalLines: integer('total_lines').notNull().default(0),
+    totalPlans: integer('total_plans').notNull().default(0),
+    totalRc: integer('total_rc').notNull().default(0),
+    proReleased: integer('pro_released').notNull().default(0),
+    jcReleased: integer('jc_released').notNull().default(0),
+    jcNotStarted: integer('jc_not_started').notNull().default(0),
+    jcRunning: integer('jc_running').notNull().default(0),
+    jcClosed: integer('jc_closed').notNull().default(0),
+    proClosed: integer('pro_closed').notNull().default(0),
+    dispatchQty: stockQty('dispatch_qty').notNull().default(0),
+    physicalStock: stockQty('physical_stock').notNull().default(0),
+    takenAt: timestamp('taken_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by').references((): AnyPgColumn => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by').references((): AnyPgColumn => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    uniqueIndex('so_status_snapshots_day_order_uq')
+      .on(t.companyId, t.snapDate, t.orderKind, t.orderId)
+      .where(sql`${t.deletedAt} is null`),
+    index('so_status_snapshots_company_day_idx')
+      .on(t.companyId, t.snapDate)
+      .where(sql`${t.deletedAt} is null`),
+    check('so_status_snapshots_order_kind_chk', sql`${t.orderKind} IN ('SO', 'JWSO')`),
+    pgPolicy('so_status_snapshots_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('so_status_snapshots_admin_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() = 'admin' AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() = 'admin' AND company_id = current_company_id()`,
     }),
   ],
 ).enableRLS();

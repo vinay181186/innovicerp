@@ -19,6 +19,7 @@ import {
   DAY_LOG_DATE_REF,
   type DayLogAdminReply,
   type DayLogDayRepliesSeenInput,
+  type DayLogLeaveKind,
   type DayLogStatus,
   type EditDayLogReplyInput,
   type SendDayLogDayReplyInput,
@@ -45,6 +46,8 @@ export function dayReplyBlock(
   target: DayPerson | null,
   date: string,
   status: DayLogStatus,
+  /** The header's leave_kind — only a FULL Day leave refuses a reply. */
+  leaveKind: DayLogLeaveKind | null,
   holidays: readonly string[],
   clock: DayLogClock,
 ): string | null {
@@ -53,7 +56,7 @@ export function dayReplyBlock(
   if (date > clock.today) return `${dmy(date)} has not come yet`;
   if (date < target.pendingStart) return `${dmy(date)} is before ${target.name}'s Day Log start`;
   if (!isWorkingDay(date, holidays)) return `${dmy(date)} is not a working day`;
-  if (status === 'leave') return `${dmy(date)} is marked Leave`;
+  if (status === 'leave' && leaveKind !== 'half') return `${dmy(date)} is marked Personal Leave`;
   return null;
 }
 
@@ -78,7 +81,14 @@ export async function sendDayReply(
       { companyId, viewerId: null, targetId: input.userId, date: h.date },
       tx,
     );
-    const block = dayReplyBlock(locked.target, h.date, h.status, [...snap.holidays.keys()], clock);
+    const block = dayReplyBlock(
+      locked.target,
+      h.date,
+      h.status,
+      h.leaveKind,
+      [...snap.holidays.keys()],
+      clock,
+    );
     if (block) throw new ValidationError(block);
     if (snap.lines.length > 0) {
       const who = firstName(locked.target!.name);

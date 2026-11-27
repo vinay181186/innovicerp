@@ -225,6 +225,10 @@ export function useJwLineUndoList(id: string, lineId: string, enabled = true) {
  *  dialog refreshes those roots itself, so this file imports no module that
  *  imports it back (cancel-requests, party-grn, nc-register,
  *  party-material-issues all read jobWorkOrdersKeys). */
+/** A step can be a whole Production Order cancel (~85 s on TEST): longer than
+ *  apiFetch's 60 s default, on this one call only. */
+const UNDO_STEP_TIMEOUT_MS = 180_000;
+
 export function useRunLineUndoStep(id: string, lineId: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<RunLineUndoStepResult, Error, RunLineUndoStepInput>({
@@ -233,11 +237,15 @@ export function useRunLineUndoStep(id: string, lineId: string, saveKey?: SaveKey
         apiFetch<RunLineUndoStepResult>(`/job-work-orders/${id}/lines/${lineId}/undo-step`, {
           method: 'POST',
           json: input,
+          timeoutMs: UNDO_STEP_TIMEOUT_MS,
           ...(headers ? { headers } : {}),
         }),
       ),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
+      // The JWSO lists and details — NOT lineUndos(): the dialog re-reads the
+      // Undo list itself, once per finished step (a second GET otherwise).
+      void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.lists() });
+      void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.details() });
       void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: dashboardKeys.all });

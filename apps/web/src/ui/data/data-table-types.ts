@@ -229,6 +229,15 @@ export interface DataTableProps<T> {
   onToggleExpanded?: ((row: T, index: number) => void) | undefined;
   /** Any CSS length — `400` (px) or `calc(100vh - 220px)`. Overrides .tbl-wrap. */
   maxHeight?: number | string | undefined;
+  /**
+   * Freeze the column headings against the PAGE scroll, not the table's own
+   * box (fit engine, ADR-325): the box grows with its rows (no scrollbar of
+   * its own) and every heading sticks this many px below the top of the
+   * page's scroll area — the height of a sticky page header above it. For a
+   * page of several stacked tables, where `fill` cannot apply. `maxHeight`
+   * is ignored while it is set.
+   */
+  pageStickyTop?: number | undefined;
 
   /* ---- sort (server-paginated model — see SortHeader) ---- */
   sortBy?: string | undefined;

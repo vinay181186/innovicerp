@@ -3,6 +3,7 @@
 // team, no per-person query.
 
 import {
+  type DayLogLeaveKind,
   type DayLogStatus,
   type TeamDayLogQuery,
   type TeamDayLogResponse,
@@ -58,6 +59,9 @@ export async function getTeam(
        WHERE u.company_id = ${companyId}::uuid AND u.deleted_at IS NULL AND u.is_active) AS people,
       (SELECT COALESCE(json_agg(json_build_object(
                 'id', dr.id::text, 'user_id', dr.user_id::text, 'status', dr.day_status,
+                'leave_reason', dr.leave_reason, 'leave_kind', dr.leave_kind,
+                'leave_from', to_char(dr.leave_from, 'HH24:MI'),
+                'leave_to', to_char(dr.leave_to, 'HH24:MI'),
                 'submitted_at', ${ts('dr.submitted_at')},
                 'day_reply_count', (SELECT count(*)::int FROM public.daily_report_day_replies rp
                                     WHERE rp.daily_report_id = dr.id AND rp.deleted_at IS NULL))),
@@ -101,6 +105,10 @@ export async function getTeam(
     id: string;
     user_id: string;
     status: DayLogStatus;
+    leave_reason: string | null;
+    leave_kind: DayLogLeaveKind | null;
+    leave_from: string | null;
+    leave_to: string | null;
     submitted_at: string | null;
     day_reply_count: number;
   }>;
@@ -112,8 +120,17 @@ export async function getTeam(
     const h = byUser.get(p.id);
     const lines = h ? (linesBy.get(h.id) ?? []) : [];
     const status: DayLogStatus = h?.status ?? 'open';
+    const onLeave = status === 'leave';
+    const halfLeave = onLeave && h?.leave_kind === 'half';
+    // A FULL Day leave: done and no entries. A Half Day works the other half.
+    const fullLeave = onLeave && !halfLeave;
     const s = summaryOf(lines, nowMin, workingDay);
-    const now = currentOf(lines, isToday, s.lastStop, nowMin);
+    // Full Day Personal Leave today: "Now" says so, with the reason (a past day
+    // shows its status). A Half Day shows the normal Now.
+    const now =
+      isToday && fullLeave
+        ? { status: 'leave' as const, text: h?.leave_reason ?? null, since: null }
+        : currentOf(lines, isToday, s.lastStop, nowMin);
     return {
       userId: p.id,
       userName: p.name,
@@ -121,6 +138,9 @@ export async function getTeam(
       deptLabel: deptLabelOf(p.team[0] ?? p.main_dept),
       dayLogId: h?.id ?? null,
       status,
+      leaveKind: onLeave ? (halfLeave ? 'half' : 'full') : null,
+      leaveFrom: halfLeave ? (h?.leave_from ?? null) : null,
+      leaveTo: halfLeave ? (h?.leave_to ?? null) : null,
       currentStatus: now.status,
       currentText: now.text,
       runningSince: now.since,
@@ -135,8 +155,7 @@ export async function getTeam(
       lateInMin: s.lateInMin,
       // Pending Entries: a Super Admin's facts only.
       notEntered:
-        v.isSuper &&
-        isNotEntered(p, date, lines.length > 0 || status === 'leave', [...hol.keys()], clock),
+        v.isSuper && isNotEntered(p, date, lines.length > 0 || fullLeave, [...hol.keys()], clock),
       dayReplyCount: v.isSuper ? Number(h?.day_reply_count ?? 0) : 0,
     };
   });

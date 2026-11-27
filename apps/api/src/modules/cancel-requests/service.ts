@@ -274,7 +274,9 @@ export async function requestCancel(
   return withUserContext(user, async (tx) => {
     // Document first (lock order), then the request row via the insert.
     const docCode = await lockDocument(tx, companyId, docType, docId);
-    await refuseIfBlocked(tx, companyId, docType, docId, docCode);
+    // approveNow: approveInTx re-checks the same rule under the same locks in
+    // this transaction, before anything moves — read it once, not twice.
+    if (!approveNow) await refuseIfBlocked(tx, companyId, docType, docId, docCode);
 
     let requestId: string;
     try {

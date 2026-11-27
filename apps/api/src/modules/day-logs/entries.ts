@@ -35,10 +35,12 @@ import {
   spanLabel,
   writeLines,
 } from './entry-write';
+import { halfLeaveOf } from './day';
 import { dayTx, lockEntryDay, openDayLocked, requireHeader } from './lock';
 import { type DayLogClock, dmy, istClock } from './rules';
 import { readSnapshot } from './snapshot';
 import {
+  guardNotLeave,
   guardOwnerWrite,
   hoursOf,
   ownerDetailAfter,
@@ -74,7 +76,8 @@ export async function addEntry(
       tx,
     );
     guardOwnerWrite(h.date, clock.today);
-    const r = prepare(h.date, snap.lines, input, null, clock, snap);
+    guardNotLeave(h);
+    const r = prepare(h.date, snap.lines, input, null, clock, snap, halfLeaveOf(h));
     const [w] = await writeLines(
       tx,
       h,
@@ -132,6 +135,7 @@ export async function updateEntry(
       tx,
     );
     guardOwnerWrite(h.date, clock.today);
+    guardNotLeave(h);
     const self = snap.lines.find((l) => l.id === entryId);
     if (!self || !self.fromTime) throw new NotFoundError('Entry not found');
     // Old Break / Others (leave) rows keep their times (same rule as text.ts).
@@ -149,6 +153,7 @@ export async function updateEntry(
       self,
       clock,
       snap,
+      halfLeaveOf(h),
     );
     const same =
       r.fromTime === self.fromTime &&

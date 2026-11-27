@@ -72,8 +72,18 @@ export function DaySheet({
   const saveKey = useSaveKey();
   const addRows = useAddDayLogEntries(q, saveKey);
   const entries = sortEntries(day.entries);
-  /** Where a new entry starts: the last saved Stop. */
-  const lastStop = startFrom(day.summary.nextStart ?? entries[entries.length - 1]?.toTime);
+  /** Where a new entry starts: the last saved Stop — or, when that falls inside
+   *  a Half Day leave time [From, To), the leave's To Time (the server refuses
+   *  an entry inside the leave anyway). */
+  const nextStart = day.summary.nextStart ?? entries[entries.length - 1]?.toTime ?? null;
+  const inHalfLeave =
+    day.leaveKind === 'half' &&
+    !!day.leaveFrom &&
+    !!day.leaveTo &&
+    !!nextStart &&
+    nextStart >= day.leaveFrom &&
+    nextStart < day.leaveTo;
+  const lastStop = startFrom(inHalfLeave ? day.leaveTo : nextStart);
   const [adding, setAdding] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [rowErrs, setRowErrs] = useState<Record<number, string>>({});

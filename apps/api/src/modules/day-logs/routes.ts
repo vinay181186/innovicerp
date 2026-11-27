@@ -9,8 +9,10 @@ import {
   dayLogOrderOptionsQuerySchema,
   dayLogQuerySchema,
   dayLogApproveInputSchema,
+  dayLogDateInputSchema,
   dayLogDayRepliesSeenInputSchema,
   dayLogHistoryQuerySchema,
+  dayLogLeaveInputSchema,
   dayLogPersonDayQuerySchema,
   dayLogRejectInputSchema,
   dayLogTeamMatesQuerySchema,
@@ -165,6 +167,25 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     return service.rejectEntry(id, dayLogRejectInputSchema.parse(req.body), req.user);
+  });
+
+  // Personal Leave (owner 2026-11-27) — the caller's OWN days only.
+  app.get('/day-logs/leave/mine', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getMyLeave(req.user);
+  });
+
+  app.post('/day-logs/leave', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const result = await service.setLeave(dayLogLeaveInputSchema.parse(req.body), req.user);
+    reply.code(201);
+    return result;
+  });
+
+  app.delete('/day-logs/leave/:date', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { date } = dayLogDateInputSchema.parse(req.params);
+    return service.removeLeave(date, req.user);
   });
 
   app.get('/day-logs/holidays', async (req) => {

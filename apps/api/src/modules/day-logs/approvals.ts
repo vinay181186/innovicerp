@@ -39,7 +39,7 @@ import {
   resolveAccess,
   viewerOf,
 } from './access';
-import { type DayHeader, type DayLine, ts } from './day';
+import { type DayHeader, type DayLine, halfLeaveOf, ts } from './day';
 import { REV_COLS, log, returning, revisionAfter, spanLabel, writeLines } from './entry-write';
 import { dayTx, lockAnyEntryDay, requireHeader } from './lock';
 import { type DayLogClock, istClock } from './rules';
@@ -217,6 +217,7 @@ export async function approveEntry(
         d.others,
         { fromTime: p.fromTime, toTime: p.toTime, description: d.self.description },
         clock,
+        halfLeaveOf(d.h),
       );
     } catch (e) {
       if (e instanceof AppError) throw new ConflictError(`Cannot approve — ${e.message}`);

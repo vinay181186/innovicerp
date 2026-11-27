@@ -1,0 +1,29 @@
+/* SO / JWSO status by day (ADR-325). Theme tokens only. */
+
+/* A collapsed week: its heading row stays, its day rows are hidden. */
+.innovic-table > tbody > tr.sjs-hidden {
+  display: none;
+}
+
+/* The JWSO row's Date cell: weekday + where the figures came from. */
+.sjs-note {
+  color: var(--text3);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+
+/* A row of small buttons inside the filter row. */
+.sjs-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+/* "1. SO wise summary (12)" above each day table. */
+.sjs-section {
+  font-weight: 700;
+  font-size: var(--fs-md);
+  color: var(--text);
+  margin: var(--sp-3) 0 var(--sp-2);
+}

@@ -34,6 +34,16 @@ export function guardOwnerWrite(date: string, today: string): void {
   if (date > today) throw new ValidationError(`${dmy(date)} has not come yet`);
 }
 
+/** Personal Leave (owner 2026-11-27): a FULL Day leave takes no entries. A
+ *  Half Day takes entries outside its leave time (validateEntry's `leave`).
+ *  Judged on the header read under the day lock, so a leave save and an entry
+ *  save on the same day cannot both win (§20.3). */
+export function guardNotLeave(h: Pick<DayHeader, 'date' | 'status' | 'leaveKind'>): void {
+  if (h.status === 'leave' && h.leaveKind !== 'half') {
+    throw new ValidationError(`${dmy(h.date)} is marked Personal Leave — remove the leave first`);
+  }
+}
+
 /**
  * The owner's DayLogDetail after a write, built in memory from the snapshot
  * read under the lock plus what the write returned: `lines` are the day's
@@ -73,7 +83,7 @@ export interface EntryCandidate {
  * Every rule of one row on day `date`, against the day's OTHER rows
  * (`others` excludes the row being edited; their CURRENT values): Working on
  * written, Stop after Start, not in the future, Stop not after now on today,
- * no shared minute with another row. The schema states the field rules too;
+ * no shared minute with another row or with a Half Day's leave time. The schema states the field rules too;
  * they are re-checked because the batch and approval reach here without it.
  */
 export function validateEntry(
@@ -81,6 +91,9 @@ export function validateEntry(
   others: readonly DayLine[],
   cand: EntryCandidate,
   clock: DayLogClock,
+  /** The day's Half Day leave time (day.ts halfLeaveOf on the LOCKED header):
+   *  a row may not share a minute with it, like with another row. */
+  leave?: { fromTime: string; toTime: string } | null,
 ): void {
   if (date > clock.today) throw new ValidationError(`${dmy(date)} has not come yet`);
   if (!cand.description.trim()) throw new ValidationError('Write what you worked on');
@@ -102,6 +115,11 @@ export function validateEntry(
       toTime: l.toTime,
       description: l.description,
     }));
+  if (leave && findOverlap([{ id: 'leave', kind: 'leave', description: '', ...leave }], cand)) {
+    throw new ValidationError(
+      `Overlaps Personal Leave ${fmt12(leave.fromTime)} – ${fmt12(leave.toTime)} — rows cannot share time`,
+    );
+  }
   const hit = findOverlap(spans, cand, nowMin);
   if (hit) {
     throw new ValidationError(

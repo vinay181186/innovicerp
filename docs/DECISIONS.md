@@ -16885,3 +16885,46 @@ was cancelled (3 correct receipts lost). Once QC is done, or an NC decided, noth
 
 SO line chain, GRN Incoming QC reversal, JC final-inspection reversal, JC NC undo, paid-invoice payment reversal,
 Multi-Level Plan cancel in the registry. Those appear in the list as "Do it on its screen".
+
+## ADR-325: SO / JWSO status by day — Reports page, Home view and a saved copy per day
+
+**Date:** 2026-11-27
+**Status:** Accepted (owner: plan "go" 27-Nov, mockup v2 approved, access answer 27-Nov)
+
+### Context
+
+The owner tracked SO / JWSO progress in a hand-made Excel ("SO Wise Status", "Summary SO-JWSO") and wanted
+it in the ERP, per day, with the history of earlier days. The ERP keeps no daily figures, so a past day
+cannot be rebuilt.
+
+### Decision
+
+- **Reports › SO / JWSO Status** (`/so-jwso-status`) and the same view on Home (`?view=so-jwso-status`):
+  From / To (default This week), days grouped Mon–Sun, each day one SO and one JWSO summary row (Orders + 11
+  figures). A date opens `/so-jwso-status/$date`: ← Back, Prev / Next day, two tables (SO wise summary, JWSO
+  wise summary) with Total rows, page scroll, frozen headings, Print and Excel (two sheets).
+- **One number column per table**: `SO No.` (sales_orders.code) / `JWSO No.` — never Internal / System SO No.
+- **Access**: the first Access Control page row under Reports, `sojwstatus_view` ("SO / JWSO Status"). Every
+  Reports tier gives View; "Hide page" takes it away; Super Admin always. The Home item follows the same page
+  rule. The server checks it on both routes.
+- **Today is live; past days are a saved copy** in `so_status_snapshots` (0269). ONE writer: an in-process
+  API timer every 10 minutes that upserts today's IST rows under an advisory lock and soft-deletes orders gone
+  today. A day with no copy shows "no copy saved", never 0. History starts the day this reaches PROD.
+- **One reader of the figures** (`so-jwso-status/figures.ts`), the rules of the owner's Excel: cancelled /
+  deleted orders, lines, plans, PROs and Job Cards left out, rework child Job Cards left out, closed orders
+  kept; Running / Not Started from the existing `opHasStartedWork`; dispatch = `dispatched_qty` (SO) /
+  `returned_qty` (JWSO); physical stock = active / partly consumed SO reservations.
+
+### Alternatives considered
+
+- BullMQ repeat job — rejected: needs Redis switched on (new infrastructure, §21.3).
+- GitHub Actions nightly call — rejected: outside the app, one snapshot a day, lost if the run fails.
+- One summary table per day — rejected: totals are summed from the order rows (one reader).
+- Home menu only — rejected by owner: the page lives in Reports; Home shows it to the same people.
+
+### Consequences
+
+- Positive: the Excel is no longer needed; any past day can be opened once history exists.
+- Negative: no history before go-live; a day's figure is up to 10 minutes old at midnight.
+- Risk: SO Status works out dispatch from challans while this uses `dispatched_qty`; a disagreement is a data
+  finding, not a second reader.
