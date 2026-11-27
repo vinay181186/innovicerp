@@ -4,7 +4,7 @@
 
 import type { PartyGrnLine } from '@innovic/shared';
 import { fmtDateTime } from '@/lib/date';
-import type { DataTableColumn } from '@/ui/data';
+import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import { PGRN_QC_BADGE, pgrnQcLabel, pgrnQcState, qcPendingQtyOf } from '../lib/qc-state';
 
 export function partyGrnLineColumns(): DataTableColumn<PartyGrnLine>[] {
@@ -164,6 +164,52 @@ export function partyGrnLineColumns(): DataTableColumn<PartyGrnLine>[] {
           </>
         );
       },
+    },
+  ];
+}
+
+/** ADR-324 — which line-level undo the ⋯ of a Party GRN line opens. */
+export type PartyGrnLineUndo = 'party_grn_line_qc' | 'party_grn_line';
+
+/** ADR-324 — the ⋯ of one Party GRN line: "Reverse QC" (back to Waiting QC)
+ *  and "Remove line" (off a saved GRN). The screen only greys an item out for
+ *  a reason it can already see; the Cancel dialog's preview shows the
+ *  server's own blockers, and the server re-checks everything. */
+export function partyGrnLineMenu(
+  l: PartyGrnLine,
+  ctx: {
+    /** Incoming QC Edit tick (effectiveFormPerms 'qc_incoming'). */
+    canReverseQc: boolean;
+    /** Party GRN Edit tick (effectiveFormPerms 'party_create'). */
+    canRemoveLine: boolean;
+    /** Live (not removed) lines on this GRN. */
+    liveLineCount: number;
+    open: (kind: PartyGrnLineUndo, line: PartyGrnLine) => void;
+  },
+): RowMenuItem[] {
+  const removed = l.deletedAt != null;
+  const qcTouched = l.acceptedQty + l.rejectedQty > 0;
+  return [
+    {
+      key: 'reverse-qc',
+      label: 'Reverse QC',
+      icon: 'refresh-cw',
+      hidden: removed || !ctx.canReverseQc,
+      disabledReason: qcTouched ? undefined : 'no QC on it',
+      onSelect: () => ctx.open('party_grn_line_qc', l),
+    },
+    {
+      key: 'remove-line',
+      label: 'Remove line',
+      icon: 'trash-2',
+      group: 'danger',
+      hidden: removed || !ctx.canRemoveLine,
+      disabledReason: qcTouched
+        ? 'QC done — reverse QC first'
+        : ctx.liveLineCount <= 1
+          ? 'only line — Cancel the GRN instead'
+          : undefined,
+      onSelect: () => ctx.open('party_grn_line', l),
     },
   ];
 }

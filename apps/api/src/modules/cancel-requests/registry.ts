@@ -24,7 +24,10 @@ import { jwDcOutwardCancelHandler } from '../jw-dc/cancel-handler';
 import { jwDcInwardCancelHandler } from '../jw-dc/inward-cancel-handler';
 import { jwInvoiceCancelHandler } from '../jw-invoices/cancel-handler';
 import { jwReturnCancelHandler } from '../jw-returns/cancel-handler';
+import { ncDispositionCancelHandler } from '../nc-register/disposition-undo';
 import { partyGrnCancelHandler } from '../party-grn/cancel-handler';
+import { partyGrnLineQcCancelHandler } from '../party-grn/line-qc-reverse-handler';
+import { partyGrnLineCancelHandler } from '../party-grn/line-remove-handler';
 import { partyMaterialIssueCancelHandler } from '../party-material-issues/cancel-handler';
 import { planCancelHandler } from '../plans/cancel-handler';
 import { productionOrderCancelHandler } from '../production-orders/cancel-handler';
@@ -86,6 +89,10 @@ export const CANCEL_HANDLERS: Record<CancelDocType, CancelHandler> = {
   production_order: productionOrderCancelHandler,
   dc_receipt: dcReceiptCancelHandler,
   jw_dc_inward: jwDcInwardCancelHandler,
+  // ADR-324 line undo (P1): doc_id is the Party GRN LINE / the NC.
+  party_grn_line: partyGrnLineCancelHandler,
+  party_grn_line_qc: partyGrnLineQcCancelHandler,
+  nc_disposition: ncDispositionCancelHandler,
 };
 
 /** One-step cancel (owner rule 2026-10-31, Purchase Request): the page's EDIT

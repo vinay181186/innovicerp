@@ -24,6 +24,7 @@ import { lockSoRow } from '../../lib/assembly-parts';
 import { readSoCustomerParts } from '../../lib/party-so-parts';
 import { emitActivityLog } from '../activity-log/service';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
+import { jwLineRegisterBalance } from './service';
 
 export async function applyPartyGrnUseAsIs(
   tx: DbTransaction,
@@ -105,6 +106,9 @@ export async function applyPartyGrnUseAsIs(
   // ADR-235 — Use As Is moves pieces into the register; not while a cancel of
   // the Party GRN waits (its preview would no longer say what it reverses).
   await assertNoPendingCancel(tx, 'party_grn', l.partyGrnId);
+  // ADR-324 — nor while a Reverse QC of this line waits.
+  await assertNoPendingCancel(tx, 'party_grn_line_qc', l.id);
+  await assertNoPendingCancel(tx, 'party_grn_line', l.id);
 
   // 3) §20.2 — conditional move Deviated → Accepted; only pieces still held.
   const moved = (await tx.execute(sql`
@@ -146,6 +150,148 @@ export async function applyPartyGrnUseAsIs(
       lineRef: `Line ${l.lineNo}`,
       qty,
       detail: `${ncCode}: ${qty} used as is`,
+    },
+    companyId,
+    user,
+  );
+}
+
+/**
+ * ADR-324 — the inverse of applyPartyGrnUseAsIs, run only by an approved
+ * "Undo decision" (nc_disposition) request, inside its transaction, AFTER the
+ * NC row is locked. Same lock order: the JWSO line, then the Party GRN line.
+ * The `qty` used-as-is pieces go back from Accepted to Deviated on the line
+ * (accepted −= qty, rejected += qty — the sum is unchanged), leave the
+ * customer-material register (reversal / out carrying the JWSO line, the one
+ * ledger writer) and party_materials.received_qty −= qty (conditional, no
+ * clamp). Refused when the register of the JWSO line no longer holds them
+ * (issued to a Job Card / returned) — the blocker names those documents.
+ */
+export async function undoPartyGrnUseAsIs(
+  tx: DbTransaction,
+  input: {
+    companyId: string;
+    partyGrnLineId: string;
+    qty: number;
+    ncCode: string;
+    reason: string;
+  },
+  user: AuthContext,
+): Promise<void> {
+  const { companyId, partyGrnLineId, qty, ncCode } = input;
+  if (!Number.isInteger(qty) || qty <= 0) {
+    throw new ConflictError(`${ncCode}: no Use As Is pieces to take back. Refresh the page.`);
+  }
+  const peek = (await tx.execute(sql`
+    SELECT pgl.jw_line_id AS "jwLineId", pg.sales_order_id AS "salesOrderId"
+      FROM public.party_grn_lines pgl
+      JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
+     WHERE pgl.id = ${partyGrnLineId}::uuid
+       AND pgl.company_id = ${companyId}::uuid
+       AND pgl.deleted_at IS NULL
+  `)) as unknown as Array<{ jwLineId: string | null; salesOrderId: string | null }>;
+  const jwLineId = peek[0]?.jwLineId ?? null;
+  if (!peek[0]) {
+    throw new NotFoundError(
+      `${ncCode}: its Party GRN line was not found — the Party GRN may have been cancelled. Refresh the page.`,
+    );
+  }
+  if (!jwLineId || peek[0].salesOrderId) {
+    throw new ConflictError(
+      `${ncCode}: Undo decision is available for JWSO customer material only for now.`,
+    );
+  }
+
+  const jwLine = await lockJwLine(tx, companyId, jwLineId);
+  const rows = (await tx.execute(sql`
+    SELECT pgl.id, pgl.line_no AS "lineNo", pgl.jw_line_id AS "jwLineId",
+           pgl.party_material_id AS "partyMaterialId",
+           pgl.accepted_qty::int AS "acceptedQty",
+           pg.id AS "partyGrnId", pg.code AS "partyGrnCode"
+      FROM public.party_grn_lines pgl
+      JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
+     WHERE pgl.id = ${partyGrnLineId}::uuid
+       AND pgl.company_id = ${companyId}::uuid
+       AND pgl.deleted_at IS NULL
+     FOR UPDATE OF pgl
+  `)) as unknown as Array<{
+    id: string;
+    lineNo: number;
+    jwLineId: string | null;
+    partyMaterialId: string | null;
+    acceptedQty: number;
+    partyGrnId: string;
+    partyGrnCode: string;
+  }>;
+  const l = rows[0];
+  if (!l || l.jwLineId !== jwLine.id || !l.partyMaterialId) {
+    throw new ConflictError(`${ncCode}: its Party GRN line changed a moment ago. Refresh the page.`);
+  }
+  const at = `${l.partyGrnCode} Ln ${l.lineNo}`;
+
+  // Under the JWSO line lock: the register of this line must still hold them.
+  const balance = await jwLineRegisterBalance(tx, jwLine.id, l.partyMaterialId);
+  if (balance < qty) {
+    throw new ConflictError(
+      `${ncCode}: only ${balance} of ${at}'s customer material is left in the register — ` +
+        `the ${qty} used as is were issued or returned. Undo those first.`,
+    );
+  }
+
+  // §20.2 — conditional move Accepted → Deviated; only pieces still accepted.
+  const moved = (await tx.execute(sql`
+    UPDATE public.party_grn_lines
+       SET accepted_qty = accepted_qty - ${qty},
+           rejected_qty = rejected_qty + ${qty},
+           updated_at = now(), updated_by = ${user.id}::uuid
+     WHERE id = ${l.id}::uuid
+       AND deleted_at IS NULL
+       AND accepted_qty = ${l.acceptedQty}
+       AND accepted_qty >= ${qty}
+    RETURNING id
+  `)) as unknown as Array<{ id: string }>;
+  if (moved.length === 0) {
+    throw new ConflictError(`${at} changed a moment ago. Refresh the page.`);
+  }
+
+  await postPartyStockMove(tx, {
+    companyId,
+    partyMaterialId: l.partyMaterialId,
+    jwLineId: jwLine.id,
+    salesOrderId: null,
+    movement: 'reversal',
+    direction: 'out',
+    qty,
+    sourceDocType: 'party_grn',
+    sourceDocId: l.partyGrnId,
+    remarks: `${at} · ${ncCode} Use As Is undone: ${input.reason}`,
+    userId: user.id,
+    qtyLabel: 'Reversal Qty',
+  });
+  const upd = (await tx.execute(sql`
+    UPDATE public.party_materials
+       SET received_qty = received_qty - ${qty}, updated_at = now(), updated_by = ${user.id}::uuid
+     WHERE id = ${l.partyMaterialId}::uuid AND received_qty >= ${qty}
+    RETURNING id
+  `)) as unknown as Array<{ id: string }>;
+  if (upd.length === 0) {
+    throw new ConflictError(
+      `${ncCode}: the received total of its customer material is lower than ${qty} — the figures ` +
+        `disagree. Ask an admin to check the customer material register.`,
+    );
+  }
+
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.QC,
+      entity: 'PartyGrn',
+      entityId: l.partyGrnId,
+      refId: l.partyGrnCode,
+      lineRef: `Line ${l.lineNo}`,
+      qty,
+      reason: input.reason,
+      detail: `${ncCode}: Use As Is undone — ${qty} back to Deviated`,
     },
     companyId,
     user,

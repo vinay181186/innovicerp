@@ -18,10 +18,12 @@
 // deleted_at equals the header's. The SO / JWSO line's "in Job Cards" balance
 // is computed over live cards, so it frees by itself.
 //
-// Plans (owner decision): a card that a live plan made (plans.jc_id = card)
-// and that no Production Order built is BLOCKED — "cancel the plan first"
-// (Plan cancel already treats a non-live card as no blocker). A Production
-// Order's card is cancelled through the order, which re-points the plan.
+// Plans (ADR-324, owner 2026-11-26): a card that a live plan made (plans.jc_id
+// = card) and that no Production Order built is cancelled directly; the plan
+// steps back to 'planned' with jc_id cleared, in the same transaction (no
+// cascade — the plan is not cancelled). Plan cancel still treats a live card
+// as a blocker. A Production Order's card is cancelled through the order,
+// which re-points the plan.
 //
 // While a cancel is PENDING on the card or on the Production Order that built
 // it, every write on the card refuses (assertJobCardNotPendingCancel). New
@@ -491,26 +493,10 @@ export async function jobCardCancelBlockers(
         reason: `built by Production Order ${r.code} — cancel the Production Order instead`,
       });
     }
-    // Owner decision — a live plan that made this card (no Production Order
-    // built it; that cancel re-points the plan) is cancelled first.
-    if (pros.length === 0 && head.productionOrderId == null) {
-      for (const p of await rows<{ id: string; code: string }>(
-        tx,
-        sql`
-          SELECT id, code FROM public.plans
-           WHERE jc_id = ${id}::uuid AND company_id = ${c}
-             AND deleted_at IS NULL AND plan_status <> 'cancelled'
-           ORDER BY code
-        `,
-      )) {
-        out.push({
-          docLabel: 'Plan',
-          docNo: p.code,
-          href: `/plans/${p.id}`,
-          reason: 'made this Job Card — cancel the plan first',
-        });
-      }
-    }
+    // ADR-324 (owner 2026-11-26): a live plan that made this card (Execute,
+    // no Production Order) no longer blocks — cancelJobCardTx steps the plan
+    // back to Planned instead. The Plan cancel still refuses while its card is
+    // live, so the order is: Job Card first, then the plan — never a loop.
   }
 
   // ADR-182 — a short-closed order's card (or rework child) is frozen.
@@ -639,6 +625,37 @@ export async function cancelJobCardTx(
   if (done.length === 0) {
     throw new ConflictError(
       `${head.code} has just been cancelled by someone else. Refresh the page.`,
+    );
+  }
+
+  // ADR-324 — the plan that executed this card (no Production Order) steps
+  // back to Planned. §20.2: conditional on 'jc_created' on THIS card; a plan
+  // with an order, or one that moved on, is left alone.
+  const steppedBack = opts.viaProductionOrder
+    ? []
+    : ((await tx.execute(sql`
+        UPDATE public.plans p
+           SET plan_status = 'planned', jc_id = NULL,
+               updated_at = now(), updated_by = ${actor.id}::uuid
+         WHERE p.jc_id = ${id}::uuid AND p.company_id = ${companyId}::uuid
+           AND p.plan_status = 'jc_created' AND p.deleted_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM public.production_orders po
+                            WHERE po.plan_id = p.id AND po.deleted_at IS NULL)
+        RETURNING p.id, p.code
+      `)) as unknown as Array<{ id: string; code: string }>);
+  for (const p of steppedBack) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'Plan',
+        entityId: p.id,
+        refId: p.code,
+        changes: [{ field: 'planStatus', label: 'Plan Status', before: 'JC Created', after: 'Planned' }],
+        detail: `${p.code} back to Planned — ${head.code} cancelled`,
+      },
+      companyId,
+      actor,
     );
   }
 

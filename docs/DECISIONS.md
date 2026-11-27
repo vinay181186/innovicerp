@@ -16844,3 +16844,44 @@ before Plan / PRO / Job Card is unchanged.
 
 - Block new Plan/PRO/JC on Unverified (D1 = B) — rejected by owner: 117 PROD SO lines (110 without PDF) would stop.
 - Keep a separate release right — rejected (D2): one right (Approve tick) is enough.
+
+## ADR-324 — Line undo P1: remove a wrong JWSO line through every downstream step (owner 26/27-Nov-2026)
+
+**Status:** Accepted (owner: option A, P1, "keeping both", "go", 27-Nov-2026).
+
+### Context
+
+PROD IN-JW-00054: Part 8 was entered twice instead of Part 9. PGRN-00058 received on all four lines, so Ln 4
+could not be removed ("in use — Short-close instead"). A saved Party GRN cannot drop one line, so the whole GRN
+was cancelled (3 correct receipts lost). Once QC is done, or an NC decided, nothing could be undone at all.
+
+### Decision
+
+- **Every step is undone through its own channel, newest first, never cascaded.** New channels:
+  Party GRN line **Reverse QC** (`party_grn_line_qc`, approval), **Remove line** (`party_grn_line`, one step,
+  Party GRN Edit; QC-untouched lines only, never the last line), NC **Undo decision** (`nc_disposition`, approval;
+  customer-material NCs only in P1). All three are ADR-235 cancel-registry types with `doc_id` = line / NC id
+  (migration 0265 widens the CHECK). One register writer: the line-filtered body of `cancelPartyGrnTx`.
+- **Plan steps back to Planned** when its Buy/Full-Outsource PR is cancelled or its Execute-made Job Card is
+  cancelled. The plan ↔ Job Card wait loop is gone (JC first, then plan). No cascade.
+- **Undo list** on JWSO edit (🗑 on an in-use line): first asks "Entered by mistake / Work was real"; the mistake
+  path lists every live step holding the line, newest first, each with its own action button, plus
+  "Undo all I can ▶" (one reason for all; stops at an approval, a manual step or the first refusal). The list is
+  recomputed from live data; the server runs a step only when it is the first open one, and each step's own
+  service keeps its rights, blockers and ledger writes.
+- **Right:** only the Special Right **Undo chain** (`canUndoChain`, Access Control › Special Rights — built in
+  another terminal). No role or Super Admin check is coded in the undo path (owner 27-Nov). Without the right the
+  list is read-only and names who holds it.
+- NC re-open is a documented exception to `NC_STATUS_MOVES` (like the CMR rebalance) — the map is not widened.
+
+### Alternatives considered
+
+- Option B (JWSO edit silently removes the waiting-QC GRN line) — rejected by owner: changes a store document from
+  a sales screen.
+- Plan cancel cascading its Job Card — rejected by owner ("needs better handling"); replaced by the step-back.
+- Rows only open each document's own screen — rejected by owner: "user can undo from here only".
+
+### Not in P1 (P2/P3)
+
+SO line chain, GRN Incoming QC reversal, JC final-inspection reversal, JC NC undo, paid-invoice payment reversal,
+Multi-Level Plan cancel in the registry. Those appear in the list as "Do it on its screen".

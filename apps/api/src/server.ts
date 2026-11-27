@@ -14,6 +14,7 @@ import { activityLogRoutes } from './modules/activity-log/routes';
 import { approvalConfigRoutes } from './modules/approval-config/routes';
 import { approvalsRoutes } from './modules/approvals/routes';
 import { cancelRequestsRoutes } from './modules/cancel-requests/routes';
+import { lineUndoRoutes } from './modules/line-undo/routes';
 import { documentEditsRoutes } from './modules/document-edits/routes';
 import { authRecoveryRoutes } from './modules/auth-recovery/routes';
 import { backupRoutes } from './modules/backup/routes';
@@ -286,6 +287,8 @@ await app.register(approvalConfigRoutes);
 await app.register(approvalsRoutes);
 // ADR-235 — the standard Cancel Request (preview / request / decide / withdraw).
 await app.register(cancelRequestsRoutes);
+// ADR-324 — the Undo list of a JWSO line.
+await app.register(lineUndoRoutes);
 await app.register(opLogViewerRoutes);
 await app.register(ospProcessesRoutes);
 await app.register(dataIntegrityRoutes);

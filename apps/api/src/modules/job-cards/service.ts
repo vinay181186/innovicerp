@@ -4080,6 +4080,16 @@ export async function deleteJobCard(
     // which the rule still contains.
     await assertJobCardNotPendingCancel(tx, id);
     const blockers = await jobCardCancelBlockers(tx, companyId, id);
+    // ADR-324: Cancel (not Delete) is the channel that puts a plan back to
+    // Planned, so Delete still refuses a card a live plan made.
+    const planRows = (await tx.execute(sql`
+      SELECT code FROM public.plans
+       WHERE jc_id = ${id}::uuid AND company_id = ${companyId}::uuid
+         AND deleted_at IS NULL AND plan_status <> 'cancelled'
+    `)) as unknown as Array<{ code: string }>;
+    for (const p of planRows) {
+      blockers.push({ docLabel: 'Plan', docNo: p.code, href: null, reason: 'made this Job Card — use Cancel; the plan goes back to Planned' });
+    }
     if (blockers.length > 0) {
       const list = blockers.map((b) => `${b.docLabel} ${b.docNo} (${b.reason})`).join('; ');
       throw new ValidationError(`${head.code} can't be deleted yet — clear these first: ${list}.`);

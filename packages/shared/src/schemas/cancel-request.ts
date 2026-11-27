@@ -41,6 +41,10 @@ export const CANCEL_DOC_TYPES = [
   'production_order',
   'dc_receipt',
   'jw_dc_inward',
+  // ADR-324 line undo (P1): doc_id is the LINE or NC id, doc_code e.g. "PGRN-00058 Ln 4"
+  'party_grn_line',
+  'party_grn_line_qc',
+  'nc_disposition',
 ] as const;
 export type CancelDocType = (typeof CANCEL_DOC_TYPES)[number];
 export const cancelDocTypeSchema = z.enum(CANCEL_DOC_TYPES);
@@ -69,13 +73,21 @@ export const CANCEL_DOC_LABELS: Record<CancelDocType, string> = {
   production_order: 'Production Order',
   dc_receipt: 'DC Receipt',
   jw_dc_inward: 'JW DC Receipt',
+  party_grn_line: 'Party GRN line',
+  party_grn_line_qc: 'Party GRN line QC',
+  nc_disposition: 'NC decision',
 };
 
 /** Cancelled in ONE step by the page's Edit tick — no Approve tick, no waiting
  *  request (owner rule 2026-10-31: PRs have no approval). The one list the
  *  server (cancel-requests registry), the Cancel dialog and the Approvals tab
  *  all read. */
-export const ONE_STEP_CANCEL_DOC_TYPES: readonly CancelDocType[] = ['purchase_request'];
+export const ONE_STEP_CANCEL_DOC_TYPES: readonly CancelDocType[] = [
+  'purchase_request',
+  // ADR-324: removing a Party GRN line nothing was inspected on moves no stock —
+  // the Party GRN Edit tick alone does it (owner 2026-11-26).
+  'party_grn_line',
+];
 
 /** The tick that decides a cancel on this document type: Approve, or Edit for
  *  a one-step type. */
@@ -108,6 +120,9 @@ export const CANCEL_DOC_FORM_KEY: Record<CancelDocType, string> = {
   production_order: 'prodorder_create',
   dc_receipt: 'ospdc_create',
   jw_dc_inward: 'ospdc_create',
+  party_grn_line: 'party_create',
+  party_grn_line_qc: 'qc_incoming',
+  nc_disposition: 'nc_dispose',
 };
 
 export const CANCEL_REQUEST_STATUSES = ['pending', 'approved', 'rejected', 'withdrawn'] as const;

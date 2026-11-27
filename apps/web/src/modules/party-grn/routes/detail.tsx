@@ -14,6 +14,7 @@
 // Refresh: 'party-grn' is 'poll' — the detail read polls like the list; every
 // mutation already invalidates partyGrnKeys.all, which covers detail(id).
 
+import type { PartyGrnLine } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { fmtDate, fmtDateTime } from '@/lib/date';
@@ -30,7 +31,11 @@ import { ActionMenu, DetailHeader, PageState } from '@/ui/layout';
 import { usePartyGrnDetail } from '../api';
 import { EditPartyGrnModal } from '../components/edit-party-grn-modal';
 import { isPartyGrnCancelled } from '../components/party-grn-columns';
-import { partyGrnLineColumns } from '../components/party-grn-line-table';
+import {
+  type PartyGrnLineUndo,
+  partyGrnLineColumns,
+  partyGrnLineMenu,
+} from '../components/party-grn-line-table';
 import { PartyGrnPendingChanges } from '../components/party-grn-pending-changes';
 import { PartyGrnQcModal } from '../components/party-grn-qc-modal';
 import { usePartyGrnPrint } from '../components/use-party-grn-print';
@@ -52,6 +57,12 @@ function PartyGrnDetailPage(): React.JSX.Element {
   const [editOpen, setEditOpen] = useState(false);
   const [qcOpen, setQcOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  // ADR-324 — the line ⋯ action whose Cancel dialog is open (Reverse QC /
+  // Remove line), or null.
+  const [lineUndo, setLineUndo] = useState<{
+    kind: PartyGrnLineUndo;
+    line: PartyGrnLine;
+  } | null>(null);
   // The 60 s poll pauses while the Edit / QC popup is open (they read the same
   // query), so a refresh never re-seeds a form under the user's typing — as on
   // the list, where the popups open with no poll on this key.
@@ -96,6 +107,11 @@ function PartyGrnDetailPage(): React.JSX.Element {
   const customer = g.clientName ?? g.clientCodeText ?? '—';
   // Already in line order (loadPartyGrnDetail orders by line_no).
   const lines = g.lines;
+  // ADR-324 — line ⋯: Reverse QC (Incoming QC Edit tick) and Remove line
+  // (Party GRN Edit tick); none on a cancelled GRN. The server re-checks.
+  const canReverseQc = !cancelled && qcPerms.edit;
+  const canRemoveLine = !cancelled && perms.edit;
+  const liveLineCount = lines.filter((l) => l.deletedAt == null).length;
 
   return (
     <div>
@@ -236,6 +252,18 @@ function PartyGrnDetailPage(): React.JSX.Element {
           rows={lines}
           rowKey={(l) => l.id}
           emptyText="No lines on this Party GRN."
+          {...(canReverseQc || canRemoveLine
+            ? {
+                rowMenuLabel: (l: PartyGrnLine) => `Actions for Ln ${l.lineNo}`,
+                rowMenu: (l: PartyGrnLine) =>
+                  partyGrnLineMenu(l, {
+                    canReverseQc,
+                    canRemoveLine,
+                    liveLineCount,
+                    open: (kind, line) => setLineUndo({ kind, line }),
+                  }),
+              }
+            : {})}
         />
       </Panel>
 
@@ -251,6 +279,14 @@ function PartyGrnDetailPage(): React.JSX.Element {
           docId={g.id}
           docCode={g.code}
           onClose={() => setCancelOpen(false)}
+        />
+      ) : null}
+      {lineUndo ? (
+        <CancelDocDialog
+          docType={lineUndo.kind}
+          docId={lineUndo.line.id}
+          docCode={`${g.code} Ln ${lineUndo.line.lineNo}`}
+          onClose={() => setLineUndo(null)}
         />
       ) : null}
     </div>

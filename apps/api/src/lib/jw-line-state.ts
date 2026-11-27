@@ -168,6 +168,8 @@ export async function jwLineUsageRows(
     UNION ALL
     SELECT jw_line_id, 'party_material_issue', id, code FROM public.party_material_issues
      WHERE jw_line_id IN (${ids}) AND deleted_at IS NULL
+       -- ADR-324: an issue whose every piece went back to store holds nothing.
+       AND qty - returned_to_store_qty > 0
     UNION ALL
     SELECT job_work_order_line_id, 'jw_return', id, code FROM public.jw_return_challans
      WHERE job_work_order_line_id IN (${ids}) AND deleted_at IS NULL AND status <> 'cancelled'

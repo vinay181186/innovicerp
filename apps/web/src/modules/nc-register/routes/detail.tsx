@@ -36,6 +36,7 @@ import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
 import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { useCreateCapa } from '@/modules/capa/api';
+import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { useHistoryTab } from '@/components/shared/document-history';
@@ -116,6 +117,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteReason, setDeleteReason] = useState('');
   const [showDispose, setShowDispose] = useState(false);
+  // ADR-324 — the "Undo decision" Cancel dialog (customer-material NC only).
+  const [undoDecisionOpen, setUndoDecisionOpen] = useState(false);
   // The NC version the Create DC pop-up was opened on: a refresh that changes
   // the NC (someone else raised the DC) closes it, and it never reopens itself.
   const [createDcOn, setCreateDcOn] = useState<string | null>(null);
@@ -231,6 +234,13 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // is not yet closed. Disabled (never hidden) while the server says why not,
   // so the operator sees the shortfall rather than a missing button.
   const showClose = canAdvance && !isPending && mayMoveTo('closed') && !isLegacyRework;
+  // ADR-324 — "Undo decision" puts a customer-material NC back to Pending
+  // through the standard Cancel (docType nc_disposition). Same rights as
+  // Dispose (nc_dispose); the cancel registry decides with nc_dispose Edit to
+  // request and Approve to decide, so either of those shows it too. The
+  // server re-checks and the dialog shows its blockers.
+  const showUndoDecision =
+    isPartyNc && !isPending && (canAdvance || ncPerms.edit || ncPerms.approve);
 
   // Resolve op_seq → operation label for the legacy rework dropdown.
   const reworkOpOptions = (jcOps ?? [])
@@ -357,6 +367,13 @@ function NcRegisterDetailPage(): React.JSX.Element {
                   icon: 'download',
                   onClick: () =>
                     void ncPrint('download', { id: detail.id, code: detail.code, jcCode }, isDraft),
+                },
+                {
+                  label: 'Undo decision',
+                  icon: 'refresh-cw',
+                  danger: true,
+                  hidden: !showUndoDecision,
+                  onClick: () => setUndoDecisionOpen(true),
                 },
               ]}
             />
@@ -616,6 +633,15 @@ function NcRegisterDetailPage(): React.JSX.Element {
           pendingLabel="Moving to Trash…"
           onConfirm={onDelete}
           onCancel={() => setConfirmDelete(false)}
+        />
+      ) : null}
+
+      {undoDecisionOpen ? (
+        <CancelDocDialog
+          docType="nc_disposition"
+          docId={detail.id}
+          docCode={detail.code}
+          onClose={() => setUndoDecisionOpen(false)}
         />
       ) : null}
 

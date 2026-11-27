@@ -88,6 +88,9 @@ const CANCEL_DOC: Readonly<
   production_order: { table: 'public.production_orders', entity: 'ProductionOrder' },
   dc_receipt: { table: 'public.delivery_challan_receipts', entity: null },
   jw_dc_inward: { table: 'public.jw_dc_inward', entity: null },
+  party_grn_line: { table: 'public.party_grn_lines', entity: null },
+  party_grn_line_qc: { table: 'public.party_grn_lines', entity: null },
+  nc_disposition: { table: 'public.nc_register', entity: 'NonConformance' },
 };
 
 /** CASE <key> WHEN '<k>' THEN (SELECT created_by FROM <table> WHERE id = <id>) … END */

@@ -12,10 +12,12 @@
 // Kept apart from service.ts on purpose: cancel.ts imports service.ts, and
 // service.ts imports this file — neither imports the other back.
 
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { ActivityAction } from '@innovic/shared';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { jcOps, purchaseRequests } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { assertRowUpdated } from '../../lib/row-lock';
+import { emitActivityLog } from '../activity-log/service';
 
 // ADR-101 — un-stamp the JC op(s) a dead PR was raised against.
 //
@@ -98,5 +100,46 @@ export async function markPrCancelledTx(
     )
     .returning({ id: purchaseRequests.id });
   assertRowUpdated(moved, `PR ${pr.code}`);
+  await stepPlansBackFromPr(tx, pr, user);
   return releaseSourceJcOps(tx, pr.id, user);
+}
+
+// ADR-324 — a plan whose Direct Purchase / Full Outsource PR is cancelled goes
+// back to 'planned' (the step before "PR Created") with the PR link cleared,
+// so it can raise a new PR — no cascade, the plan is not cancelled. §20.2:
+// conditional on the plan still being 'pr_created' on THIS PR; a plan that
+// moved on (in production, cancelled) is left alone. The PR row is locked by
+// the caller; the plan row is taken by the UPDATE itself.
+export async function stepPlansBackFromPr(
+  tx: DbTransaction,
+  pr: { id: string; code: string },
+  user: AuthContext,
+): Promise<string[]> {
+  const rows = (await tx.execute(sql`
+    UPDATE public.plans
+       SET plan_status = 'planned',
+           dp_pr_id = CASE WHEN dp_pr_id = ${pr.id}::uuid THEN NULL ELSE dp_pr_id END,
+           fo_pr_id = CASE WHEN fo_pr_id = ${pr.id}::uuid THEN NULL ELSE fo_pr_id END,
+           updated_at = now(), updated_by = ${user.id}::uuid
+     WHERE plan_status = 'pr_created' AND deleted_at IS NULL
+       AND company_id = (SELECT company_id FROM public.purchase_requests WHERE id = ${pr.id}::uuid)
+       AND (dp_pr_id = ${pr.id}::uuid OR fo_pr_id = ${pr.id}::uuid)
+    RETURNING id, code, company_id AS "companyId"
+  `)) as unknown as Array<{ id: string; code: string; companyId: string }>;
+  for (const p of rows) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        changes: [{ field: 'planStatus', label: 'Plan Status', before: 'PR Created', after: 'Planned' }],
+        entity: 'Plan',
+        entityId: p.id,
+        refId: p.code,
+        detail: `${p.code} back to Planned — ${pr.code} cancelled`,
+      },
+      p.companyId,
+      user,
+    );
+  }
+  return rows.map((p) => p.code);
 }

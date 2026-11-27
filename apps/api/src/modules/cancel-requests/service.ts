@@ -71,6 +71,9 @@ const ACTIVITY_ENTITY: Record<CancelDocType, string> = {
   production_order: 'ProductionOrder',
   dc_receipt: 'DeliveryChallanReceipt',
   jw_dc_inward: 'JwDcInward',
+  party_grn_line: 'PartyGrn',
+  party_grn_line_qc: 'PartyGrn',
+  nc_disposition: 'NonConformance',
 };
 
 type RequestDbRow = typeof cancelRequests.$inferSelect;
