@@ -16928,3 +16928,44 @@ cannot be rebuilt.
 - Negative: no history before go-live; a day's figure is up to 10 minutes old at midnight.
 - Risk: SO Status works out dispatch from challans while this uses `dispatched_qty`; a disagreement is a data
   finding, not a second reader.
+
+## ADR-326: SO / JWSO Status — Show filter (All / SO / JWSO), one filter line, Mon–Sun weeks, table name on the toolbar
+
+**Date:** 2026-11-28
+**Status:** Accepted (owner: mockup v5 "standard ERP table" approved, plan "approved" 28-Nov)
+
+### Context
+
+The owner wanted to see SO only or JWSO only on Reports › SO / JWSO Status and on the day page, said the day
+page's filters were out of line (‹ / › floated above the Date box, whose label pushed it down), did not want
+the "Mon · no copy saved" note in the Date cell, wanted the day name beside the date and Sunday shown.
+
+### Decision
+
+- **Show** = `all | SO | JWSO` (`SHOW_KINDS`, default All) on the list (`?show=`), the day page (`?show=`,
+  carried when a date opens and on Back) and the Home view (kept per browser tab, `usePersistentState`). It
+  only hides rows / tables; no figure changes. Excel and Print follow it ("· SO only" in the title line).
+- **Filter row**: every group has a label above its control (Quick range / Days / Show; Date / Show / Figures)
+  and every control is the input's height, so the row lines up. Shared pieces in the module
+  (`FilterGroup`, `SegButtons`).
+- **Date cell**: "23-11-2026 Mon" on the first row of a day only (`dateWithDay`); that row opens the day.
+- **Mon–Sun**: when To is today, Every day adds this week's days still to come as "—" rows that never open
+  (the server still refuses a future day). Week end only keeps the newest day per week (today for this week).
+- **DataTable `toolbarTitle`** (new optional prop, shared): the table's name on the left of the Columns /
+  density strip. Without it the strip is unchanged on every other list. The day tables use it
+  ("SO wise summary 31 SOs") inside a Panel (overflow clip so the frozen headings still stick).
+
+### Alternatives considered
+
+- Keep the "1. SO wise summary" line above each table — rejected: a second header line the standard table
+  does not have; the toolbar line is already there.
+- Pad future days on the server — rejected: the API refuses future dates on purpose (ADR-325); a screen-only
+  "—" row needs no server change.
+
+### Consequences
+
+- Positive: one filter value flows list → day → Excel / Print; no server, DB or figure change.
+- Negative: one more optional DataTable prop.
+- Excel repeats the date on every row (so it can be filtered); the screen and print show it once per day.
+- Days still to come are in the day count, Excel and Print as "—" rows, the same as the screen (owner's plan point 5).
+- `FilterGroup` / `SegButtons` stay in the module for now; moving them to `ui/` (+ design-sync card) is a follow-up for the owner.

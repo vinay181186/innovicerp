@@ -1,29 +1,67 @@
-/* SO / JWSO status by day (ADR-325). Theme tokens only. */
+/* SO / JWSO status by day (ADR-325/326). Theme tokens only. */
 
 /* A collapsed week: its heading row stays, its day rows are hidden. */
 .innovic-table > tbody > tr.sjs-hidden {
   display: none;
 }
 
-/* The JWSO row's Date cell: weekday + where the figures came from. */
-.sjs-note {
-  color: var(--text3);
-  font-size: var(--fs-xs);
-  font-weight: 400;
-}
-
-/* A row of small buttons inside the filter row. */
-.sjs-tools {
+/* A filter group: label above, control at the input's height (FilterGroup). */
+.sjs-f {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+}
+.sjs-f > .form-label {
+  margin-bottom: var(--sp-1);
+}
+.sjs-ctl {
+  display: flex;
   align-items: center;
   gap: var(--sp-1);
+  height: var(--control-h);
+}
+.sjs-ctl > .btn,
+.sjs-ctl > .innovic-input {
+  height: var(--control-h);
+}
+.sjs-ctl > .innovic-input {
+  width: var(--field-md);
+}
+.sjs-f.sjs-end {
+  margin-left: auto;
 }
 
-/* "1. SO wise summary (12)" above each day table. */
-.sjs-section {
-  font-weight: 700;
-  font-size: var(--fs-md);
-  color: var(--text);
-  margin: var(--sp-3) 0 var(--sp-2);
+/* One-of-several buttons joined into one strip (SegButtons). */
+.sjs-seg {
+  display: inline-flex;
+  height: var(--control-h);
+  border: 1px solid var(--border3);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.sjs-seg > .btn {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  white-space: nowrap;
+}
+.sjs-seg > .btn + .btn {
+  border-left: 1px solid var(--border3);
+}
+
+/* A day table's name on its toolbar line: "SO wise summary · 31 SOs". */
+.sjs-count {
+  margin-left: var(--sp-2);
+  font-family: var(--bfont);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--text3);
+}
+/* A day table's panel: clip, not hidden, so the frozen headings
+   (pageStickyTop) still stick to the page while it scrolls. */
+.panel.sjs-panel {
+  overflow: clip;
+}
+/* Space between the SO and the JWSO panel. */
+.sjs-panel + .sjs-panel {
+  margin-top: var(--sp-4);
 }

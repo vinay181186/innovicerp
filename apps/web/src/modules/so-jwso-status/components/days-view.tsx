@@ -7,6 +7,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { todayIst } from '@/lib/date';
+import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 import { useMyCompany } from '@/modules/settings/api';
 import { Icon } from '@/ui/core';
 import { DataTable, Panel } from '@/ui/data';
@@ -20,6 +21,10 @@ import {
   type DaysMode,
   type DaysRange,
   QUICK_RANGES,
+  HOME_SHOW_KEY,
+  SHOW_KINDS,
+  SHOW_OPTIONS,
+  type ShowKind,
   buildDayRows,
   quickRange,
   rangeProblem,
@@ -28,6 +33,7 @@ import {
 import { exportDaysExcel, printDays, REPORT_TITLE } from '../lib/export';
 import '../so-jwso-status.css';
 import { daysColumns } from './columns';
+import { FilterGroup, SegButtons } from './filters';
 
 const MODES: { value: DaysMode; label: string }[] = [
   { value: 'all', label: 'Every day' },
@@ -53,15 +59,24 @@ export function SoJwsoDaysView({
   const q = useSoJwsoDays(range.from, range.to, problem === null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const [exporting, setExporting] = useState(false);
-  const { rows, weeks } = useMemo(
-    () => buildDayRows(q.data?.days ?? [], range.mode),
-    [q.data, range.mode],
+  const today = q.data?.today ?? todayIst();
+  const { rows, weeks, dayCount } = useMemo(
+    () =>
+      buildDayRows(
+        q.data?.days ?? [],
+        { from: range.from, to: range.to, mode: range.mode, show: range.show },
+        today,
+      ),
+    [q.data, range.from, range.to, range.mode, range.show, today],
   );
   const columns = useMemo(() => daysColumns(), []);
 
-  const today = q.data?.today ?? todayIst();
   const anyCollapsed = collapsed.size > 0;
-  const dayCount = rows.length / 2;
+  const quickOn =
+    QUICK_RANGES.find((r) => {
+      const qr = quickRange(r.key, today);
+      return qr.from === range.from && qr.to === range.to;
+    })?.key ?? null;
 
   const toggleWeek = (key: string): void =>
     setCollapsed((prev) => {
@@ -75,7 +90,9 @@ export function SoJwsoDaysView({
     void navigate({
       to: '/so-jwso-status/$date',
       params: { date: r.date },
-      search: home ? { from: 'home' } : { from: range.from, to: range.to, mode: range.mode },
+      search: home
+        ? { from: 'home', show: range.show }
+        : { from: range.from, to: range.to, mode: range.mode, show: range.show },
     });
   };
 
@@ -148,44 +165,40 @@ export function SoJwsoDaysView({
               }
             />
           </ReportFilter>
-          <div className="sjs-tools" role="group" aria-label="Quick ranges">
-            {QUICK_RANGES.map((r) => {
-              const qr = quickRange(r.key, today);
-              const on = qr.from === range.from && qr.to === range.to;
-              return (
-                <button
-                  key={r.key}
-                  type="button"
-                  className={`btn btn-sm ${on ? 'btn-primary' : 'btn-ghost'}`}
-                  aria-pressed={on}
-                  onClick={() => onRange({ ...range, ...qr })}
-                >
-                  {r.label}
-                </button>
-              );
-            })}
-          </div>
-          <div className="sjs-tools" role="group" aria-label="Days shown">
-            {MODES.map((m) => (
+          <FilterGroup label="Quick range">
+            <SegButtons
+              options={QUICK_RANGES.map((r) => ({ value: r.key, label: r.label }))}
+              value={quickOn}
+              onChange={(k) => onRange({ ...range, ...quickRange(k, today) })}
+            />
+          </FilterGroup>
+          <FilterGroup label="Days">
+            <SegButtons
+              options={MODES}
+              value={range.mode}
+              onChange={(mode) => onRange({ ...range, mode })}
+            />
+          </FilterGroup>
+          <FilterGroup label="Show">
+            <SegButtons
+              options={SHOW_OPTIONS}
+              value={range.show}
+              onChange={(show) => onRange({ ...range, show })}
+            />
+          </FilterGroup>
+          <div className="sjs-f sjs-end">
+            <span className="form-label">&nbsp;</span>
+            <div className="sjs-ctl">
               <button
-                key={m.value}
                 type="button"
-                className={`btn btn-sm ${range.mode === m.value ? 'btn-primary' : 'btn-ghost'}`}
-                aria-pressed={range.mode === m.value}
-                onClick={() => onRange({ ...range, mode: m.value })}
+                className="btn btn-ghost"
+                disabled={weeks.size === 0}
+                onClick={() => setCollapsed(anyCollapsed ? new Set() : new Set(weeks.keys()))}
               >
-                {m.label}
+                {anyCollapsed ? 'Expand all' : 'Collapse all'}
               </button>
-            ))}
+            </div>
           </div>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={weeks.size === 0}
-            onClick={() => setCollapsed(anyCollapsed ? new Set() : new Set(weeks.keys()))}
-          >
-            {anyCollapsed ? 'Expand all' : 'Collapse all'}
-          </button>
         </>
       }
       rowCount={problem || q.isError ? undefined : dayCount}
@@ -211,7 +224,7 @@ export function SoJwsoDaysView({
             sortFilter={false}
             emptyText="No days in this range."
             onRowClick={openDay}
-            isRowClickable={(r) => r.kind === 'SO'}
+            isRowClickable={(r) => r.first && !r.future}
             rowClassName={(r) => (collapsed.has(r.weekKey) ? 'sjs-hidden' : undefined)}
             groupRow={(r, _i, prev) => {
               if (prev?.weekKey === r.weekKey) return null;
@@ -237,11 +250,17 @@ export function SoJwsoDaysView({
 }
 
 /** The Home menu view: the same list, its range kept on the page (This week
- *  when Home opens). */
+ *  when Home opens); Show is kept for the browser tab, so Back from a day keeps it. */
 export function SoJwsoDaysHome(): React.JSX.Element {
-  const [range, setRange] = useState<DaysRange>(() => {
+  const [show, setShow] = usePersistentState<ShowKind>(HOME_SHOW_KEY, 'all', oneOf(SHOW_KINDS));
+  const [range, setRange] = useState<Omit<DaysRange, 'show'>>(() => {
     const t = todayIst();
     return { ...quickRange('thisWeek', t), mode: 'all' };
   });
-  return <SoJwsoDaysView range={range} onRange={setRange} home />;
+  const onRange = (next: DaysRange): void => {
+    const { show: nextShow, ...rest } = next;
+    setRange(rest);
+    setShow(nextShow);
+  };
+  return <SoJwsoDaysView range={{ ...range, show }} onRange={onRange} home />;
 }

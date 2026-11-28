@@ -16,10 +16,30 @@ import { fmtQty } from '@/lib/qty-format';
 export const DAYS_MODES = ['all', 'weekEnd'] as const;
 export type DaysMode = (typeof DAYS_MODES)[number];
 
+/** Both kinds, or only SO / only JWSO — on the list, the day page, Excel and print. */
+export const SHOW_KINDS = ['all', 'SO', 'JWSO'] as const;
+export type ShowKind = (typeof SHOW_KINDS)[number];
+
+export const SHOW_OPTIONS: { value: ShowKind; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'SO', label: 'SO' },
+  { value: 'JWSO', label: 'JWSO' },
+];
+
+/** The Home view keeps its Show choice per browser tab under this key; the day
+ *  page opened from Home writes it too, so Back returns to the same Show. */
+export const HOME_SHOW_KEY = 'so-jwso-home:show';
+
+/** Is this kind shown under the Show filter? */
+export function showsKind(show: ShowKind, kind: OrderKind): boolean {
+  return show === 'all' || show === kind;
+}
+
 export interface DaysRange {
   from: string;
   to: string;
   mode: DaysMode;
+  show: ShowKind;
 }
 
 export const QUICK_RANGES = [
@@ -49,13 +69,18 @@ export function quickRange(key: QuickRangeKey, today: string): { from: string; t
 /** The range in the address (or the default: This week, every day), with To
  *  held at today — the server refuses a day that has not come yet. */
 export function resolveRange(
-  s: { from?: string | undefined; to?: string | undefined; mode?: DaysMode | undefined },
+  s: {
+    from?: string | undefined;
+    to?: string | undefined;
+    mode?: DaysMode | undefined;
+    show?: ShowKind | undefined;
+  },
   today: string,
 ): DaysRange {
   const def = quickRange('thisWeek', today);
   const from = s.from && s.from <= today ? s.from : def.from;
   const to = s.to && s.to <= today ? s.to : today;
-  return { from, to, mode: s.mode ?? 'all' };
+  return { from, to, mode: s.mode ?? 'all', show: s.show ?? 'all' };
 }
 
 /** Why the range cannot be asked for, or null. */
@@ -83,6 +108,11 @@ export function mondayOf(date: string): string {
   return addDaysLocal(date, -((dow(date) + 6) % 7));
 }
 
+/** "23-11-2026 Mon" — the days list's Date cell. */
+export function dateWithDay(date: string): string {
+  return `${fmtDate(date)} ${weekdayShort(date)}`;
+}
+
 /** ISO week number (weeks start Monday; week 1 holds the year's first Thursday). */
 export function isoWeekNo(date: string): number {
   const thursday = addDaysLocal(mondayOf(date), 3);
@@ -102,54 +132,72 @@ export interface DayRow {
   key: string;
   date: string;
   kind: OrderKind;
-  day: SoJwsoStatusDay;
+  /** The server's day; null for a day of this week still to come. */
+  day: SoJwsoStatusDay | null;
   summary: OrderStatusSummary | null;
   weekKey: string;
+  /** The day's first row on screen — it carries the date and opens the day. */
+  first: boolean;
+  /** A day of this week still to come: "—" and never opens. */
+  future: boolean;
 }
 
-/** Days newest first → two rows a day (SO, then JWSO) and the week each sits in.
- *  Week end only keeps the newest day of each week in the range. */
+/** Days newest first → a row per shown kind a day (SO, then JWSO) and the week
+ *  each sits in. When To is today, the week runs to Sunday: this week's days
+ *  still to come are added as "—" rows (the server never sends a future day).
+ *  Week end only keeps the newest day of each week, so this week shows today,
+ *  not the Sunday still to come. */
 export function buildDayRows(
   days: readonly SoJwsoStatusDay[],
-  mode: DaysMode,
-): { rows: DayRow[]; weeks: Map<string, WeekGroup> } {
-  const sorted = [...days].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  range: DaysRange,
+  today: string,
+): { rows: DayRow[]; weeks: Map<string, WeekGroup>; dayCount: number } {
+  const all: { date: string; day: SoJwsoStatusDay | null }[] = days.map((day) => ({
+    date: day.date,
+    day,
+  }));
+  // Only once the loaded days reach today — not while the previous range's
+  // days are still on screen during a load.
+  const reachesToday = days.some((d) => d.date === today);
+  if (range.mode === 'all' && range.to === today && reachesToday) {
+    const sunday = addDaysLocal(mondayOf(today), 6);
+    for (let d = addDaysLocal(today, 1); d <= sunday; d = addDaysLocal(d, 1))
+      all.push({ date: d, day: null });
+  }
+  all.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const kinds = (['SO', 'JWSO'] as const).filter((k) => showsKind(range.show, k));
   const weeks = new Map<string, WeekGroup>();
   const rows: DayRow[] = [];
-  for (const day of sorted) {
-    const key = mondayOf(day.date);
+  let dayCount = 0;
+  for (const { date, day } of all) {
+    const key = mondayOf(date);
     const week = weeks.get(key);
-    if (week && mode === 'weekEnd') continue;
+    if (week && range.mode === 'weekEnd') continue;
     if (week) week.dayCount += 1;
     else
       weeks.set(key, {
         key,
-        no: isoWeekNo(day.date),
+        no: isoWeekNo(date),
         start: key,
         end: addDaysLocal(key, 6),
         dayCount: 1,
       });
-    const none = day.source === 'none';
-    rows.push(
-      {
-        key: `${day.date}-SO`,
-        date: day.date,
-        kind: 'SO',
+    dayCount += 1;
+    kinds.forEach((kind, i) => {
+      const summary = !day || day.source === 'none' ? null : kind === 'SO' ? day.so : day.jwso;
+      rows.push({
+        key: `${date}-${kind}`,
+        date,
+        kind,
         day,
-        summary: none ? null : day.so,
+        summary,
         weekKey: key,
-      },
-      {
-        key: `${day.date}-JWSO`,
-        date: day.date,
-        kind: 'JWSO',
-        day,
-        summary: none ? null : day.jwso,
-        weekKey: key,
-      },
-    );
+        first: i === 0,
+        future: day === null,
+      });
+    });
   }
-  return { rows, weeks };
+  return { rows, weeks, dayCount };
 }
 
 /** "Week 48 · 23-11-2026 to 29-11-2026 (4 days)". */
@@ -165,11 +213,6 @@ export function sourceNote(day: {
   if (day.source === 'live') return 'live';
   if (day.source === 'saved') return day.takenAt ? `saved ${fmtTime(day.takenAt)}` : 'saved';
   return 'no copy saved';
-}
-
-/** "Wed · saved 11:50 PM" — the small line in the JWSO row's Date cell. */
-export function dayNote(day: SoJwsoStatusDay): string {
-  return `${weekdayShort(day.date)} · ${sourceNote(day)}`;
 }
 
 /** A figure as the screen shows it; no saved copy → "—", never 0. */

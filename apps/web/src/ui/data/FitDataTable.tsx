@@ -241,6 +241,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
         onRetrySave={layout.retrySave}
         loadFailed={layout.loadFailed}
         onRetryLoad={layout.retryLoad}
+        title={props.toolbarTitle}
       />
       <div
         ref={measure.wrapRef}

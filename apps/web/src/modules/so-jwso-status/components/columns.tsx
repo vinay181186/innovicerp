@@ -10,7 +10,7 @@ import {
 import { fmtDate } from '@/lib/date';
 import { fmtQty } from '@/lib/qty-format';
 import { type DataTableColumn, srNoColumn } from '@/ui/data';
-import { type DayRow, dayNote, figureText, figureValue, sumFigure } from '../lib/days';
+import { type DayRow, dateWithDay, figureText, figureValue, sumFigure } from '../lib/days';
 
 /** The 11 figures, in contract order. `withTotals` adds each column's sum. */
 export function figureColumns<T>(
@@ -29,8 +29,8 @@ export function figureColumns<T>(
   }));
 }
 
-/** Days list: Date | Type | Orders | 11 figures. The SO row's Date opens the
- *  day; the JWSO row's Date cell is the weekday and where the figures came from. */
+/** Days list: Date | Type | Orders | 11 figures. The day's first row carries
+ *  "23-11-2026 Mon" and opens the day (not a day still to come). */
 export function daysColumns(): DataTableColumn<DayRow>[] {
   return [
     {
@@ -39,9 +39,8 @@ export function daysColumns(): DataTableColumn<DayRow>[] {
       kind: 'date',
       nowrap: true,
       opensRow: true,
-      render: (r) =>
-        r.kind === 'SO' ? fmtDate(r.date) : <span className="sjs-note">{dayNote(r.day)}</span>,
-      title: (r) => (r.kind === 'SO' ? `Open ${fmtDate(r.date)}` : dayNote(r.day)),
+      render: (r) => (r.first ? dateWithDay(r.date) : ''),
+      title: (r) => (r.first && !r.future ? `Open ${fmtDate(r.date)}` : ''),
     },
     { id: 'type', header: 'Type', kind: 'code', nowrap: true, render: (r) => r.kind },
     {

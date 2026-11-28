@@ -3,7 +3,7 @@
 // Columns ▾ popover. Right-aligned and compact.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { CSSProperties, ReactElement } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { TableDensity } from '@innovic/shared';
 
@@ -32,6 +32,8 @@ export interface TableToolbarProps {
   /** The saved layout could not be read — nothing is saved until it is. */
   loadFailed: boolean;
   onRetryLoad: () => void;
+  /** The table's name, on the left of the strip (DataTable `toolbarTitle`). */
+  title?: ReactNode | undefined;
 }
 
 const TOAST_MS = 2200;
@@ -61,7 +63,7 @@ function placePopover(btn: HTMLElement, natural: number): CSSProperties {
 
 export function TableToolbar(props: TableToolbarProps): ReactElement {
   const { columns, dropped, warn, density, onDensity, saveFailed, onRetrySave } = props;
-  const { loadFailed, onRetryLoad } = props;
+  const { loadFailed, onRetryLoad, title } = props;
   const [open, setOpen] = useState(false);
   const [flash, setFlash] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
@@ -129,6 +131,7 @@ export function TableToolbar(props: TableToolbarProps): ReactElement {
 
   return (
     <div className="dt-toolbar" ref={rootRef}>
+      {title != null ? <span className="dt-title">{title}</span> : null}
       {dropped.length > 0 ? (
         <span className="dt-chip" role="status">
           {dropped.length} column{dropped.length > 1 ? 's' : ''} not on screen (no room):{' '}

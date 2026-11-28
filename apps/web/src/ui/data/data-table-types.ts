@@ -162,6 +162,9 @@ export interface DataTableProps<T> {
    * renders exactly as before.
    */
   tableKey?: string | undefined;
+  /** Fit engine: the table's name, on the left of its Columns / density strip
+   *  (e.g. "SO wise summary · 31 SOs"). Without it the strip is unchanged. */
+  toolbarTitle?: ReactNode | undefined;
   /** Default pinned column ids (fit engine). Column 0 is always pinned. */
   defaultPinned?: string[] | undefined;
   /** Default hidden column ids (fit engine). */
