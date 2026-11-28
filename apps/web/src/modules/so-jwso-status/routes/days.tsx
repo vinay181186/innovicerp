@@ -1,4 +1,4 @@
-// Reports › SO / JWSO Status (ADR-325) — the days list. From / To / mode live
+// Reports › SO / JWSO Status (ADR-325) — the days list. From / To / mode / Show live
 // in the address, so Back from a day returns to the same range.
 
 import { createRoute } from '@tanstack/react-router';
@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { todayIst } from '@/lib/date';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { SoJwsoDaysView } from '../components/days-view';
-import { DAYS_MODES, type DaysRange, resolveRange } from '../lib/days';
+import { DAYS_MODES, type DaysRange, SHOW_KINDS, resolveRange } from '../lib/days';
 
 const isoDate = z
   .string()
@@ -18,6 +18,7 @@ export const daysSearchSchema = z.object({
   from: isoDate,
   to: isoDate,
   mode: z.enum(DAYS_MODES).optional().catch(undefined),
+  show: z.enum(SHOW_KINDS).optional().catch(undefined),
 });
 
 export const soJwsoDaysRoute = createRoute({
@@ -32,7 +33,10 @@ function SoJwsoDaysPage(): React.JSX.Element {
   const navigate = soJwsoDaysRoute.useNavigate();
   const range = resolveRange(search, todayIst());
   const onRange = (next: DaysRange): void => {
-    void navigate({ search: { from: next.from, to: next.to, mode: next.mode }, replace: true });
+    void navigate({
+      search: { from: next.from, to: next.to, mode: next.mode, show: next.show },
+      replace: true,
+    });
   };
   return <SoJwsoDaysView range={range} onRange={onRange} />;
 }

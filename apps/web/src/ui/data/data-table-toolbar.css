@@ -16,6 +16,14 @@
   color: var(--text2);
   min-width: 0;
 }
+/* The table's name (DataTable toolbarTitle): left, the tools stay right. */
+.dt-title {
+  margin-right: auto;
+  font-family: var(--hfont);
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: var(--text);
+}
 .dt-chip {
   background: var(--bg4);
   border: 1px solid var(--border2);
